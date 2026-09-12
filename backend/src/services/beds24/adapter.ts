@@ -177,11 +177,17 @@ export class Beds24Adapter implements ChannelAdapter {
       if (payload.email) item.email = payload.email;
       if (payload.notes) item.notes = payload.notes;
 
+      // `roomId` IKKALA holatda ham yuboriladi.
+      //
+      // Yaratishda majburiy, yangilashda esa xona almashtirilganda
+      // kerak: mijoz qarori Q6 — "hona almashsa Beds24 da ham
+      // korinishi kerak" (12-fayl §4). Faqat `id` yuborilsa Beds24
+      // eski room type'da qoldiradi va OTA noto'g'ri xonani sotadi.
+      item.roomId = Number(payload.externalRoomTypeId);
+      if (payload.externalUnitId) item.unitId = Number(payload.externalUnitId);
+
       if (payload.externalId) {
         item.id = Number(payload.externalId);      // update
-      } else {
-        item.roomId = Number(payload.externalRoomTypeId);   // create
-        if (payload.externalUnitId) item.unitId = Number(payload.externalUnitId);
       }
 
       const res = await beds24Request<Array<Record<string, unknown>>>("/bookings", {

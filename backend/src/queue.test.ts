@@ -283,8 +283,14 @@ describe("FAZA 7 — queue va webhook -> Reservation", () => {
 
       const logs = await prisma.syncLog.findMany({ orderBy: { createdAt: "desc" } });
       expect(logs.length).toBeGreaterThan(0);
-      expect(logs[0].direction).toBe("CHANNEL_TO_PMS");
-      expect(logs[0].status).toBe("SUCCESS");
+
+      // FAZA 9/10 dan keyin bitta OTA broni bir nechta log yozadi:
+      // webhook qabul qilindi (CHANNEL_TO_PMS), availability va
+      // bron Beds24'ga qaytarildi (PMS_TO_CHANNEL). Shuning uchun
+      // "eng oxirgisi" emas, KERAKLISINI qidiramiz.
+      const inbound = logs.find((l) => l.direction === "CHANNEL_TO_PMS");
+      expect(inbound, "webhook logi yozilmadi").toBeTruthy();
+      expect(inbound!.status).toBe("SUCCESS");
     });
   });
 

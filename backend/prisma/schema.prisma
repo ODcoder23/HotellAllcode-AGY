@@ -334,6 +334,7 @@ enum ReservationStatus {
 
 enum EntitySyncStatus {
   PENDING     // navbatga qo'yilgan, hali yuborilmagan
+  SYNCING     // hozir yuborilmoqda — parallel yuborishni to'sadi (12-fayl §3)
   SYNCED      // Beds24 qabul qildi
   FAILED      // 5 urinishdan keyin ham bo'lmadi — Admin ko'radi
   NOT_APPLICABLE  // mapping yo'q yoki kanal o'chirilgan

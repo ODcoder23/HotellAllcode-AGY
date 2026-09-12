@@ -37,19 +37,21 @@ export type SyncLogInput = {
   durationMs?: number;
 };
 
-/** Beds24 kanalining id'si — har chaqiruvda so'ramaslik uchun */
-let cachedChannelId: string | null = null;
-
+/**
+ * Beds24 kanalining id'si.
+ *
+ * KESHLANMAYDI. Avval keshlangan edi, lekin DB qayta seed qilinganda
+ * (testlar, migratsiya, reset) `Channel` qatori o'chib qayta
+ * yaratiladi va id o'zgaradi. Eski id bilan yozishga urinish foreign
+ * key xatosiga tushadi, u esa jim yutiladi — natijada SyncLog
+ * yozilmay qoladi va TZ 16-band buziladi (sabab ko'rinmaydi).
+ *
+ * Bitta indeksli so'rov har log uchun arzon; sinxronizatsiya
+ * chaqiruvlari baribir tashqi API kutadi.
+ */
 async function getChannelId(): Promise<string | null> {
-  if (cachedChannelId) return cachedChannelId;
   const channel = await prisma.channel.findUnique({ where: { code: "beds24" } });
-  cachedChannelId = channel?.id ?? null;
-  return cachedChannelId;
-}
-
-/** Test'lar uchun — DB qayta seed qilinganda id o'zgaradi */
-export function resetChannelCache(): void {
-  cachedChannelId = null;
+  return channel?.id ?? null;
 }
 
 /**

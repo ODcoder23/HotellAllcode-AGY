@@ -14,9 +14,10 @@
 import { Prisma, type ReservationStatus, type ReservationSource } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { NotFoundError, RoomUnavailableError, ValidationError } from "../lib/errors.js";
-import { fromDateKey } from "../lib/serialize.js";
+import { fromDateKey, toDateKey } from "../lib/serialize.js";
 import { serializableTx } from "../lib/tx.js";
 import { onAvailabilityChanged } from "./availability.js";
+import { onReservationChanged } from "./reservationSync.js";
 import {
   notifyReservation, notifyPayment, notifyRoomStatus,
 } from "../realtime/notify.js";
@@ -246,6 +247,9 @@ export async function createReservation(input: CreateInput) {
   // TZ 15-band: boshqa ochiq Shaxmatka oynalari ham ko'radi
   await notifyReservation("reservation.created", result.reservation.id);
 
+  // TZ 2-band 1-amal: Beds24'ga yangi bron (12-fayl §1)
+  await onReservationChanged(result.reservation.id, "created");
+
   return result.reservation;
 }
 
@@ -284,6 +288,11 @@ export async function updateReservation(
   });
 
   await notifyReservation("reservation.updated", result.id);
+
+  // TZ 2-band 2, 5, 6-amal: mehmon soni / narx / izoh o'zgarishi.
+  // Uchalasi ham bitta yo'ldan ketadi — worker DB'dagi joriy
+  // holatni to'liq yuboradi (12-fayl §2).
+  await onReservationChanged(result.id, "updated");
   return result;
 }
 
@@ -317,12 +326,20 @@ export async function changeRoom(id: string, newRoomId: string) {
       ? [oldTypeId]
       : [oldTypeId, newRoom.roomTypeId];
 
-    return { updated, types, from: res.checkIn, to: res.checkOut };
+    return {
+      updated, types, from: res.checkIn, to: res.checkOut,
+      previousRoomId: oldRoomId,        // 12-fayl §4: job payload'i uchun
+    };
   }, "changeRoom");
 
   // Xona almashdi — tur o'zgargan bo'lsa IKKALA tur (12-fayl §4)
   await onAvailabilityChanged(r.types, r.from, r.to, "room_changed");
   await notifyReservation("reservation.updated", r.updated.id);
+
+  // TZ 2-band 3-amal (mijoz qarori Q6): Beds24'da ham ko'rinadi
+  await onReservationChanged(r.updated.id, "room_changed", {
+    previousState: { roomId: r.previousRoomId },
+  });
   return r.updated;
 }
 
@@ -355,12 +372,22 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
     const from = res.checkIn < checkIn ? res.checkIn : checkIn;
     const to = res.checkOut > checkOut ? res.checkOut : checkOut;
 
-    return { updated, roomTypeId: res.room.roomTypeId, from, to };
+    return {
+      updated, roomTypeId: res.room.roomTypeId, from, to,
+      // 12-fayl §5: job payload'i uchun eski oraliq
+      previousCheckIn: toDateKey(res.checkIn) ?? undefined,
+      previousCheckOut: toDateKey(res.checkOut) ?? undefined,
+    };
   }, "changeDates");
 
   // Sana o'zgardi — eski ∪ yangi oraliq (12-fayl §5)
   await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "dates_changed");
   await notifyReservation("reservation.updated", r.updated.id);
+
+  // TZ 2-band 4-amal
+  await onReservationChanged(r.updated.id, "dates_changed", {
+    previousState: { checkIn: r.previousCheckIn, checkOut: r.previousCheckOut },
+  });
   return r.updated;
 }
 
@@ -382,6 +409,9 @@ export async function checkIn(id: string) {
 
   await notifyReservation("reservation.updated", r.id);
   await notifyRoomStatus(r.roomId);
+
+  // TZ 2-band 8-amal (mijoz qarori Q7): Beds24'da subStatus=arrived
+  await onReservationChanged(r.id, "checked_in");
   return r;
 }
 
@@ -405,6 +435,9 @@ export async function checkOut(id: string) {
   await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "checked_out");
   await notifyReservation("reservation.updated", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
+
+  // TZ 2-band 8-amal: Beds24'da subStatus=departed
+  await onReservationChanged(r.updated.id, "checked_out");
   return r.updated;
 }
 
@@ -429,6 +462,9 @@ export async function cancelReservation(id: string) {
   await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "reservation_cancelled");
   await notifyReservation("reservation.cancelled", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
+
+  // TZ 2-band 7-amal: Beds24'da status=cancelled
+  await onReservationChanged(r.updated.id, "cancelled");
   return r.updated;
 }
 
@@ -452,6 +488,9 @@ export async function markNoShow(id: string) {
   await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "no_show");
   await notifyReservation("reservation.cancelled", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
+
+  // Beds24'da status=black (08-fayl §2)
+  await onReservationChanged(r.updated.id, "no_show");
   return r.updated;
 }
 

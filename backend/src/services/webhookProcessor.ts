@@ -21,6 +21,10 @@ import { fromDateKey } from "../lib/serialize.js";
 import { beds24Adapter } from "./beds24/adapter.js";
 import { findByExternal } from "./mapping.js";
 import { recalcRoomStatus } from "./reservations.js";
+// Status mapping markaziy faylda (08-fayl §2, 12-fayl §6) — bu yerda
+// faqat qayta eksport, chunki mavjud testlar shu yo'ldan import qiladi.
+import { toPmsStatus } from "./beds24/statusMap.js";
+export { toPmsStatus };
 import { onAvailabilityChanged } from "./availability.js";
 import type { ExternalReservation } from "./channel/types.js";
 import {
@@ -37,34 +41,6 @@ export type ProcessResult = {
 //  Status mapping (08-fayl §2)
 // ============================================================
 
-/**
- * Beds24 statusini PMS statusiga aylantiradi.
- *
- * Aniq qiymatlar Beds24 hisobi sozlamasiga qarab farq qilishi
- * mumkin (`black`, `subStatus` nomi). FAZA 10 da real javob bilan
- * tasdiqlanadi — faqat shu funksiya o'zgaradi (markazlashtirilgan).
- */
-export function toPmsStatus(ext: ExternalReservation): ReservationStatus {
-  const s = ext.status.toLowerCase();
-  const sub = ext.subStatus?.toLowerCase();
-
-  if (s === "cancelled" || s === "canceled") return "CANCELLED";
-  if (s === "black") return "NO_SHOW";
-  if (s === "request") return "PENDING_PAYMENT";
-
-  if (s === "new") {
-    const paid = (ext.payments ?? []).reduce((n, p) => n + p.amount, 0);
-    return paid > 0 ? "CONFIRMED" : "PENDING_PAYMENT";
-  }
-
-  if (s === "confirmed") {
-    if (sub === "departed") return "CHECKED_OUT";
-    if (sub === "arrived") return "CHECKED_IN";
-    return "CONFIRMED";
-  }
-
-  return "CONFIRMED";
-}
 
 /** OTA nomini `ReservationSource` enum'iga aylantiradi */
 export function toSource(referer?: string): ReservationSource {

@@ -25,6 +25,7 @@ import {
 } from "./index.js";
 import { processWebhookEvent } from "../services/webhookProcessor.js";
 import { syncAvailabilityRange } from "../services/availability.js";
+import { pushReservation } from "../services/reservationSync.js";
 import { notifySyncFailed } from "../realtime/notify.js";
 import { RateLimitError, isRetryable, getRetryDelay } from "../services/beds24/client.js";
 
@@ -72,17 +73,40 @@ export const webhookWorker = new Worker<WebhookJob>(
 export const reservationSyncWorker = new Worker<ReservationSyncJob>(
   QUEUE.reservationSync,
   async (job, token) => {
+    const { reservationId, changeType } = job.data;
+
     try {
-      // FAZA 10: pushReservation chaqiriladi.
-      // Hozircha job qabul qilinadi va log qilinadi — navbat
-      // mexanizmi ishlaydi, mazmun keyingi fazada.
-      console.log(
-        `[worker] reservation-sync: ${job.data.changeType} #${job.data.reservationId} ` +
-        `(FAZA 10 da Beds24'ga yuboriladi)`
-      );
-      return { ok: true, deferred: "FAZA 10" };
+      if (config.isDev) {
+        console.log(`[worker] reservation-sync: ${changeType} #${reservationId}`);
+      }
+
+      // IDEMPOTENTLIK (12-fayl §2): payload'dagi eski nusxa emas,
+      // DB'dagi joriy holat yuboriladi. Job navbatda turganda bron
+      // yana o'zgargan bo'lsa — eng oxirgi holat ketadi.
+      const outcome = await pushReservation(reservationId);
+
+      if (outcome.status === "failed") {
+        notifySyncFailed("push_reservation", outcome.error, reservationId);
+
+        // Mapping yo'q / validatsiya xatosi — qayta urinish
+        // foydasiz, admin aralashuvi kerak (06-fayl §3).
+        if (!outcome.retryable) {
+          throw new UnrecoverableError(outcome.error.slice(0, 200));
+        }
+        throw new Error(outcome.error);
+      }
+
+      if (config.isDev && outcome.status === "sent") {
+        console.log(
+          `[worker] bron ${outcome.created ? "yaratildi" : "yangilandi"}: ` +
+          `Beds24 #${outcome.externalId ?? "?"}`
+        );
+      }
+
+      return { ok: true, ...outcome };
     } catch (e) {
       if (e instanceof RateLimitError) return delayForRateLimit(job, e, token);
+      if (e instanceof UnrecoverableError) throw e;
       if (!isRetryable(e)) throw new UnrecoverableError(String(e).slice(0, 200));
       throw e;
     }

@@ -245,6 +245,58 @@ darhol Beds24'ga yuboriladi — bu real daromad.
 
 ---
 
+## 6.1. Amalga oshirilgan holat (FAZA 10 — bajarildi)
+
+Kod joylashuvi:
+
+| Fayl | Vazifasi |
+|------|----------|
+| `backend/src/services/reservationSync.ts` | pushReservation, navbat, resync |
+| `backend/src/services/beds24/statusMap.ts` | toPmsStatus / toBeds24Status |
+| `backend/src/queues/workers.ts` | `reservationSyncWorker` |
+| `backend/src/reservationSync.test.ts` | 28 test |
+
+Sakkiz amalning hammasi `onReservationChanged()` orqali ulangan:
+`created`, `updated` (mehmon soni / narx / izoh), `room_changed`,
+`dates_changed`, `cancelled`, `checked_in`, `checked_out`, `no_show`.
+
+**`roomId` yangilashda ham yuboriladi.** Avval faqat yaratishda
+yuborilardi. Natijada xona almashtirilganda Beds24 eski room type'da
+qoldirardi va OTA noto'g'ri xonani sotardi — mijoz qarori Q6 buzilardi.
+
+**Poyga himoyasi — ikki qatlam.** Ikki jarayon bir vaqtda yangi
+bronni yuborsa, ikkalasi ham `externalReservationId` bo'sh deb ko'rib
+Beds24'da IKKITA booking yaratishi mumkin (mehmon ikki marta band
+qilingan bo'lib chiqadi).
+
+1. **Jarayon ichida** — `inFlight` map: bir bron uchun bitta push,
+   ikkinchisi birinchisining natijasini kutadi.
+2. **Jarayonlararo** — `syncStatus = SYNCING` bilan atomar band
+   qilish (`updateMany` + `where`). 0 qator yangilansa, boshqa
+   jarayon band qilgan: kutamiz va uning id'sini ishlatamiz.
+
+`EntitySyncStatus` enum'iga shu maqsadda `SYNCING` qo'shildi.
+
+**Nega advisory lock ishlatilmadi.** `pg_advisory_lock` sessiyaga
+bog'langan, Prisma esa connection pool ishlatadi va har so'rovni
+ixtiyoriy ulanishdan yuboradi. Qulf bir ulanishda olinib, tekshiruv
+boshqasidan ketishi mumkin — ya'ni himoya bermaydi. Ustiga
+bo'shatilmay osilib qoladi (tekshirilganda 9 ta osilgan qulf
+topildi va sessiyalarni uzish orqali tozalandi).
+
+**SyncLog kanal id'si keshlanmaydi.** Keshlangan edi, lekin DB qayta
+seed qilinganda `Channel` qatori o'chib qayta yaratiladi va id
+o'zgaradi. Eski id bilan yozish foreign key xatosiga tushib jim
+yutilardi — SyncLog yozilmay qolardi va TZ 16-band sababsiz buzilardi.
+
+**Tekshirilgan zanjir (brauzer + mock):** Shaxmatkadan bron yaratildi
+-> Beds24'da `referer: PMS` bilan paydo bo'ldi; check-in ->
+`subStatus: arrived`; xona `standard` -> `deluxe` almashtirildi ->
+`roomId: 101003`; bekor qilindi -> `status: cancelled`. To'rt amalga
+to'rt webhook qaytdi, bitta booking, bitta PMS broni — halqa yo'q.
+
+---
+
 ## 7. Mehmon soni va narx
 
 **Mehmon soni** (`numAdult`/`numChild`) — availability'ga ta'sir
