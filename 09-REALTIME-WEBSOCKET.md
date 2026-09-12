@@ -1,0 +1,206 @@
+# 09 — Real-time Shaxmatka yangilanishi (WebSocket)
+
+> **Manba:** `TZ-ASL.md` **15-band** (WebSocket, 6 ta event),
+> **4-band** (*"Admin sahifani refresh qilmasdan ham yangi bronni
+> ko'rishi uchun WebSocket/real-time update ishlatilsin"*).
+
+---
+
+## 1. Arxitektura
+
+```
+Backend voqeasi
+(webhook qayta ishlandi / ichki amal bajarildi)
+        ↓
+   Database yangilandi          ← avval DB, keyin event
+        ↓
+   WebSocket server
+        ↓
+   Ulangan Admin/Shaxmatka klientlariga push
+        ↓
+   Frontend: mavjud reservations/rooms state'i yangilanadi
+```
+
+**Tartib muhim:** event faqat DB transaction muvaffaqiyatli
+tugagandan **keyin** yuboriladi. Aks holda frontend DB'da yo'q
+ma'lumotni ko'rsatib qo'yishi mumkin.
+
+### Ko'p instansiya
+
+Docker Compose bir nechta API konteyneri ko'targanda, klient A
+1-konteynerga, klient B 2-konteynerga ulangan bo'lishi mumkin.
+Redis pub/sub event'ni barcha instansiyalarga tarqatadi:
+
+```
+API-1 (event yaratdi) → Redis pub/sub → API-1, API-2, API-3
+                                          ↓
+                                   har biri o'z klientlariga
+```
+
+Redis allaqachon BullMQ uchun bor — qo'shimcha infratuzilma kerak emas.
+
+---
+
+## 2. Event turlari (TZ 15-band)
+
+TZ aynan shu oltitasini talab qiladi:
+
+```
+reservation.created
+reservation.updated
+reservation.cancelled
+room.status.changed
+availability.changed
+payment.updated
+```
+
+### Qo'shimcha event'lar
+
+TZ'da sanalmagan, lekin boshqa bandlar talab qiladi:
+
+| Event | Nima uchun | TZ bandi |
+|---|---|---|
+| `sync.failed` | Beds24'ga yuborilmagan bron haqida ogohlantirish | 11, 17 |
+| `webhook.needs_attention` | Mapping yo'q / bo'sh xona yo'q | 5 |
+
+Bular Shaxmatka uchun emas, **Admin panel ogohlantirishi** uchun.
+Shaxmatka ularni e'tiborsiz qoldiradi.
+
+---
+
+## 3. Payload shakli
+
+Payload Shaxmatkaning mavjud massiv elementlari bilan **aynan bir
+xil** — shuning uchun frontendda oddiy "qo'sh yoki yangila" mantig'i
+yetarli, yangi komponent kerak emas:
+
+```jsonc
+{
+  "type": "reservation.created",
+  "timestamp": "2026-09-12T10:30:00Z",
+  "reservation": {
+    "id": "clx...",
+    "roomId": "102",
+    "guestName": "Booking mehmoni",
+    "phone": "+998 93 555 66 77",
+    "checkIn": "2026-09-15",
+    "checkOut": "2026-09-20",
+    "adults": 2,
+    "children": 0,
+    "source": "booking_com",
+    "pricePerNight": 38,
+    "status": "confirmed",
+    "notes": "",
+    "withMeal": false,
+    "charges": [],
+    "payments": [{ "id": "...", "amount": 114, "method": "Onlayn",
+                   "date": "2026-09-15", "note": "" }],
+    "createdAt": 1789200000000
+  },
+  "room": { "id": "102", "status": "reserved" }
+}
+```
+
+`02`-fayl §3 dagi moslik jadvali bu yerda ham amal qiladi:
+`guestName`/`phone` flatten, `Decimal` → `number`, sana
+`"YYYY-MM-DD"`, `source`/`status` kichik harfda.
+
+### Frontenddagi mantiq (yagona qo'shimcha)
+
+```js
+useEffect(() => {
+  const ws = connectWebSocket(token);
+
+  ws.on("reservation.created", ({ reservation, room }) => {
+    setReservations(rs =>
+      rs.some(r => r.id === reservation.id) ? rs : [...rs, reservation]
+    );
+    if (room) setRooms(rs => rs.map(r => r.id === room.id ? {...r, ...room} : r));
+  });
+
+  ws.on("reservation.updated", ({ reservation }) => {
+    setReservations(rs => rs.map(r => r.id === reservation.id ? reservation : r));
+  });
+
+  // ... qolgan event'lar
+  return () => ws.close();
+}, []);
+```
+
+**UI komponentlariga tegilmaydi** — faqat state yangilanadi, qolgani
+React'ning o'zi qayta render qiladi.
+
+---
+
+## 4. Autentifikatsiya (TZ 18-band)
+
+```
+WebSocket ulanishi mavjud JWT tokeni bilan tasdiqlanadi
+  → alohida login mexanizmi qo'shilmaydi
+  → token yaroqsiz bo'lsa ulanish rad etiladi
+  → token muddati tugasa ulanish uziladi, frontend qayta ulanadi
+```
+
+RBAC shu yerda ham amal qiladi: `STAFF` roli `sync.failed` kabi
+texnik event'larni olmaydi (`10`-fayl §1).
+
+---
+
+## 5. Ulanish uzilishi
+
+```
+Ulanish uzildi
+   ↓
+Frontend exponential backoff bilan qayta ulanadi (1s, 2s, 4s... max 30s)
+   ↓
+Ulangach: REST orqali TO'LIQ holat qayta so'raladi
+   GET /api/reservations?from=...&to=...
+   GET /api/rooms
+   ↓
+State to'liq almashtiriladi
+```
+
+**Muhim printsip:** WebSocket — faqat "delta" yetkazish vositasi,
+**haqiqat manbai emas**. Uzilish paytida o'tkazib yuborilgan
+event'lar REST orqali qoplanadi. Bu ma'lumot yo'qolishining oldini
+oladi va standart amaliyot.
+
+---
+
+## 6. TZ 4-band talabining bajarilishi
+
+TZ: *"Shaxmatkada bron avtomatik paydo bo'ladi. Admin sahifani
+refresh qilmasdan ham yangi bronni ko'rishi uchun WebSocket/real-time
+update ishlatilsin."*
+
+To'liq zanjir:
+
+```
+Booking.com'da mehmon bron qildi
+   ↓  (Beds24 qabul qiladi)
+Webhook → POST /api/webhooks/beds24        (04-fayl)
+   ↓
+Queue → worker → xona avtomatik biriktiriladi   (06-fayl §5)
+   ↓
+Reservation DB'ga yozildi
+   ↓
+WebSocket: reservation.created
+   ↓
+Shaxmatkada bron PAYDO BO'LADI — refresh yo'q
+```
+
+Kechikish odatda **1–3 soniya** (Beds24 webhook tezligiga bog'liq).
+
+**FAZA 8 tekshiruvi:** Shaxmatka ochiq turgan brauzerda, Beds24'da
+test bron yaratiladi va sahifa yangilanmasdan bron paydo bo'lishi
+ko'z bilan tasdiqlanadi.
+
+---
+
+## 7. Nima bu bosqichga kirmaydi
+
+- **Push-notification** (mobil/brauzer bildirishnoma) — TZ'da yo'q
+- **Customer Website uchun real-time** — TZ 15-bandi faqat
+  Shaxmatka/Admin uchun talab qiladi; Website'da holat REST orqali
+  ko'rsatiladi (`13`-fayl §9)
+- **Offline rejim** — TZ'da yo'q

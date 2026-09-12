@@ -1,0 +1,7 @@
+# Zaxira nusxalar — git tarixining o'zi zaxira vazifasini bajaradi
+_backup/
+
+# Vaqtinchalik fayllar
+*.tmp
+*.bak
+.DS_Store
