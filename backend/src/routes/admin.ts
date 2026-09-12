@@ -15,12 +15,13 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { asyncHandler, ValidationError } from "../lib/errors.js";
+import { asyncHandler, ValidationError, NotFoundError } from "../lib/errors.js";
 import { toNumber, toDateKey } from "../lib/serialize.js";
 import * as mapping from "../services/mapping.js";
 import { beds24Adapter } from "../services/beds24/adapter.js";
 import { getConnectionStatus } from "../services/beds24/auth.js";
 import { getCreditState } from "../services/beds24/client.js";
+import * as webhookSvc from "../services/webhook.js";
 
 export const adminRouter = Router();
 
@@ -171,6 +172,18 @@ adminRouter.get("/webhook-events", asyncHandler(async (req, res) => {
     processedAt: e.processedAt?.toISOString() ?? null,
     createdAt: e.createdAt.toISOString(),
   })));
+}));
+
+/** POST /api/admin/webhook-events/:id/reprocess — qo'lda qayta ishlash (04-fayl §7) */
+adminRouter.post("/webhook-events/:id/reprocess", asyncHandler(async (req, res) => {
+  const result = await webhookSvc.reprocessWebhook(req.params.id);
+  if (!result) throw new NotFoundError("Webhook event");
+  res.json({ ok: true, status: result.status.toLowerCase() });
+}));
+
+/** GET /api/admin/webhook-events/stats */
+adminRouter.get("/webhook-events/stats", asyncHandler(async (_req, res) => {
+  res.json(await webhookSvc.getWebhookStats());
 }));
 
 // ============================================================

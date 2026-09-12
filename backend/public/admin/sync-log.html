@@ -50,9 +50,9 @@
     </div>
     <table>
       <thead><tr>
-        <th>Vaqt</th><th>Event</th><th>Beds24 ID</th><th>Holat</th><th>Xato</th>
+        <th>Vaqt</th><th>Event</th><th>Beds24 ID</th><th>Holat</th><th>Xato</th><th></th>
       </tr></thead>
-      <tbody id="hooks"><tr><td colspan="5" class="empty">Yuklanmoqda...</td></tr></tbody>
+      <tbody id="hooks"><tr><td colspan="6" class="empty">Yuklanmoqda...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -108,21 +108,38 @@ async function loadWebhooks() {
     var events = await r.json();
 
     if (!events.length) {
-      tb.innerHTML = '<tr><td colspan="5" class="empty">Hali webhook kelmagan</td></tr>';
+      tb.innerHTML = '<tr><td colspan="6" class="empty">Hali webhook kelmagan</td></tr>';
       return;
     }
 
     tb.innerHTML = events.map(function (e) {
+      // Faqat xato holatdagilarni qayta ishlash mumkin (04-fayl §7)
+      var canRetry = e.status === "failed" || e.status === "needs_manual_action";
+      var btn = canRetry
+        ? '<button onclick="reprocess(&quot;' + e.id + '&quot;)">Qayta ishlash</button>'
+        : "";
       return "<tr>" +
         '<td class="mono">' + time(e.createdAt) + "</td>" +
         "<td><code>" + e.eventType + "</code></td>" +
         '<td class="mono">' + (e.externalId || "—") + "</td>" +
         "<td>" + badge(e.status) + "</td>" +
         '<td style="color:var(--err);font-size:12px">' + (e.errorMessage || "") + "</td>" +
+        '<td style="text-align:right">' + btn + "</td>" +
         "</tr>";
     }).join("");
   } catch (e) {
-    tb.innerHTML = '<tr><td colspan="5" class="empty">Xato: ' + e.message + "</td></tr>";
+    tb.innerHTML = '<tr><td colspan="6" class="empty">Xato: ' + e.message + "</td></tr>";
+  }
+}
+
+async function reprocess(id) {
+  try {
+    var r = await fetch("/api/admin/webhook-events/" + id + "/reprocess", { method: "POST" });
+    var b = await r.json();
+    if (!r.ok) throw new Error(b.error || "Xato");
+    await loadWebhooks();
+  } catch (e) {
+    alert("Qayta ishlanmadi: " + e.message);
   }
 }
 

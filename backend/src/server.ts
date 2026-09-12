@@ -15,10 +15,19 @@ import { roomsRouter } from "./routes/rooms.js";
 import { reservationsRouter } from "./routes/reservations.js";
 import { ratesRouter } from "./routes/rates.js";
 import { adminRouter } from "./routes/admin.js";
+import { webhooksRouter } from "./routes/webhooks.js";
 
 const app = express();
 
-app.use(express.json({ limit: "1mb" }));
+// raw body saqlanadi — webhook signature (HMAC) tekshiruvi uchun
+// (04-fayl §9). JSON.stringify(req.body) ishlatib bo'lmaydi:
+// kalitlar tartibi va bo'sh joylar o'zgarib, hash mos kelmaydi.
+app.use(express.json({
+  limit: "2mb",
+  verify: (req, _res, buf) => {
+    (req as express.Request & { rawBody?: string }).rawBody = buf.toString("utf8");
+  },
+}));
 
 // CORS — dev uchun ochiq; production'da Nginx orqali (TZ 18-band)
 app.use((req, res, next) => {
@@ -44,7 +53,7 @@ app.get("/health", async (_req, res) => {
     res.json({
       status: "ok",
       database: "connected",
-      phase: "5",
+      phase: "6",
       timestamp: new Date().toISOString(),
     });
   } catch {
@@ -57,6 +66,7 @@ app.use("/api/rooms", roomsRouter);
 app.use("/api/reservations", reservationsRouter);
 app.use("/api/rate-plans", ratesRouter);
 app.use("/api/admin", adminRouter);
+app.use("/api/webhooks", webhooksRouter);
 
 // --- Admin sahifalari (backend ichida) ----------------------
 // ISH CHEGARASI: mavjud Admin Panel kodiga kirish yo'q, shuning
