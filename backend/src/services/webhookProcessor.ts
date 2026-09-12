@@ -20,10 +20,11 @@ import { prisma } from "../lib/prisma.js";
 import { fromDateKey } from "../lib/serialize.js";
 import { beds24Adapter } from "./beds24/adapter.js";
 import { findByExternal } from "./mapping.js";
-import { recalcAvailability, recalcRoomStatus } from "./reservations.js";
+import { recalcRoomStatus } from "./reservations.js";
+import { onAvailabilityChanged } from "./availability.js";
 import type { ExternalReservation } from "./channel/types.js";
 import {
-  notifyReservation, notifyPayment, notifyAvailability, notifyWebhookNeedsAttention,
+  notifyReservation, notifyPayment, notifyWebhookNeedsAttention,
 } from "../realtime/notify.js";
 
 export type ProcessResult = {
@@ -320,10 +321,14 @@ async function applyReservation(
     if (roomId !== existing.roomId) await recalcRoomStatus(roomId);
 
     const room = await prisma.room.findUniqueOrThrow({ where: { id: roomId } });
-    await recalcAvailability(
+
+    // Eski ∪ yangi oraliq, ikkala tur (12-fayl §4, §5). Bekor
+    // qilinish ham shu yo'ldan o'tadi — kunlar bo'shaydi.
+    await onAvailabilityChanged(
       [...new Set([existing.room.roomTypeId, room.roomTypeId])],
       fromDateKey(ext.checkIn) < existing.checkIn ? fromDateKey(ext.checkIn) : existing.checkIn,
-      fromDateKey(ext.checkOut) > existing.checkOut ? fromDateKey(ext.checkOut) : existing.checkOut
+      fromDateKey(ext.checkOut) > existing.checkOut ? fromDateKey(ext.checkOut) : existing.checkOut,
+      "ota_reservation_updated"
     );
 
     // TZ 4, 15-band: Shaxmatka sahifani yangilamasdan ko'radi.
@@ -403,20 +408,27 @@ async function applyReservation(
 
   await syncPayments(created.id, channel.id, ext);
   await recalcRoomStatus(assigned.roomId);
-  await recalcAvailability(
+
+  // Hisoblash + event + Beds24 navbati (FAZA 9).
+  //
+  // NEGA BEDS24'GA QAYTA YUBORAMIZ: bron Booking.com'dan keldi,
+  // lekin qolgan kanallar (Airbnb, Expedia, o'z sayt) hali eski
+  // sonni ko'radi. Beds24 o'zining numAvail'ini yangilaydi va
+  // boshqa kanallarga tarqatadi (TZ 6, 20-band).
+  //
+  // Eko-sikl xavfi yo'q: `syncedCount` solishtiruvi o'zgarmagan
+  // kunni yubormaydi, ya'ni yuborish -> webhook -> yuborish
+  // zanjiri ikkinchi qadamda to'xtaydi (07-fayl §4).
+  await onAvailabilityChanged(
     [assigned.roomTypeId],
     fromDateKey(ext.checkIn),
-    fromDateKey(ext.checkOut)
+    fromDateKey(ext.checkOut),
+    "ota_reservation_created"
   );
 
   // TZ 4-band: OTA'dan kelgan bron Shaxmatkada DARHOL ko'rinadi
   await notifyReservation("reservation.created", created.id);
   if ((ext.payments ?? []).length > 0) await notifyPayment(created.id);
-  notifyAvailability(
-    [assigned.roomTypeId],
-    fromDateKey(ext.checkIn),
-    fromDateKey(ext.checkOut)
-  );
 
   return {
     status: "processed",

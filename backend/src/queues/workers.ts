@@ -24,6 +24,8 @@ import {
   type RateSyncJob,
 } from "./index.js";
 import { processWebhookEvent } from "../services/webhookProcessor.js";
+import { syncAvailabilityRange } from "../services/availability.js";
+import { notifySyncFailed } from "../realtime/notify.js";
 import { RateLimitError, isRetryable, getRetryDelay } from "../services/beds24/client.js";
 
 const connection = redisConnection as never;
@@ -95,12 +97,41 @@ export const reservationSyncWorker = new Worker<ReservationSyncJob>(
 export const availabilitySyncWorker = new Worker<AvailabilitySyncJob>(
   QUEUE.availabilitySync,
   async (job, token) => {
+    const { roomTypeIds, from, to, reason } = job.data;
+
     try {
-      console.log(
-        `[worker] availability-sync: ${job.data.roomTypeIds.join(",")} ` +
-        `${job.data.from}..${job.data.to} (${job.data.reason}) — FAZA 9`
-      );
-      return { ok: true, deferred: "FAZA 9" };
+      if (config.isDev) {
+        console.log(
+          `[worker] availability-sync: ${roomTypeIds.join(",")} ${from}..${to} (${reason})`
+        );
+      }
+
+      // Job navbatda kutgan vaqtda yana bron kelishi mumkin —
+      // yuborishdan oldin qayta hisoblaymiz (07-fayl §4).
+      const result = await syncAvailabilityRange(roomTypeIds, from, to, { recalc: true });
+
+      // Mapping yo'q kabi xatolar qayta urinishda ham tuzalmaydi:
+      // admin aralashuvi kerak (06-fayl §3). Shuning uchun job'ni
+      // failed qilamiz va adminni ogohlantiramiz.
+      if (result.failed > 0) {
+        const errors = result.outcomes
+          .filter((o) => o.status === "failed")
+          .map((o) => (o.status === "failed" ? `${o.roomTypeId}: ${o.error}` : ""))
+          .join("; ");
+
+        notifySyncFailed("push_availability", errors);
+        throw new Error(errors);
+      }
+
+      if (config.isDev && result.sent > 0) {
+        const sentDetail = result.outcomes
+          .filter((o) => o.status === "sent")
+          .map((o) => (o.status === "sent" ? `${o.roomTypeId}(${o.days}k)` : ""))
+          .join(" ");
+        console.log(`[worker] availability yuborildi: ${sentDetail}`);
+      }
+
+      return { ok: true, sent: result.sent, skipped: result.skipped };
     } catch (e) {
       if (e instanceof RateLimitError) return delayForRateLimit(job, e, token);
       if (!isRetryable(e)) throw new UnrecoverableError(String(e).slice(0, 200));

@@ -179,6 +179,51 @@ cheklovi sababli):
 
 ---
 
+## 4.1. Amalga oshirilgan holat (FAZA 9 — bajarildi)
+
+Kod joylashuvi:
+
+| Fayl | Vazifasi |
+|------|----------|
+| `backend/src/services/availability.ts` | Hisoblash, o'qish, yuborish, navbat |
+| `backend/src/lib/syncLog.ts` | SyncLog yozish (ikki yo'nalish uchun) |
+| `backend/src/queues/workers.ts` | `availabilitySyncWorker` |
+| `backend/src/availability.test.ts` | 22 test |
+
+`onAvailabilityChanged()` — bron amallari chaqiradigan yagona kirish
+nuqtasi. Tartibi: `recalcAvailability` → `notifyAvailability` (WebSocket)
+→ `enqueueAvailabilitySync` (Beds24 navbati). Uchinchisi sekin, shuning
+uchun oxirida va navbat orqali.
+
+Ulangan trigger'lar (§3 jadvalidagi hammasi):
+`reservation_created`, `room_changed`, `dates_changed`, `checked_out`,
+`reservation_cancelled`, `no_show`, `ota_reservation_created`,
+`ota_reservation_updated`.
+
+**Debounce `jobId` tuzilishi.** `avail_<turlar>_<from>_<to>_<oyna>`,
+bunda `<oyna> = floor(Date.now() / 3000)`. Ikki nozik jihat:
+
+- BullMQ `jobId`da `:` belgisini qabul qilmaydi (Redis kalitlarida
+  ajratgich) — shuning uchun `_`.
+- Oyna raqami **shart**. BullMQ tugagan job'ni 24 soat saqlaydi
+  (`removeOnComplete.age`) va o'sha `jobId`li yangi job'ni jim rad
+  etadi. Oyna raqamisiz bir marta yuborilgan oraliq bir sutka
+  davomida qayta yuborilmas edi: bron bekor qilinsa Beds24 eski
+  sonni ko'rib qolardi. Bu TZ 6-bandning buzilishi bo'lardi va
+  regressiya testi bilan qo'riqlanadi.
+
+**OTA bronidan keyin qayta yuborish.** Booking.com'dan bron kelganda
+ham Beds24'ga yuboriladi — qolgan kanallar (Airbnb, Expedia, o'z sayt)
+hali eski sonni ko'radi (TZ 20-band). Cheksiz sikl xavfi yo'q:
+`syncedCount` solishtiruvi o'zgarmagan kunni yubormaydi, ya'ni
+zanjir ikkinchi qadamda to'xtaydi.
+
+**Mapping yo'q bo'lsa** job `failed` bo'ladi va admin `sync.failed`
+event'ini oladi. Qayta urinish yordam bermaydi — admin
+`/admin/mapping` sahifasida bog'lashi kerak (06-fayl §3).
+
+---
+
 ## 5. Overbooking'ning oldini olish (TZ 3-band)
 
 TZ: **"OVERBOOKING BO'LMASLIGI SHART."**

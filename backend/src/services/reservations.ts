@@ -16,8 +16,9 @@ import { prisma } from "../lib/prisma.js";
 import { NotFoundError, RoomUnavailableError, ValidationError } from "../lib/errors.js";
 import { fromDateKey } from "../lib/serialize.js";
 import { serializableTx } from "../lib/tx.js";
+import { onAvailabilityChanged } from "./availability.js";
 import {
-  notifyReservation, notifyPayment, notifyAvailability, notifyRoomStatus,
+  notifyReservation, notifyPayment, notifyRoomStatus,
 } from "../realtime/notify.js";
 
 /** Bron o'qishda har doim shu bog'liqliklar kerak (serializeReservation uchun) */
@@ -151,77 +152,6 @@ export async function recalcRoomStatus(
   });
 }
 
-/**
- * Availability'ni qayta hisoblaydi (07-fayl §2 agregatsiya formulasi).
- *
- * TRANZAKSIYADAN TASHQARIDA chaqiriladi. Sabab: bu funksiya butun
- * room type bo'yicha o'qiydi, shuning uchun `Serializable` tranzaksiya
- * ichida bo'lsa — turli xonalarga parallel bron ham konflikt beradi
- * (ikkalasi bir xil `Availability` sahifalariga tegadi).
- *
- * Overbooking himoyasiga ta'sir qilmaydi: u `reservation_no_overlap`
- * constraint bilan ta'minlanadi, `Availability` esa hisobot/keshdir.
- * Vaqtincha eskirgan qiymat zarar keltirmaydi — keyingi chaqiruv
- * to'g'rilaydi.
- *
- * Bitta SQL so'rov bilan bajariladi — N+1 dan qochish uchun.
- */
-export async function recalcAvailability(
-  roomTypeIds: string[],
-  from: Date,
-  to: Date
-): Promise<void> {
-  if (roomTypeIds.length === 0) return;
-
-  // Bitta so'rov: har tur × har kun uchun band xonalar soni.
-  // generate_series sana oralig'ini yoyadi, LEFT JOIN bronlarni sanaydi.
-  await prisma.$executeRaw`
-    INSERT INTO "Availability" (
-      id, "roomTypeId", date, "totalRooms", "bookedRooms",
-      "blockedRooms", "availableCount", "updatedAt"
-    )
-    SELECT
-      gen_random_uuid()::text,
-      rt.id,
-      d.date::date,
-      rt.total,
-      COALESCE(b.cnt, 0),
-      COALESCE(bl.cnt, 0),
-      GREATEST(0, rt.total - COALESCE(b.cnt, 0) - COALESCE(bl.cnt, 0)),
-      NOW()
-    FROM (
-      SELECT t.id, COUNT(r.id)::int AS total
-      FROM "RoomType" t
-      LEFT JOIN "Room" r ON r."roomTypeId" = t.id AND r."isActive" = true
-      WHERE t.id = ANY(${roomTypeIds})
-      GROUP BY t.id
-    ) rt
-    CROSS JOIN generate_series(${from}::date, ${to}::date - 1, '1 day') AS d(date)
-    LEFT JOIN LATERAL (
-      SELECT COUNT(*)::int AS cnt
-      FROM "Reservation" res
-      JOIN "Room" rm ON rm.id = res."roomId"
-      WHERE rm."roomTypeId" = rt.id
-        AND res.status NOT IN ('CANCELLED', 'NO_SHOW')
-        AND res."checkIn" <= d.date
-        AND res."checkOut" > d.date
-    ) b ON true
-    LEFT JOIN LATERAL (
-      SELECT COUNT(*)::int AS cnt
-      FROM "RoomDayStatus" rds
-      JOIN "Room" rm ON rm.id = rds."roomId"
-      WHERE rm."roomTypeId" = rt.id
-        AND rds.date = d.date
-        AND rds."isBlocked" = true
-    ) bl ON true
-    ON CONFLICT ("roomTypeId", date) DO UPDATE SET
-      "totalRooms"     = EXCLUDED."totalRooms",
-      "bookedRooms"    = EXCLUDED."bookedRooms",
-      "blockedRooms"   = EXCLUDED."blockedRooms",
-      "availableCount" = EXCLUDED."availableCount",
-      "updatedAt"      = NOW()
-  `;
-}
 
 // ============================================================
 //  TZ 2-band — sakkiz amal
@@ -310,11 +240,11 @@ export async function createReservation(input: CreateInput) {
     return { reservation, roomTypeId: room.roomTypeId };
   }, "createReservation");
 
-  await recalcAvailability([result.roomTypeId], checkIn, checkOut);
+  // Hisoblash + event + Beds24 navbati (07-fayl §3, FAZA 9)
+  await onAvailabilityChanged([result.roomTypeId], checkIn, checkOut, "reservation_created");
 
   // TZ 15-band: boshqa ochiq Shaxmatka oynalari ham ko'radi
   await notifyReservation("reservation.created", result.reservation.id);
-  notifyAvailability([result.roomTypeId], checkIn, checkOut);
 
   return result.reservation;
 }
@@ -390,9 +320,9 @@ export async function changeRoom(id: string, newRoomId: string) {
     return { updated, types, from: res.checkIn, to: res.checkOut };
   }, "changeRoom");
 
-  await recalcAvailability(r.types, r.from, r.to);
+  // Xona almashdi — tur o'zgargan bo'lsa IKKALA tur (12-fayl §4)
+  await onAvailabilityChanged(r.types, r.from, r.to, "room_changed");
   await notifyReservation("reservation.updated", r.updated.id);
-  notifyAvailability(r.types, r.from, r.to);
   return r.updated;
 }
 
@@ -428,9 +358,9 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
     return { updated, roomTypeId: res.room.roomTypeId, from, to };
   }, "changeDates");
 
-  await recalcAvailability([r.roomTypeId], r.from, r.to);
+  // Sana o'zgardi — eski ∪ yangi oraliq (12-fayl §5)
+  await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "dates_changed");
   await notifyReservation("reservation.updated", r.updated.id);
-  notifyAvailability([r.roomTypeId], r.from, r.to);
   return r.updated;
 }
 
@@ -471,10 +401,10 @@ export async function checkOut(id: string) {
     return { updated, roomTypeId: res.room.roomTypeId, from: res.checkIn, to: res.checkOut };
   });
 
-  await recalcAvailability([r.roomTypeId], r.from, r.to);
+  // Erta check-out — qolgan kunlar bo'shaydi (07-fayl §3)
+  await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "checked_out");
   await notifyReservation("reservation.updated", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
-  notifyAvailability([r.roomTypeId], r.from, r.to);
   return r.updated;
 }
 
@@ -494,10 +424,11 @@ export async function cancelReservation(id: string) {
     return { updated, roomTypeId: res.room.roomTypeId, from: res.checkIn, to: res.checkOut };
   });
 
-  await recalcAvailability([r.roomTypeId], r.from, r.to);
+  // Bekor qilindi — kunlar bo'shaydi, Beds24'da availability oshadi
+  // (TZ 6-band)
+  await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "reservation_cancelled");
   await notifyReservation("reservation.cancelled", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
-  notifyAvailability([r.roomTypeId], r.from, r.to);
   return r.updated;
 }
 
@@ -517,10 +448,10 @@ export async function markNoShow(id: string) {
     return { updated, roomTypeId: res.room.roomTypeId, from: res.checkIn, to: res.checkOut };
   });
 
-  await recalcAvailability([r.roomTypeId], r.from, r.to);
+  // No-show — xona bo'shaydi (TZ 6-band)
+  await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "no_show");
   await notifyReservation("reservation.cancelled", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
-  notifyAvailability([r.roomTypeId], r.from, r.to);
   return r.updated;
 }
 
