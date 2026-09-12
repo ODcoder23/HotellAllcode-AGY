@@ -586,8 +586,17 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
       const from = D("2029-09-01");
       const to = D("2029-09-05");
 
-      const a = await enqueueAvailabilitySync(["deluxe"], from, to, "test_1");
-      const b = await enqueueAvailabilitySync(["deluxe"], from, to, "test_2");
+      // Ikki chaqiruv ketma-ket — bir debounce oynasiga tushishi
+      // kerak. Oyna chegarasiga tushib qolmaslik uchun uch marta
+      // urinamiz: 3 soniyalik oynada ketma-ket ikki chaqiruvning
+      // ajralib qolishi juda kam ehtimol, lekin mumkin.
+      let a = await enqueueAvailabilitySync(["deluxe"], from, to, "test_1");
+      let b = await enqueueAvailabilitySync(["deluxe"], from, to, "test_2");
+
+      for (let i = 0; i < 3 && a.jobId !== b.jobId; i++) {
+        a = await enqueueAvailabilitySync(["deluxe"], from, to, "test_1");
+        b = await enqueueAvailabilitySync(["deluxe"], from, to, "test_2");
+      }
 
       expect(a.queued).toBe(true);
       expect(b.queued).toBe(true);

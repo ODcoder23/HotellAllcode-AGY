@@ -9,6 +9,7 @@
  */
 
 import { PrismaClient, Prisma } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -108,16 +109,22 @@ async function main() {
   console.log("  Settings: 3 ta");
 
   // --- User (TZ 18-band: RBAC) ------------------------------
-  // Parol hash'i FAZA 2A da qo'shiladi — hozircha placeholder
-  await prisma.user.create({
-    data: {
-      email: "admin@imron.local",
-      passwordHash: "PLACEHOLDER_FAZA_2A",
-      fullName: "Administrator",
-      role: "ADMIN",
-    },
+  //
+  // Uchala rol ham yaratiladi: RBAC testlari uchun kerak va
+  // dasturchi topshirishda har rolni sinab ko'ra oladi.
+  //
+  // DEV PAROLLARI. Topshirishda birinchi qadam — ularni
+  // o'zgartirish (FAZA 15 ro'yxatida).
+  const devPassword = await bcrypt.hash("admin12345", 10);
+
+  await prisma.user.createMany({
+    data: [
+      { email: "admin@imron.local",   passwordHash: devPassword, fullName: "Administrator", role: "ADMIN" },
+      { email: "manager@imron.local", passwordHash: devPassword, fullName: "Menejer",       role: "MANAGER" },
+      { email: "staff@imron.local",   passwordHash: devPassword, fullName: "Qabulxona",     role: "STAFF" },
+    ],
   });
-  console.log("  User: 1 ta (admin)");
+  console.log("  User: 3 ta (admin/manager/staff, parol: admin12345)");
 
   // --- RatePlan (30 kunga, TZ 7-band) -----------------------
   const basePrices: Record<string, number> = {

@@ -6,6 +6,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
+import { requireAuth, requirePermission } from "../lib/authMiddleware.js";
 import { asyncHandler, NotFoundError, ValidationError } from "../lib/errors.js";
 import { serializeRoom, serializeRoomType, fromDateKey } from "../lib/serialize.js";
 import { isRoomFree } from "../services/reservations.js";
@@ -13,20 +14,20 @@ import { isRoomFree } from "../services/reservations.js";
 export const roomsRouter = Router();
 
 // --- GET /api/rooms -----------------------------------------
-roomsRouter.get("/", asyncHandler(async (_req, res) => {
+roomsRouter.get("/", requireAuth, requirePermission("reservation.read"), asyncHandler(async (_req, res) => {
   const rooms = await prisma.room.findMany({ orderBy: { sortOrder: "asc" } });
   res.json(rooms.map(serializeRoom));
 }));
 
 // --- GET /api/rooms/types -----------------------------------
-roomsRouter.get("/types", asyncHandler(async (_req, res) => {
+roomsRouter.get("/types", requireAuth, requirePermission("reservation.read"), asyncHandler(async (_req, res) => {
   const types = await prisma.roomType.findMany({ orderBy: { sortOrder: "asc" } });
   res.json(types.map(serializeRoomType));
 }));
 
 // --- GET /api/rooms/available?from=&to= ---------------------
 // Shaxmatkadagi availableRoomsFor() ga mos
-roomsRouter.get("/available", asyncHandler(async (req, res) => {
+roomsRouter.get("/available", requireAuth, requirePermission("reservation.read"), asyncHandler(async (req, res) => {
   const { from, to, exclude } = req.query;
   if (!from || !to) throw new ValidationError("from va to parametrlari kerak");
 
@@ -49,7 +50,7 @@ const statusSchema = z.object({
   status: z.enum(["available", "reserved", "occupied", "dirty", "out_of_order", "out_of_service"]),
 });
 
-roomsRouter.patch("/:id", asyncHandler(async (req, res) => {
+roomsRouter.patch("/:id", requireAuth, requirePermission("checkin.write"), asyncHandler(async (req, res) => {
   const { status } = statusSchema.parse(req.body);
   const room = await prisma.room.findUnique({ where: { id: req.params.id } });
   if (!room) throw new NotFoundError(`Xona ${req.params.id}`);

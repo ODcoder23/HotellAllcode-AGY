@@ -15,6 +15,8 @@
 
 import { Router } from "express";
 import { z } from "zod";
+import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
+import { audit } from "../services/auditLog.js";
 import { asyncHandler, ValidationError } from "../lib/errors.js";
 import { serializeReservation } from "../lib/serialize.js";
 import * as svc from "../services/reservations.js";
@@ -32,14 +34,14 @@ const parse = <T>(schema: z.ZodType<T>, data: unknown): T => {
 };
 
 // --- GET /api/reservations ----------------------------------
-reservationsRouter.get("/", asyncHandler(async (req, res) => {
+reservationsRouter.get("/", requireAuth, requirePermission("reservation.read"), asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   const list = await svc.listReservations(from, to);
   res.json(list.map(serializeReservation));
 }));
 
 // --- GET /api/reservations/:id ------------------------------
-reservationsRouter.get("/:id", asyncHandler(async (req, res) => {
+reservationsRouter.get("/:id", requireAuth, requirePermission("reservation.read"), asyncHandler(async (req, res) => {
   const r = await svc.getReservation(req.params.id);
   res.json(serializeReservation(r));
 }));
@@ -63,7 +65,7 @@ const createSchema = z.object({
   paymentMethod: z.string().optional(),
 });
 
-reservationsRouter.post("/", asyncHandler(async (req, res) => {
+reservationsRouter.post("/", requireAuth, requirePermission("reservation.write"), asyncHandler(async (req, res) => {
   const input = parse(createSchema, req.body);
   const r = await svc.createReservation(input);
   res.status(201).json(serializeReservation(r));
@@ -80,36 +82,60 @@ const patchSchema = z.object({
   withMeal: z.boolean().optional(),
 });
 
-reservationsRouter.patch("/:id", asyncHandler(async (req, res) => {
+reservationsRouter.patch("/:id", requireAuth, requirePermission("reservation.write"), asyncHandler(async (req, res) => {
   const patch = parse(patchSchema, req.body);
   const r = await svc.updateReservation(req.params.id, patch);
   res.json(serializeReservation(r));
 }));
 
 // --- Status amallari ----------------------------------------
-reservationsRouter.post("/:id/check-in", asyncHandler(async (req, res) => {
+reservationsRouter.post("/:id/check-in", requireAuth, requirePermission("checkin.write"), asyncHandler(async (req, res) => {
   res.json(serializeReservation(await svc.checkIn(req.params.id)));
 }));
 
-reservationsRouter.post("/:id/check-out", asyncHandler(async (req, res) => {
+reservationsRouter.post("/:id/check-out", requireAuth, requirePermission("checkin.write"), asyncHandler(async (req, res) => {
   res.json(serializeReservation(await svc.checkOut(req.params.id)));
 }));
 
-reservationsRouter.post("/:id/cancel", asyncHandler(async (req, res) => {
-  res.json(serializeReservation(await svc.cancelReservation(req.params.id)));
+reservationsRouter.post("/:id/cancel", requireAuth, requirePermission("reservation.cancel"), asyncHandler(async (req: AuthedRequest, res) => {
+  const result = await svc.cancelReservation(req.params.id);
+
+  // 10-fayl §4: kim bekor qildi — pul bilan bog'liq amal
+  await audit({
+    userId: req.user?.id,
+    action: "reservation.cancelled",
+    entityType: "Reservation",
+    entityId: req.params.id,
+    after: { guestName: result.guest?.fullName, checkIn: result.checkIn },
+    ipAddress: req.ip,
+  });
+
+  res.json(serializeReservation(result));
 }));
 
-reservationsRouter.post("/:id/no-show", asyncHandler(async (req, res) => {
-  res.json(serializeReservation(await svc.markNoShow(req.params.id)));
+reservationsRouter.post("/:id/no-show", requireAuth, requirePermission("reservation.cancel"), asyncHandler(async (req: AuthedRequest, res) => {
+  const result = await svc.markNoShow(req.params.id);
+
+  // 10-fayl §4: kim "kelmadi" deb belgiladi
+  await audit({
+    userId: req.user?.id,
+    action: "reservation.no_show",
+    entityType: "Reservation",
+    entityId: req.params.id,
+    after: { guestName: result.guest?.fullName, checkIn: result.checkIn },
+    ipAddress: req.ip,
+  });
+
+  res.json(serializeReservation(result));
 }));
 
 // --- Xona / sana o'zgartirish -------------------------------
-reservationsRouter.post("/:id/change-room", asyncHandler(async (req, res) => {
+reservationsRouter.post("/:id/change-room", requireAuth, requirePermission("reservation.write"), asyncHandler(async (req, res) => {
   const { roomId } = parse(z.object({ roomId: z.string().min(1) }), req.body);
   res.json(serializeReservation(await svc.changeRoom(req.params.id, roomId)));
 }));
 
-reservationsRouter.post("/:id/change-dates", asyncHandler(async (req, res) => {
+reservationsRouter.post("/:id/change-dates", requireAuth, requirePermission("reservation.write"), asyncHandler(async (req, res) => {
   const { checkIn, checkOut } = parse(
     z.object({ checkIn: dateKey, checkOut: dateKey }),
     req.body
@@ -118,7 +144,7 @@ reservationsRouter.post("/:id/change-dates", asyncHandler(async (req, res) => {
 }));
 
 // --- To'lov va xarajat --------------------------------------
-reservationsRouter.post("/:id/payments", asyncHandler(async (req, res) => {
+reservationsRouter.post("/:id/payments", requireAuth, requirePermission("payment.write"), asyncHandler(async (req, res) => {
   const { amount, method, note } = parse(
     z.object({
       amount: z.number(),
@@ -130,11 +156,11 @@ reservationsRouter.post("/:id/payments", asyncHandler(async (req, res) => {
   res.status(201).json(serializeReservation(await svc.addPayment(req.params.id, amount, method, note)));
 }));
 
-reservationsRouter.post("/:id/payments/:pid/reverse", asyncHandler(async (req, res) => {
+reservationsRouter.post("/:id/payments/:pid/reverse", requireAuth, requirePermission("payment.write"), asyncHandler(async (req, res) => {
   res.json(serializeReservation(await svc.reversePayment(req.params.id, req.params.pid)));
 }));
 
-reservationsRouter.post("/:id/charges", asyncHandler(async (req, res) => {
+reservationsRouter.post("/:id/charges", requireAuth, requirePermission("payment.write"), asyncHandler(async (req, res) => {
   const { label, amount } = parse(
     z.object({ label: z.string().min(1), amount: z.number() }),
     req.body

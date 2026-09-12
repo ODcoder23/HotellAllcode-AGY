@@ -88,3 +88,62 @@ try {
  * kutilmagan holatni ko'radi. Qisqa pauza buni yo'qotadi.
  */
 await new Promise((r) => setTimeout(r, 600));
+
+
+/**
+ * Testlar uchun avtomatik ADMIN token (TZ 18-band, FAZA 12).
+ *
+ * MUAMMO: `AUTH_REQUIRED=true` bo'lganda barcha `/api/*` so'rovlar
+ * token talab qiladi. Mavjud test fayllari (FAZA 2A dan beri)
+ * to'g'ridan-to'g'ri `fetch` chaqiradi va token yubormaydi —
+ * hammasi 401 oladi.
+ *
+ * YECHIM: global `fetch` ni bir marta o'raymiz. Agar so'rov shu
+ * serverga ketayotgan bo'lsa va `Authorization` sarlavhasi
+ * qo'yilmagan bo'lsa, ADMIN token qo'shiladi.
+ *
+ * NEGA HAR TESTNI TAHRIRLAMAYMIZ: auth ilova darajasidagi kesib
+ * o'tuvchi masala, uni har testga qo'lda ulash 200+ joyda
+ * takrorlash demakdir va bittasi esdan chiqsa test sababsiz
+ * yiqiladi. Auth mantig'ining o'zi `security.test.ts` da aniq
+ * tekshiriladi — u yerda token ataylab yuborilmaydi.
+ */
+const PMS_ORIGIN = "http://localhost:3000";
+
+const healthRes = await fetch(`${PMS_ORIGIN}/health`).catch(() => null);
+const health = healthRes?.ok ? ((await healthRes.json()) as { security?: { auth?: boolean } }) : null;
+
+if (health?.security?.auth === true) {
+  const loginRes = await fetch(`${PMS_ORIGIN}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "admin@imron.local", password: "admin12345" }),
+  }).catch(() => null);
+
+  const token = loginRes?.ok
+    ? ((await loginRes.json()) as { token?: string }).token
+    : undefined;
+
+  if (token) {
+    const original = globalThis.fetch;
+
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+
+      // Faqat PMS'ga ketayotgan so'rovlar. Mock server (:4000) o'z
+      // autentifikatsiyasini ishlatadi, unga tegmaymiz.
+      if (url.startsWith(PMS_ORIGIN)) {
+        const headers = new Headers(init?.headers ?? (typeof input === "object" && "headers" in input ? input.headers : undefined));
+        if (!headers.has("Authorization")) {
+          headers.set("Authorization", `Bearer ${token}`);
+          return original(input, { ...init, headers });
+        }
+      }
+      return original(input, init);
+    }) as typeof fetch;
+
+    console.log("[test] AUTH_REQUIRED=true — so'rovlarga ADMIN token qo'shiladi");
+  } else {
+    console.warn("[test] auth yoqilgan, lekin login bo'lmadi — testlar 401 olishi mumkin");
+  }
+}

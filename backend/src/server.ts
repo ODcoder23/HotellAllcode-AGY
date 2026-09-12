@@ -18,6 +18,9 @@ import { adminRouter } from "./routes/admin.js";
 import { webhooksRouter } from "./routes/webhooks.js";
 import { isRedisHealthy, getQueueCounts, shutdownQueues } from "./queues/index.js";
 import { startRealtimeServer, stopRealtimeServer, getRealtimeStats } from "./realtime/server.js";
+import { authRouter } from "./routes/auth.js";
+import { parseAuth, authRequired } from "./lib/authMiddleware.js";
+import { internalLimiter, webhookLimiter } from "./lib/rateLimit.js";
 import "./queues/workers.js";     // worker'lar ishga tushadi
 
 const app = express();
@@ -40,6 +43,14 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") { res.sendStatus(204); return; }
   next();
 });
+
+// Nginx orqasida haqiqiy IP — rate limit va AuditLog uchun
+// (10-fayl §7: cheklov IP bo'yicha)
+app.set("trust proxy", 1);
+
+// Token bor bo'lsa o'qiladi. Majburiylikni har route o'zi
+// `requireAuth` bilan belgilaydi (10-fayl §1, 3-talab).
+app.use(parseAuth);
 
 // So'rovlarni log qilish (dev)
 if (config.isDev) {
@@ -64,7 +75,12 @@ app.get("/health", async (_req, res) => {
     database: dbOk ? "connected" : "disconnected",
     redis: redisOk ? "connected" : "disconnected",
     realtime: getRealtimeStats(),
-    phase: "8",
+    // TZ 18-band: production'da `auth` true bo'lishi SHART
+    security: {
+      auth: authRequired(),
+      rateLimit: !config.rateLimitDisabled,
+    },
+    phase: "12",
     timestamp: new Date().toISOString(),
   });
 });
@@ -79,11 +95,12 @@ app.get("/api/admin/queues", async (_req, res) => {
 });
 
 // --- API ----------------------------------------------------
-app.use("/api/rooms", roomsRouter);
-app.use("/api/reservations", reservationsRouter);
-app.use("/api/rate-plans", ratesRouter);
-app.use("/api/admin", adminRouter);
-app.use("/api/webhooks", webhooksRouter);
+app.use("/api/auth", authRouter);
+app.use("/api/rooms", internalLimiter, roomsRouter);
+app.use("/api/reservations", internalLimiter, reservationsRouter);
+app.use("/api/rate-plans", internalLimiter, ratesRouter);
+app.use("/api/admin", internalLimiter, adminRouter);
+app.use("/api/webhooks", webhookLimiter, webhooksRouter);
 
 // --- Admin sahifalari (backend ichida) ----------------------
 // ISH CHEGARASI: mavjud Admin Panel kodiga kirish yo'q, shuning

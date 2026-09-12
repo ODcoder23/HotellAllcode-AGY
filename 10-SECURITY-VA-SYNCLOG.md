@@ -257,21 +257,87 @@ Beds24 ishlamay qolganda ham xavfsizlik talablari
 
 ---
 
+## 8.1. Amalga oshirilgan holat (FAZA 12 — bajarildi)
+
+Kod joylashuvi:
+
+| Fayl | Vazifasi |
+|------|----------|
+| `backend/src/services/auth.ts` | PERMISSIONS jadvali, JWT, bcrypt, login |
+| `backend/src/lib/authMiddleware.ts` | requireAuth, requirePermission |
+| `backend/src/services/auditLog.ts` | audit(), listAudit() |
+| `backend/src/lib/rateLimit.ts` | besh xil cheklov (§7 jadvali) |
+| `backend/src/routes/auth.ts` | login, me, users CRUD |
+| `backend/src/security.test.ts` | 47 test — §9 cheklisti avtomatlashtirilgan |
+
+**Ikki bayroq bilan boshqariladi** (`.env`):
+
+- `AUTH_REQUIRED` — dev'da `false`, production'da **majburiy `true`**.
+  Sabab: Shaxmatka hozircha login ekranisiz ishlaydi va FAZA 3 dan
+  beri to'g'ridan-to'g'ri API'ga murojaat qiladi. Login ekrani
+  qo'shilgach `true` qilinadi (FAZA 15 ro'yxatida).
+- `RATE_LIMIT_DISABLED` — testlarda `true`. Testlar o'nlab so'rov
+  yuboradi va cheklovga urilib qolishi mumkin; cheklovning o'zi
+  alohida test bilan sinaladi.
+
+`GET /health` ikkalasini ham ko'rsatadi (`security.auth`,
+`security.rateLimit`) — topshirishda tekshirish shu yerdan.
+
+**Rollarning haqiqiy xatti-harakati tekshirildi** (HTTP orqali,
+`AUTH_REQUIRED=true` bilan):
+
+| So'rov | Natija |
+|---|---|
+| Tokensiz `GET /api/rooms` | 401 UNAUTHORIZED |
+| STAFF `GET /api/rooms` | 200 |
+| STAFF `PUT /api/rate-plans` | 403 FORBIDDEN |
+| MANAGER `PUT /api/rate-plans` | 200 |
+| MANAGER `PUT /api/admin/settings` | 403 FORBIDDEN |
+| Login 6-urinish (noto'g'ri parol) | 429 RATE_LIMITED |
+
+**Testlar ikkala rejimda ham ishlaydi.** `vitest.setup.ts` global
+`fetch` ni o'raydi: `AUTH_REQUIRED=true` bo'lsa PMS so'rovlariga
+ADMIN token avtomatik qo'shiladi. Sabab: auth ilova darajasidagi
+kesib o'tuvchi masala, uni 200+ test chaqiruviga qo'lda ulash
+takrorlash bo'lardi va bittasi esdan chiqsa test sababsiz
+yiqilardi. Auth mantig'ining o'zi `security.test.ts` da token
+ataylab yubormasdan tekshiriladi.
+
+**Seed uchala rolni yaratadi** (`admin@` / `manager@` / `staff@`,
+parol `admin12345`) — RBAC testlari uchun va dasturchi har rolni
+sinab ko'rishi uchun. Topshirishda birinchi qadam — parollarni
+o'zgartirish.
+
+**Audit ulangan amallar:** mapping yaratish/o'zgartirish/o'chirish,
+source-of-truth almashtirilishi (before/after bilan), webhook qayta
+ishlash, bron bekor qilish, no-show, narx o'zgartirish, foydalanuvchi
+yaratish va rol o'zgarishi, login.
+
+**Oxirgi ADMIN himoyasi:** yagona faol ADMIN rolini o'zgartirishga
+urinish 400 beradi — aks holda tizimga hech kim kira olmay qolardi.
+
+---
+
 ## 9. Xavfsizlik cheklisti (FAZA 12 mezoni)
 
 ```
-☐ ENCRYPTION_KEY .env da, repoda yo'q
-☐ .env .gitignore da
-☐ Token'lar DB'da shifrlangan
-☐ API javobida hech qanday token yo'q (grep bilan tekshirilgan)
-☐ sanitizeForLog() barcha SyncLog/WebhookEvent yozuvlarida
-☐ SyncLog'da "token" qidiruvi bo'sh natija beradi
-☐ JWT barcha ichki endpoint'larda majburiy
-☐ RBAC har endpoint'da tekshiriladi
-☐ Webhook validatsiyasi ishlaydi
-☐ Rate limiting sozlangan
-☐ HTTPS + Let's Encrypt
-☐ AuditLog muhim amallarga ulangan
+☑ ENCRYPTION_KEY .env da, repoda yo'q          — test: "ENCRYPTION_KEY va JWT_SECRET"
+☑ .env .gitignore da                           — test: ".env .gitignore da"
+☑ Token'lar DB'da shifrlangan                  — test: "token'lar DB'da shifrlangan"
+☑ API javobida hech qanday token yo'q           — test: "hech bir API javobida token qolmagan"
+☑ sanitizeForLog() barcha yozuvlarda            — test: "sanitizeForLog token va parolni yashiradi"
+☑ SyncLog'da "token" qidiruvi bo'sh             — test: "SyncLog'da 'token' qidiruvi"
+☑ JWT barcha ichki endpoint'larda majburiy      — test: "tokensiz so'rov 401 beradi"
+☑ RBAC har endpoint'da tekshiriladi             — test: "RBAC endpoint'larda" bloki
+☑ Webhook validatsiyasi ishlaydi                — FAZA 6 testlari
+☑ Rate limiting sozlangan                       — test: "login 5 urinishdan keyin 429"
+☐ HTTPS + Let's Encrypt                         — SERVERDA sozlanadi (FAZA 15)
+☑ AuditLog muhim amallarga ulangan              — test: "8. Audit log" bloki
 ```
 
-Hammasi belgilanganda FAZA 12 tugagan hisoblanadi.
+O'n bir band avtomatik test bilan qoplangan — qo'lda tekshirish
+o'rniga har yurishda qayta sinaladi.
+
+HTTPS yagona qolgan band: u kodda emas, serverda sozlanadi
+(Nginx + Let's Encrypt) va dasturchi topshirishda bajaradi
+([11 FAZA 15](11-BOSQICHLAR-ROADMAP.md)).

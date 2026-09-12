@@ -18,7 +18,9 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler, ValidationError, NotFoundError } from "../lib/errors.js";
 import { toNumber, toDateKey } from "../lib/serialize.js";
 import * as mapping from "../services/mapping.js";
-import { listSettings, setSetting, SETTING_KEYS } from "../services/settings.js";
+import { listSettings, setSetting, SETTING_KEYS, getRatesSoT, getAvailabilitySoT } from "../services/settings.js";
+import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
+import { audit, listAudit } from "../services/auditLog.js";
 import { beds24Adapter } from "../services/beds24/adapter.js";
 import { getConnectionStatus } from "../services/beds24/auth.js";
 import { getCreditState } from "../services/beds24/client.js";
@@ -78,21 +80,47 @@ const upsertSchema = z.object({
   externalUnitId: z.string().min(1).optional(),
 });
 
-adminRouter.put("/mapping", asyncHandler(async (req, res) => {
+adminRouter.put("/mapping", requireAuth, requirePermission("mapping.write"), asyncHandler(async (req: AuthedRequest, res) => {
   const parsed = upsertSchema.safeParse(req.body);
   if (!parsed.success) {
     throw new ValidationError(
       parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
     );
   }
+  // Oldingi holat — audit `before` uchun
+  const before = parsed.data.roomTypeId
+    ? await mapping.findRoomTypeMapping(parsed.data.roomTypeId)
+    : null;
+
   const result = await mapping.upsertMapping(parsed.data);
+
+  await audit({
+    userId: req.user?.id,
+    action: before ? "mapping.updated" : "mapping.created",
+    entityType: "ChannelMapping",
+    entityId: result.id,
+    before: before ? { externalRoomTypeId: before.externalRoomTypeId } : undefined,
+    after: { ...parsed.data },
+    ipAddress: req.ip,
+  });
+
   res.json({ ok: true, id: result.id });
 }));
 
 /** DELETE /api/admin/mapping/:id — bog'lanishni olib tashlash */
-adminRouter.delete("/mapping/:id", asyncHandler(async (req, res) => {
+adminRouter.delete("/mapping/:id", requireAuth, requirePermission("mapping.write"), asyncHandler(async (req: AuthedRequest, res) => {
   const force = req.query.force === "true";
   await mapping.deleteMapping(req.params.id, { force });
+
+  await audit({
+    userId: req.user?.id,
+    action: "mapping.deleted",
+    entityType: "ChannelMapping",
+    entityId: req.params.id,
+    after: { force },
+    ipAddress: req.ip,
+  });
+
   res.json({ ok: true });
 }));
 
@@ -120,7 +148,7 @@ adminRouter.get("/connection", asyncHandler(async (_req, res) => {
 }));
 
 /** POST /api/admin/connection/ping — ulanishni tekshirish */
-adminRouter.post("/connection/ping", asyncHandler(async (_req, res) => {
+adminRouter.post("/connection/ping", requireAuth, requirePermission("channel.connect"), asyncHandler(async (_req, res) => {
   res.json(await beds24Adapter.ping());
 }));
 
@@ -128,7 +156,7 @@ adminRouter.post("/connection/ping", asyncHandler(async (_req, res) => {
 //  SyncLog (TZ 16-band)
 // ============================================================
 
-adminRouter.get("/sync-log", asyncHandler(async (req, res) => {
+adminRouter.get("/sync-log", requireAuth, requirePermission("synclog.read"), asyncHandler(async (req, res) => {
   const limit = Math.min(Number(req.query.limit ?? 50), 200);
   const status = req.query.status as string | undefined;
 
@@ -176,7 +204,15 @@ adminRouter.get("/webhook-events", asyncHandler(async (req, res) => {
 }));
 
 /** POST /api/admin/webhook-events/:id/reprocess — qo'lda qayta ishlash (04-fayl §7) */
-adminRouter.post("/webhook-events/:id/reprocess", asyncHandler(async (req, res) => {
+adminRouter.post("/webhook-events/:id/reprocess", requireAuth, requirePermission("mapping.write"), asyncHandler(async (req: AuthedRequest, res) => {
+  await audit({
+    userId: req.user?.id,
+    action: "webhook.reprocessed",
+    entityType: "WebhookEvent",
+    entityId: req.params.id,
+    ipAddress: req.ip,
+  });
+
   const result = await webhookSvc.reprocessWebhook(req.params.id);
   if (!result) throw new NotFoundError("Webhook event");
   res.json({ ok: true, status: result.status.toLowerCase() });
@@ -280,7 +316,7 @@ const settingsSchema = z.object({
   availabilitySoT: z.enum(["pms", "beds24"]).optional(),
 });
 
-adminRouter.put("/settings", asyncHandler(async (req, res) => {
+adminRouter.put("/settings", requireAuth, requirePermission("settings.write"), asyncHandler(async (req: AuthedRequest, res) => {
   const parsed = settingsSchema.safeParse(req.body);
   if (!parsed.success) {
     throw new ValidationError(
@@ -289,8 +325,59 @@ adminRouter.put("/settings", asyncHandler(async (req, res) => {
   }
 
   const { ratesSoT, availabilitySoT } = parsed.data;
-  if (ratesSoT) await setSetting(SETTING_KEYS.ratesSoT, ratesSoT);
-  if (availabilitySoT) await setSetting(SETTING_KEYS.availabilitySoT, availabilitySoT);
+
+  // Source-of-truth almashtirilishi — eng muhim audit hodisasi
+  // (10-fayl §4): narx qaysi tomondan boshqarilishini o'zgartiradi
+  if (ratesSoT) {
+    const before = await getRatesSoT();
+    if (before !== ratesSoT) {
+      await setSetting(SETTING_KEYS.ratesSoT, ratesSoT, req.user?.id);
+      await audit({
+        userId: req.user?.id,
+        action: "settings.changed",
+        entityType: "Settings",
+        entityId: SETTING_KEYS.ratesSoT,
+        before: { value: before },
+        after: { value: ratesSoT },
+        ipAddress: req.ip,
+      });
+    }
+  }
+
+  if (availabilitySoT) {
+    const before = await getAvailabilitySoT();
+    if (before !== availabilitySoT) {
+      await setSetting(SETTING_KEYS.availabilitySoT, availabilitySoT, req.user?.id);
+      await audit({
+        userId: req.user?.id,
+        action: "settings.changed",
+        entityType: "Settings",
+        entityId: SETTING_KEYS.availabilitySoT,
+        before: { value: before },
+        after: { value: availabilitySoT },
+        ipAddress: req.ip,
+      });
+    }
+  }
 
   res.json(await listSettings());
 }));
+
+/**
+ * GET /api/admin/audit-log — kim nima qildi (TZ 18-band, 10-fayl §4)
+ *
+ * `synclog.read` huquqi: MANAGER ham ko'radi. Audit — nazorat
+ * vositasi, uni yashirish nazoratni yo'qotadi.
+ */
+adminRouter.get(
+  "/audit-log",
+  requireAuth,
+  requirePermission("synclog.read"),
+  asyncHandler(async (req, res) => {
+    res.json(await listAudit({
+      limit: req.query.limit ? Number(req.query.limit) : 50,
+      action: req.query.action,
+      entityType: req.query.entityType,
+    }));
+  })
+);

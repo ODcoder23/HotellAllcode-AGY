@@ -25,6 +25,24 @@ export const config = {
   // TZ 18-band
   encryptionKey: process.env.ENCRYPTION_KEY ?? "",
   jwtSecret: process.env.JWT_SECRET ?? "",
+
+  /**
+   * JWT majburiymi (TZ 18-band).
+   *
+   * Dev'da o'chirilgan: Shaxmatka hozircha login ekranisiz ishlaydi.
+   * Production'da MAJBURIY — FAZA 15 topshirish ro'yxatida
+   * `AUTH_REQUIRED=true` qo'yish bor.
+   */
+  authRequired: (process.env.AUTH_REQUIRED ?? "false") === "true",
+
+  /**
+   * Rate limiting o'chirilganmi.
+   *
+   * Testlar o'nlab so'rov yuboradi va cheklovga urilib qolishi
+   * mumkin — bu tekshirilayotgan xatti-harakat emas. Cheklovning
+   * o'zi alohida test bilan sinaladi.
+   */
+  rateLimitDisabled: process.env.RATE_LIMIT_DISABLED === "true",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "12h",
 
   // TZ 13-band — frontendga chiqmaydi

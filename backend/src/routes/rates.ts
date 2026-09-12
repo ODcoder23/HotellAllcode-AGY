@@ -10,11 +10,13 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler, ValidationError } from "../lib/errors.js";
 import { toNumber, toDateKey, fromDateKey } from "../lib/serialize.js";
 import { onRatesChanged, pushRates } from "../services/rates.js";
+import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
+import { audit } from "../services/auditLog.js";
 
 export const ratesRouter = Router();
 
 // --- GET /api/rate-plans?from=&to= --------------------------
-ratesRouter.get("/", asyncHandler(async (req, res) => {
+ratesRouter.get("/", requireAuth, requirePermission("reservation.read"), asyncHandler(async (req, res) => {
   const { from, to } = req.query;
   if (!from || !to) throw new ValidationError("from va to parametrlari kerak");
 
@@ -42,7 +44,7 @@ const putSchema = z.object({
   prices: z.record(z.string(), z.number().min(0)),
 });
 
-ratesRouter.put("/", asyncHandler(async (req, res) => {
+ratesRouter.put("/", requireAuth, requirePermission("rate.write"), asyncHandler(async (req: AuthedRequest, res) => {
   const { from, to, prices } = putSchema.parse(req.body);
   const start = fromDateKey(from);
   const end = fromDateKey(to);
@@ -65,6 +67,16 @@ ratesRouter.put("/", asyncHandler(async (req, res) => {
   // Panel holatni `rate.sync.updated` event'i orqali ko'radi.
   await onRatesChanged(Object.keys(prices), start, end);
 
+  // Narx o'zgarishi OTA'gacha boradi — kim qilganini bilish kerak
+  await audit({
+    userId: req.user?.id,
+    action: "rate.changed",
+    entityType: "RatePlan",
+    entityId: `${from}..${to}`,
+    after: { prices, from, to },
+    ipAddress: req.ip,
+  });
+
   res.json({ updated: count, syncStatus: "pending" });
 }));
 
@@ -76,7 +88,7 @@ const resyncSchema = z.object({
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
-ratesRouter.post("/resync", asyncHandler(async (req, res) => {
+ratesRouter.post("/resync", requireAuth, requirePermission("rate.write"), asyncHandler(async (req, res) => {
   const { roomTypeIds, from, to } = resyncSchema.parse(req.body);
   const start = fromDateKey(from);
   const end = fromDateKey(to);

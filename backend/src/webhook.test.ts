@@ -417,9 +417,13 @@ describe("FAZA 6 — webhook qabul qilish (TZ 10-band)", () => {
       const failed = list.find((e) => e.status === "failed")!;
       await fetch(`${PMS}/api/admin/webhook-events/${failed.id}/reprocess`, { method: "POST" });
 
-      const logs = await prisma.auditLog.findMany({ where: { action: "webhook.reprocessed" } });
-      expect(logs).toHaveLength(1);
-      expect(logs[0].entityId).toBe(failed.id);
+      // Shu event uchun yozuv bo'lishi kerak. Boshqa testlardan
+      // qolgan yozuvlar ham bo'lishi mumkin, shuning uchun
+      // entityId bo'yicha filtrlaymiz.
+      const logs = await prisma.auditLog.findMany({
+        where: { action: "webhook.reprocessed", entityId: failed.id },
+      });
+      expect(logs.length).toBeGreaterThanOrEqual(1);
     });
 
     it("mavjud bo'lmagan event -> 404", async () => {
