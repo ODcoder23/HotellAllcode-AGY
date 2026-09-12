@@ -117,8 +117,10 @@ const PERMISSIONS = {
 } as const;
 ```
 
-> ⚠️ Mavjud Admin Panelda hozir qanday rollar borligi FAZA 0 da
-> tekshiriladi va shu ro'yxat unga moslanadi.
+> ⚠️ Mavjud Admin Panel kodiga kirish yo'q, shuning uchun undagi
+> rollar bilan moslik tekshirilmaydi. Backend o'z RBAC tizimini
+> yuritadi; keyinroq integratsiya kerak bo'lsa `UserRole` enum'i
+> kengaytiriladi.
 
 ---
 

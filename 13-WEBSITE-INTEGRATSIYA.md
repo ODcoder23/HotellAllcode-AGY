@@ -255,17 +255,28 @@ TZ** talab qiladi.
 
 ## 8. Website frontend'iga o'zgartirish
 
-TZ: *"Customer Website allaqachon yaratilgan. Qayta yasamang."*
+> **Ish chegarasi.** Customer Website kodiga kirish huquqi **yo'q**.
+> Shuning uchun bu faylda tavsiflangan API **to'liq yoziladi va test
+> qilinadi**, lekin Website'ni unga ulash ishi **scope'dan tashqarida**.
 
-Shuning uchun Website kodiga **UI o'zgartirish kiritilmaydi**. Faqat
-ma'lumot manbai almashtiriladi — hozir bron ma'lumoti qayerga
-ketayotgan bo'lsa (forma, email, statik), o'sha joyga yuqoridagi
-API chaqiruvi qo'yiladi.
+Biz topshiradigan narsa:
 
-> ⚠️ **Aniqlashtirish kerak:** Website hozir bronni qayerga yuboryapti?
-> Kodiga kirish bormi? Bu FAZA 13 boshlanishiga qadar aniqlanadi.
-> Javobdan qat'i nazar, backend API tayyor bo'ladi — Website ulanishi
-> texnik jihatdan bir necha soatlik ish.
+| Tayyor bo'ladi | Kim ulaydi |
+|---|---|
+| `GET /api/public/availability` | Website dasturchisi |
+| `POST /api/public/reservations` | |
+| `GET /api/public/reservations/:code` | |
+| Mock so'rovlar bilan test qilingan | |
+| Bu hujjat — API kontrakti | |
+
+API mock so'rovlar bilan uchdan-uchgacha test qilinadi: bo'sh xona
+qidirish → bron yaratish → Shaxmatkada ko'rinish → Beds24'ga yuborish.
+Ya'ni Website ulanganda **darhol ishlaydi**, qo'shimcha ish talab
+qilmaydi.
+
+Website dasturchisi uchun kerak bo'ladigan hamma narsa shu faylda:
+endpoint'lar, so'rov/javob shakli, xato kodlari, rate limit
+chegaralari, bron kodi formati.
 
 ---
 

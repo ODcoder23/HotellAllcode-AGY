@@ -79,15 +79,36 @@ Bizda Beds24 hisobiga ulanish huquqi **yo'q**. Shunga qaramay tizim
 **to'liq ishlaydigan holatda** topshiriladi — Beds24 moduli ham yoziladi
 va mock server bilan uchdan-uchgacha test qilinadi.
 
+### Bizda nima bor
+
+| Bor | Yo'q |
+|---|---|
+| `index (7).html` — Shaxmatka | Backend kodi |
+| `TZ-ASL.md` — mijoz talabi | Admin Panel kodi |
+| | Customer Website kodi |
+| | Beds24 hisobi |
+
+Ya'ni "mavjud tizimlarga ulanish" faqat **Shaxmatka** uchun amal
+qiladi. Admin Panel va Website kodiga kirish yo'q — ular bilan ishlash
+scope'dan tashqarida.
+
+### Kim nima qiladi
+
 | Biz yozamiz | Dasturchi qiladi |
 |---|---|
 | Butun backend + PostgreSQL + Prisma | `.env` ga credentials qo'yadi |
 | Ichki REST API (Shaxmatka) | `npm run beds24:connect` ishga tushiradi |
-| Public API (Website) | Beds24 panelida webhook URL kiritadi |
+| Public API (Website uchun tayyor) | Beds24 panelida webhook URL kiritadi |
 | WebSocket server | Mapping ekranida turlarni bog'laydi (3 klik) |
 | BullMQ + barcha worker'lar | Deploy qiladi |
 | `services/beds24/*` — to'liq modul | |
+| **Backend ichida admin sahifalari** | |
 | Mock Beds24 server + testlar | **Kod yozmaydi** |
+
+**Backend ichidagi admin sahifalari** (`/admin/mapping`,
+`/admin/connection`, `/admin/sync-log`) — oddiy HTML + fetch. Mavjud
+Admin Panel kodiga tegilmaydi; usiz mapping kiritib bo'lmaydi va TZ
+20-band bajarilmaydi.
 
 **Almashtirish bitta o'zgaruvchida:**
 
@@ -127,9 +148,10 @@ Tafsilot: [11 FAZA 0.5](11-BOSQICHLAR-ROADMAP.md) (mock server),
 
 ## MUTLAQO QAT'IY QOIDALAR
 
-1. **Mavjud Admin Panel, Customer Website va Shaxmatka qayta
-   yasalmaydi.** Faqat backend + database + Beds24 integratsiyasi
-   yaratiladi va mavjud frontendlar shu backendga ulanadi.
+1. **Mavjud frontendlar qayta yasalmaydi.** Amalda bu faqat
+   **Shaxmatka** uchun amal qiladi — Admin Panel va Website kodiga
+   kirish huquqi yo'q, ular bilan ishlash scope'dan tashqarida
+   (ularga API va spec tayyor turadi).
 
    *Aniqlashtirish:* "qayta yasalmaydi" — UI, dizayn, komponentlar va
    biznes-mantiq o'zgarmaydi degani. Ma'lumot manbaini almashtirish

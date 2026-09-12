@@ -45,12 +45,19 @@ TZ'dagi arxitektura chizmasining texnik yoyilmasi:
                            │  WebSocket (real-time push)
              ┌─────────────┼─────────────┐
              ▼             ▼             ▼
-       Admin Panel     Shaxmatka   Customer Website
-      (mavjud, ○)     (mavjud, ○)   (mavjud, ○)
+        Shaxmatka    /admin/*        Admin Panel
+        (mavjud ○)   (biz yozamiz)   Website
+                                     (kodga kirish yo'q ✗)
 ```
 
-`○` = mavjud, UI'si o'zgartirilmaydi; faqat yangi backend API va
-WebSocket'ga ulanadi.
+`○` = mavjud, UI'si o'zgartirilmaydi; faqat backend API va WebSocket'ga
+ulanadi.
+`✗` = kodga kirish yo'q — ular uchun API va spec tayyor turadi, lekin
+ulash ishi scope'dan tashqarida.
+
+`/admin/*` — backend ichidagi kichik sahifalar (mapping, ulanish holati,
+sync loglari). Mavjud Admin Panelga tegilmaydi; usiz mapping kiritib
+bo'lmaydi ([06 §3](06-XONA-MAPPING.md)).
 
 ---
 

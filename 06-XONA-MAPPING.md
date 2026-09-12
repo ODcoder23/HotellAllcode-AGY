@@ -69,9 +69,20 @@ maydoni `nullable`.
 
 ---
 
-## 3. Mapping ekrani (Admin Panel)
+## 3. Mapping ekrani (backend ichidagi alohida sahifa)
 
-Mavjud sahifalar o'zgartirilmaydi — **yangi sahifa** qo'shiladi:
+> **Ish chegarasi.** Mavjud Admin Panel kodiga kirish huquqi yo'q,
+> shuning uchun mapping ekrani **backend ichida mustaqil sahifa**
+> sifatida yoziladi (`/admin/mapping`). Oddiy HTML + `fetch`, framework
+> yo'q. Mavjud Admin Panel kodiga **umuman tegilmaydi**.
+>
+> Nega kerak: TZ 20-band "barcha tizimlar bir xil inventory asosida
+> ishlashi kerak" deydi. Mapping kiritilmasa sync rad etiladi (§4) va
+> bu talab bajarilmaydi. Mapping'ni `curl` bilan kiritish "ishlaydigan
+> tizim" emas.
+>
+> Keyinroq bu sahifani mavjud Admin Panelga ko'chirish mumkin — API
+> o'zgarmaydi.
 
 ```
 ┌──────────────────────────────────────────────────────────┐

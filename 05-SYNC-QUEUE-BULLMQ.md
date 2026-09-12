@@ -256,5 +256,6 @@ GET /api/admin/queues/status
 Ko'rsatadi: har navbat uchun job'lar soni, oxirgi muvaffaqiyatli sync
 vaqti, qolgan kredit, `FAILED` job'lar ro'yxati.
 
-Alohida yangi UI yozilmaydi — Admin Panelning mavjud bo'limiga API
-orqali ulanadi.
+Backend ichidagi `/admin/sync-log` sahifasida ko'rsatiladi
+([06 §3](06-XONA-MAPPING.md) bilan bir xil yondashuv — mavjud Admin
+Panel kodiga tegilmaydi).

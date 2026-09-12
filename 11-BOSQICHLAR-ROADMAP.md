@@ -26,7 +26,9 @@ tarzida to'xtaladi.
   api + postgres + redis), biznes-mantiq yozilmaydi.
 - Beds24 hisobiga kirish huquqi yo'q — mock server bilan ishlaymiz
   (FAZA 0.5). Tizim to'liq ishlaydigan holatda topshiriladi.
-- Mavjud Admin Panel va Website kodiga kirish olinadi.
+- Mavjud Admin Panel va Website kodiga **kirish yo'q** — ular bilan
+  ishlash scope'dan tashqarida. Bizda faqat Shaxmatka
+  (`index (7).html`) va TZ bor.
 
 **Mezon:** `docker compose up` ishlaydi, `/health` javob beradi.
 
@@ -207,7 +209,9 @@ yangilanadi; kredit hisobi loglanadi; `429` qaytganda job kechiktiriladi
 ## FAZA 5 — Xona mapping (`06`)
 
 - `ChannelMapping` CRUD API.
-- Admin Panelga **yangi sahifa** (mavjudlari o'zgarmaydi).
+- **Backend ichida alohida admin sahifasi** (`/admin/mapping`) —
+  oddiy HTML + fetch. Mavjud Admin Panel kodiga tegilmaydi
+  (unga kirish huquqi yo'q).
 - `GET /api/admin/mapping/health` endpoint.
 - Mapping yo'qligida sync rad etilishi test qilinadi.
 
@@ -336,10 +340,13 @@ belgisini to'g'ri ko'rsatadi.
 - Avtomatik xona tanlash, `PENDING_PAYMENT` oqimi.
 - To'lanmagan bronni avtomatik bekor qilish job'i.
 - Bot himoyasi, rate limiting.
-- Mavjud Website shu API'ga ulanadi (UI o'zgarmaydi).
+- **Website'ni ulash scope'dan tashqarida** — kodiga kirish yo'q.
+  API mock so'rovlar bilan test qilinadi va kontrakt topshiriladi
+  ([13 §8](13-WEBSITE-INTEGRATSIYA.md)).
 
-**Mezon:** Website'dan bron qilinsa → Shaxmatkada darhol ko'rinadi →
-xona band bo'ladi → Beds24'ga yuboriladi → OTA availability kamayadi.
+**Mezon:** `POST /api/public/reservations` chaqirilganda →
+Shaxmatkada darhol ko'rinadi → xona band bo'ladi → mock Beds24'ga
+yuboriladi → availability kamayadi. Test skript bilan tasdiqlanadi.
 
 **TZ:** 3-band ✅, 20-band (1-qism) ✅
 
