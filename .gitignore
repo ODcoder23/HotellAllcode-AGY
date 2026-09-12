@@ -5,3 +5,9 @@ _backup/
 *.tmp
 *.bak
 .DS_Store
+
+# Backend
+backend/node_modules/
+backend/dist/
+backend/.env
+backend/.pgdata/
