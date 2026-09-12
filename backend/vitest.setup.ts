@@ -57,3 +57,34 @@ try {
 } catch (e) {
   console.warn("[test] seed ishlamadi:", String(e).slice(0, 120));
 }
+
+/**
+ * Navbatni tozalash — REDIS ORQALI, BullMQ API'siz.
+ *
+ * `queue.obliterate()` ishlatib bo'lmaydi: u test jarayonida yangi
+ * ulanish ochadi va serverdagi worker'larni buzadi. To'g'ridan-to'g'ri
+ * kalitlarni o'chirish xavfsiz — worker'lar bunga chidaydi.
+ *
+ * Nima uchun kerak: oldingi test faylidan qolgan job keyingisining
+ * DB holatiga tegib, o'tkinchi xatolarga olib keladi.
+ */
+try {
+  const { execSync: exec } = await import("node:child_process");
+  const cli = "/c/Users/Abdur/scoop/apps/redis/current/redis-cli.exe";
+  exec(`"${cli}" --scan --pattern "bull:beds24-*" | xargs -r "${cli}" del`, {
+    stdio: "pipe",
+    shell: "bash",
+  });
+} catch {
+  // Redis yo'q yoki kalit yo'q — muammo emas
+}
+
+/**
+ * Worker'lar tinchishini kutish.
+ *
+ * Testlar bitta server bilan ishlaydi va uning webhook worker'i
+ * doimiy ishlab turadi. Seed DB'ni tozalaganda worker hali eski
+ * event'ni ishlab turgan bo'lishi mumkin — natijada keyingi test
+ * kutilmagan holatni ko'radi. Qisqa pauza buni yo'qotadi.
+ */
+await new Promise((r) => setTimeout(r, 600));

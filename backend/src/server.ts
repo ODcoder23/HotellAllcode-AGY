@@ -16,6 +16,8 @@ import { reservationsRouter } from "./routes/reservations.js";
 import { ratesRouter } from "./routes/rates.js";
 import { adminRouter } from "./routes/admin.js";
 import { webhooksRouter } from "./routes/webhooks.js";
+import { isRedisHealthy, getQueueCounts, shutdownQueues } from "./queues/index.js";
+import "./queues/workers.js";     // worker'lar ishga tushadi
 
 const app = express();
 
@@ -48,16 +50,29 @@ if (config.isDev) {
 
 // --- Health (FAZA 0 mezoni) ---------------------------------
 app.get("/health", async (_req, res) => {
+  const [dbOk, redisOk] = await Promise.all([
+    prisma.$queryRaw`SELECT 1`.then(() => true).catch(() => false),
+    isRedisHealthy(),
+  ]);
+
+  // TZ 17, 19-band: Redis yo'q bo'lsa ham PMS ishlashda davom etadi.
+  // Webhook'lar DB'da QUEUED holatida to'planadi, Redis qaytganda
+  // yuboriladi. Shuning uchun "degraded", "down" emas.
+  res.status(dbOk ? 200 : 503).json({
+    status: dbOk ? (redisOk ? "ok" : "degraded") : "down",
+    database: dbOk ? "connected" : "disconnected",
+    redis: redisOk ? "connected" : "disconnected",
+    phase: "7",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+/** Navbat holati (05-fayl §8) */
+app.get("/api/admin/queues", async (_req, res) => {
   try {
-    await prisma.$queryRaw`SELECT 1`;
-    res.json({
-      status: "ok",
-      database: "connected",
-      phase: "6",
-      timestamp: new Date().toISOString(),
-    });
-  } catch {
-    res.status(503).json({ status: "degraded", database: "disconnected" });
+    res.json({ redis: await isRedisHealthy(), queues: await getQueueCounts() });
+  } catch (e) {
+    res.status(503).json({ redis: false, error: String(e).slice(0, 200) });
   }
 });
 
@@ -95,6 +110,7 @@ const server = app.listen(config.port, () => {
 const shutdown = async (sig: string) => {
   console.log(`\n${sig} — to'xtatilmoqda...`);
   server.close();
+  await shutdownQueues().catch(() => {});
   await prisma.$disconnect();
   process.exit(0);
 };

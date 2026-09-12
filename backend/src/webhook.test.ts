@@ -16,7 +16,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 import crypto from "node:crypto";
 import { prisma } from "./lib/prisma.js";
-import { computePayloadHash, validateWebhook, validatePayloadShape } from "./services/webhook.js";
+import { computePayloadHash, validatePayloadShape } from "./services/webhook.js";
 import { sanitizeForLog } from "./lib/sanitize.js";
 
 const PMS = "http://localhost:3000";
@@ -39,6 +39,15 @@ const events = async (limit = 20) => {
   const res = await fetch(`${PMS}/api/admin/webhook-events?limit=${limit}`);
   return (await res.json()) as any[];
 };
+
+/**
+ * FAZA 7 dan keyin worker QUEUED event'ni darhol oladi va
+ * `processed` / `needs_manual_action` ga o'tkazadi. Shuning uchun
+ * "qabul qilindi" degani `queued` EMAS — bu holatlardan biri.
+ * Faqat `ignored_duplicate` va `failed` alohida ma'noga ega.
+ */
+const isAccepted = (status: string) =>
+  ["queued", "processed", "needs_manual_action"].includes(status);
 
 const mockControl = (path: string, body?: unknown) =>
   fetch(`${MOCK}/control/${path}`, {
@@ -76,6 +85,12 @@ describe("FAZA 6 — webhook qabul qilish (TZ 10-band)", () => {
 
   beforeEach(async () => {
     await prisma.webhookEvent.deleteMany();
+    // Mock reset bookingId'ni 70000001 dan qayta boshlaydi —
+    // eski OTA bronlari qolsa yangi webhook "update" bo'lib ketadi
+    await prisma.payment.deleteMany({
+      where: { reservation: { externalReservationId: { not: null } } },
+    });
+    await prisma.reservation.deleteMany({ where: { externalReservationId: { not: null } } });
     await mockControl("reset");
   });
 
@@ -184,8 +199,9 @@ describe("FAZA 6 — webhook qabul qilish (TZ 10-band)", () => {
       expect(second.body.duplicate).toBe(true);
 
       const list = await events();
-      const statuses = list.map((e) => e.status).sort();
-      expect(statuses).toEqual(["ignored_duplicate", "queued"]);
+      expect(list).toHaveLength(2);
+      expect(list.filter((e) => e.status === "ignored_duplicate")).toHaveLength(1);
+      expect(list.filter((e) => isAccepted(e.status))).toHaveLength(1);
     });
 
     it("timestamp farq qilsa ham duplicate aniqlanadi", async () => {
@@ -208,7 +224,7 @@ describe("FAZA 6 — webhook qabul qilish (TZ 10-band)", () => {
       expect(second.body.duplicate).toBeUndefined();
 
       const list = await events();
-      expect(list.filter((e) => e.status === "queued")).toHaveLength(2);
+      expect(list.filter((e) => isAccepted(e.status))).toHaveLength(2);
     });
 
     it("turli bookingId -> ikkalasi ham qabul qilinadi", async () => {
@@ -216,7 +232,7 @@ describe("FAZA 6 — webhook qabul qilish (TZ 10-band)", () => {
       await post(`/api/webhooks/beds24/${TOKEN}`, payload(80000014));
 
       const list = await events();
-      expect(list.filter((e) => e.status === "queued")).toHaveLength(2);
+      expect(list.filter((e) => isAccepted(e.status))).toHaveLength(2);
     });
   });
 
@@ -228,7 +244,7 @@ describe("FAZA 6 — webhook qabul qilish (TZ 10-band)", () => {
       const list = await events();
       expect(list[0].eventType).toBe("booking.new");
       expect(list[0].externalId).toBe("80000020");
-      expect(list[0].status).toBe("queued");
+      expect(isAccepted(list[0].status)).toBe(true);
     });
 
     it("rawPayload to'liq saqlanadi (ma'lumot yo'qolmaydi)", async () => {
@@ -324,7 +340,7 @@ describe("FAZA 6 — webhook qabul qilish (TZ 10-band)", () => {
       const list = await events();
       expect(list.length).toBeGreaterThan(0);
       expect(list[0].eventType).toBe("booking.new");
-      expect(list[0].status).toBe("queued");
+      expect(isAccepted(list[0].status)).toBe(true);
     });
 
     it("mock duplicate -> PMS ikkinchisini rad etadi", async () => {
@@ -337,10 +353,9 @@ describe("FAZA 6 — webhook qabul qilish (TZ 10-band)", () => {
       await new Promise((r) => setTimeout(r, 1000));
 
       const list = await events();
-      const statuses = list.map((e) => e.status).sort();
-      expect(statuses).toContain("queued");
-      expect(statuses).toContain("ignored_duplicate");
       expect(list).toHaveLength(2);
+      expect(list.filter((e) => e.status === "ignored_duplicate")).toHaveLength(1);
+      expect(list.filter((e) => isAccepted(e.status))).toHaveLength(1);
     });
 
     it("bekor qilish webhook'i keladi", async () => {
@@ -427,9 +442,14 @@ describe("FAZA 6 — webhook qabul qilish (TZ 10-band)", () => {
       const stats = (await res.json()) as any;
 
       expect(stats.total).toBe(3);
-      expect(stats.byStatus.queued).toBe(1);
       expect(stats.byStatus.ignored_duplicate).toBe(1);
       expect(stats.byStatus.failed).toBe(1);
+      // Uchinchisi worker tomonidan ishlangan bo'lishi mumkin
+      const accepted =
+        (stats.byStatus.queued ?? 0) +
+        (stats.byStatus.processed ?? 0) +
+        (stats.byStatus.needs_manual_action ?? 0);
+      expect(accepted).toBe(1);
       expect(stats.lastReceivedAt).toBeTruthy();
     });
   });

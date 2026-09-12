@@ -20,6 +20,7 @@ import { prisma } from "../lib/prisma.js";
 import { config } from "../lib/config.js";
 import { sanitizeForJson } from "../lib/sanitize.js";
 import { beds24Adapter } from "./beds24/adapter.js";
+import { webhookQueue } from "../queues/index.js";
 
 export type WebhookIntake = {
   status: "accepted" | "duplicate" | "invalid";
@@ -249,10 +250,7 @@ export async function intakeWebhook(
     };
   }
 
-  // --- 2. SAQLASH + 4. QUEUEGA YUBORISH ---
-  //
-  // FAZA 7 da BullMQ ulanadi. Hozircha QUEUED holatida qoladi —
-  // worker yozilgach ularni o'zi oladi (ma'lumot yo'qolmaydi).
+  // --- 2. SAQLASH + 4. QUEUEGA YUBORISH (04-fayl §2) ---
   const event = await prisma.webhookEvent.create({
     data: {
       channelId: channel.id,
@@ -263,6 +261,22 @@ export async function intakeWebhook(
       status: "QUEUED",
     },
   });
+
+  // Navbatga qo'yish. Redis ishlamasa ham event DB'da QUEUED
+  // holatida qoladi — `processPendingEvents()` keyinroq oladi,
+  // ma'lumot YO'QOLMAYDI (TZ 17-band).
+  try {
+    await webhookQueue.add(
+      "process",
+      { webhookEventId: event.id },
+      { jobId: event.id }      // idempotent: bir event bir marta
+    );
+  } catch (e) {
+    console.warn(
+      `[webhook] navbatga qo'yilmadi (${String(e).slice(0, 80)}) — ` +
+      `event ${event.id} QUEUED holatida qoldi`
+    );
+  }
 
   return { status: "accepted", webhookEventId: event.id, eventType, externalId };
 }
