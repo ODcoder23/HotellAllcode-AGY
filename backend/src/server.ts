@@ -7,12 +7,14 @@
  */
 
 import express from "express";
+import { fileURLToPath } from "node:url";
 import { config } from "./lib/config.js";
 import { prisma } from "./lib/prisma.js";
 import { errorHandler } from "./lib/errors.js";
 import { roomsRouter } from "./routes/rooms.js";
 import { reservationsRouter } from "./routes/reservations.js";
 import { ratesRouter } from "./routes/rates.js";
+import { adminRouter } from "./routes/admin.js";
 
 const app = express();
 
@@ -42,7 +44,7 @@ app.get("/health", async (_req, res) => {
     res.json({
       status: "ok",
       database: "connected",
-      phase: "2A",
+      phase: "5",
       timestamp: new Date().toISOString(),
     });
   } catch {
@@ -54,6 +56,15 @@ app.get("/health", async (_req, res) => {
 app.use("/api/rooms", roomsRouter);
 app.use("/api/reservations", reservationsRouter);
 app.use("/api/rate-plans", ratesRouter);
+app.use("/api/admin", adminRouter);
+
+// --- Admin sahifalari (backend ichida) ----------------------
+// ISH CHEGARASI: mavjud Admin Panel kodiga kirish yo'q, shuning
+// uchun mapping/ulanish/log sahifalari shu yerda. Oddiy HTML+fetch,
+// framework yo'q. Keyinroq mavjud panelga ko'chirish mumkin.
+// fileURLToPath — Windows'da URL.pathname oldiga "/" qo'shadi
+// va yo'l "/C:/..." bo'lib ishlamaydi.
+app.use("/admin", express.static(fileURLToPath(new URL("../public/admin", import.meta.url))));
 
 // --- 404 ----------------------------------------------------
 app.use((req, res) => {
