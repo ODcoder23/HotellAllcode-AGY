@@ -21,6 +21,11 @@ import * as mapping from "../services/mapping.js";
 import { listSettings, setSetting, SETTING_KEYS, getRatesSoT, getAvailabilitySoT } from "../services/settings.js";
 import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
 import { audit, listAudit } from "../services/auditLog.js";
+import {
+  runPollNow, runDriftCheckNow, runCatchUpNow, runExpireNow,
+} from "../queues/scheduler.js";
+import { checkChannelHealth } from "../services/reconciliation.js";
+import { listDeadLetters, requeueDeadLetter, clearDeadLetters } from "../queues/deadLetter.js";
 import { beds24Adapter } from "../services/beds24/adapter.js";
 import { getConnectionStatus } from "../services/beds24/auth.js";
 import { getCreditState } from "../services/beds24/client.js";
@@ -379,5 +384,156 @@ adminRouter.get(
       action: req.query.action,
       entityType: req.query.entityType,
     }));
+  })
+);
+
+// ============================================================
+//  Davriy vazifalar — qo'lda ishga tushirish (FAZA 14)
+// ============================================================
+//
+// Jadval o'z vaqtida baribir ishlaydi. Bu endpoint'lar admin
+// nosozlikni kutmasdan tekshirishi uchun va dasturchi topshirishda
+// zanjirni sinab ko'rishi uchun.
+
+/**
+ * POST /api/admin/maintenance/poll — Beds24'dan o'zgarishlarni tortish
+ *
+ * TZ 10-band: webhook ishlamasa ham bronlar tushadi (04-fayl §8).
+ */
+adminRouter.post(
+  "/maintenance/poll",
+  requireAuth,
+  requirePermission("channel.connect"),
+  asyncHandler(async (_req, res) => {
+    try {
+      res.json(await runPollNow());
+    } catch (e) {
+      // Beds24 javob bermasa 500 emas, TUSHUNARLI javob beramiz:
+      // admin "server buzildi" deb o'ylamasligi kerak, bu kanal
+      // holati (TZ 17-band).
+      res.status(503).json({
+        error: "Beds24 javob bermadi. Keyinroq urinib ko'ring.",
+        code: "CHANNEL_UNAVAILABLE",
+        detail: String(e).slice(0, 200),
+      });
+    }
+  })
+);
+
+/**
+ * POST /api/admin/maintenance/drift — PMS va Beds24 farqini tekshirish
+ *
+ * TZ 20-band: barcha tizimlar bir xil inventory (07-fayl §6).
+ */
+adminRouter.post(
+  "/maintenance/drift",
+  requireAuth,
+  requirePermission("channel.connect"),
+  asyncHandler(async (req, res) => {
+    const days = req.query.days ? Number(req.query.days) : 30;
+    try {
+      res.json(await runDriftCheckNow(Math.min(Math.max(days, 1), 90)));
+    } catch (e) {
+      res.status(503).json({
+        error: "Beds24 javob bermadi. Keyinroq urinib ko'ring.",
+        code: "CHANNEL_UNAVAILABLE",
+        detail: String(e).slice(0, 200),
+      });
+    }
+  })
+);
+
+/**
+ * POST /api/admin/maintenance/catch-up — qolib ketganlarni yuborish
+ *
+ * TZ 17-band: "Beds24 qayta ishlaganda avtomatik yuborilsin."
+ */
+adminRouter.post(
+  "/maintenance/catch-up",
+  requireAuth,
+  requirePermission("channel.connect"),
+  asyncHandler(async (_req, res) => {
+    res.json(await runCatchUpNow());
+  })
+);
+
+/** POST /api/admin/maintenance/expire-unpaid — to'lanmagan bronlar */
+adminRouter.post(
+  "/maintenance/expire-unpaid",
+  requireAuth,
+  requirePermission("reservation.cancel"),
+  asyncHandler(async (_req, res) => {
+    res.json(await runExpireNow());
+  })
+);
+
+/**
+ * GET /api/admin/channel-health — Beds24 javob beryaptimi
+ *
+ * TZ 17, 19-band: kanal o'chgan bo'lsa admin darhol ko'radi va
+ * "nega OTA'da yangilanmayapti" degan savol tug'ilmaydi.
+ */
+adminRouter.get(
+  "/channel-health",
+  requireAuth,
+  requirePermission("synclog.read"),
+  asyncHandler(async (_req, res) => {
+    res.json(await checkChannelHealth());
+  })
+);
+
+// ============================================================
+//  O'lik xat navbati — TZ 11-band (beds24-retry)
+// ============================================================
+//
+// 5 urinishdan keyin ham bo'lmagan job'lar. Admin sababni
+// tuzatgach (mapping bog'lash, Beds24 qaytishi) qayta yuboradi.
+
+/** GET /api/admin/dead-letters — yiqilgan job'lar ro'yxati */
+adminRouter.get(
+  "/dead-letters",
+  requireAuth,
+  requirePermission("synclog.read"),
+  asyncHandler(async (req, res) => {
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    res.json(await listDeadLetters(limit));
+  })
+);
+
+/** POST /api/admin/dead-letters/requeue — qayta yuborish */
+const requeueSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(100),
+});
+
+adminRouter.post(
+  "/dead-letters/requeue",
+  requireAuth,
+  requirePermission("channel.connect"),
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const parsed = requeueSchema.safeParse(req.body);
+    if (!parsed.success) throw new ValidationError("ids massivi kerak");
+
+    const result = await requeueDeadLetter(parsed.data.ids);
+
+    await audit({
+      userId: req.user?.id,
+      action: "webhook.reprocessed",
+      entityType: "DeadLetter",
+      entityId: parsed.data.ids.join(","),
+      after: result,
+      ipAddress: req.ip,
+    });
+
+    res.json(result);
+  })
+);
+
+/** DELETE /api/admin/dead-letters — tozalash */
+adminRouter.delete(
+  "/dead-letters",
+  requireAuth,
+  requirePermission("channel.connect"),
+  asyncHandler(async (_req, res) => {
+    res.json({ removed: await clearDeadLetters() });
   })
 );

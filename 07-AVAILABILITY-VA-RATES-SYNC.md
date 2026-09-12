@@ -321,6 +321,34 @@ amaliy kafolati. Usiz drift sezilmay qoladi.
 
 ---
 
+## 6.1. Amalga oshirilgan holat (FAZA 14 — bajarildi)
+
+Kod: `backend/src/services/reconciliation.ts` (`checkDrift`).
+Jadval: har kuni 04:00 (kam yuklamali vaqt).
+Qo'lda: `POST /api/admin/maintenance/drift?days=30`.
+
+Oqim: PMS hisobini yangilash → Beds24'dan `getAvailability` →
+kun-kun solishtirish → farq bo'lsa `SyncLog: drift_detected` +
+admin ogohlantirishi (WebSocket) → tuzatish.
+
+**Tuzatishda `syncedCount` tozalanadi.** Aks holda keyingi push
+"o'zgarish yo'q" deb o'tkazib yuborardi va drift qolib ketardi —
+kredit tejash mantig'i tuzatishga qarshi ishlagan bo'lardi.
+
+**Faqat `SoT = pms` bo'lganda tuzatiladi.** Teskari sozlamada farq
+qayd etiladi, lekin avtomatik tuzatilmaydi: bu holda PMS qiymatini
+yuborish Beds24'dagi haqiqiy ma'lumotni o'chirib yuborardi.
+
+**Mapping yo'q tur tekshirilmaydi** — solishtiradigan narsa yo'q,
+xato ham bermaydi.
+
+**Tekshirilgan:** Beds24'ga ataylab `numAvail: 99` yozildi (haqiqatda
+2 ta deluxe bor). Drift topildi (PMS=0, Beds24=99), `drift_detected`
+logga tushdi, tuzatuvchi job qo'yildi va mock oxirida to'g'ri
+qiymatni oldi.
+
+---
+
 ## 7. Rates sync (TZ 7-band)
 
 ### PMS → Beds24

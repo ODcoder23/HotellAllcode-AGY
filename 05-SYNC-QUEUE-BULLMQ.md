@@ -259,3 +259,44 @@ vaqti, qolgan kredit, `FAILED` job'lar ro'yxati.
 Backend ichidagi `/admin/sync-log` sahifasida ko'rsatiladi
 ([06 §3](06-XONA-MAPPING.md) bilan bir xil yondashuv — mavjud Admin
 Panel kodiga tegilmaydi).
+
+## Amalga oshirilgan holat (FAZA 14 — `beds24-retry`)
+
+TZ 11-band beshta navbatni sanaydi. To'rttasi — ish navbatlari
+(webhook, reservation, availability, rate). Beshinchisi,
+`beds24-retry`, retry MEXANIZMI emas: retry allaqachon har
+navbatning o'zida ishlaydi (`attempts: 5`, exponential backoff).
+
+Shuning uchun u **"o'lik xat" (dead letter)** navbati sifatida
+amalga oshirildi — `backend/src/queues/deadLetter.ts`:
+
+```
+5 urinishdan keyin ham bo'lmagan job (yoki UnrecoverableError)
+        ↓
+beds24-retry navbatiga tushadi: nima, qachon, nega yiqildi
+        ↓
+Admin GET /api/admin/dead-letters da ko'radi
+        ↓
+Sabab tuzatilgach: POST /api/admin/dead-letters/requeue
+        ↓
+Job asl navbatiga qaytadi
+```
+
+**Nega kerak:** `failed` job BullMQ ichida qoladi va uni faqat
+Redis'ga kirib ko'rish mumkin. Admin panelda ko'rinmaydi, ya'ni
+yo'qolgan sync jim o'tib ketadi. TZ 11-band "Errorlar SyncLog'ga
+yozilsin" deydi — bu uning amaliy davomi: xato yozilgan, endi u
+bilan nima qilish kerakligi ham bor.
+
+**`UnrecoverableError` ham tushadi.** Bunday xatoda `attemptsMade`
+maksimumga yetmaydi (BullMQ qayta urinmaydi), shuning uchun faqat
+urinishlar sonini solishtirish yetarli emas — `isFinal` bayrog'i
+chaqiruvchidan keladi.
+
+**Tekshirilgan:** mapping o'chirilgan holatda bron yaratildi —
+ikkala job (reservation + availability) o'lik xatga tushdi, sabab
+ko'rindi. Mapping va ulanish tiklangach `requeue` ikkalasini ham
+qaytardi, bronlar `synced` bo'ldi.
+
+
+## Bu faylga tayanadi

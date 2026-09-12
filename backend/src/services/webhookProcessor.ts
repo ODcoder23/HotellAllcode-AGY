@@ -36,6 +36,13 @@ export type ProcessResult = {
   status: "processed" | "skipped" | "needs_manual_action" | "failed";
   reservationId?: string;
   detail: string;
+  /**
+   * Yangi bron yaratildimi (true) yoki mavjudi yangilandimi (false).
+   *
+   * Polling fallback hisobot uchun ishlatadi. Matndan ("Yangi bron")
+   * aniqlash mo'rt — matn o'zgarsa hisob jim buziladi.
+   */
+  created?: boolean;
 };
 
 // ============================================================
@@ -236,7 +243,15 @@ export async function processWebhookEvent(webhookEventId: string): Promise<Proce
  * TZ 9-band: `@@unique([channelId, externalReservationId])` —
  * hatto mantiq xato qilsa ham ikkinchi bron jismonan yaratilmaydi.
  */
-async function applyReservation(
+/**
+ * Kelgan bronni PMS'ga qo'llaydi — yaratish yoki yangilash.
+ *
+ * EKSPORT QILINGAN (04-fayl §8): polling fallback aynan shu
+ * funksiyani ishlatadi, o'z mantig'ini yozmaydi. Aks holda ikki
+ * yo'l bir-biridan uzoqlashadi va webhook'da tuzatilgan xato
+ * polling'da qolib ketadi.
+ */
+export async function applyReservation(
   eventType: string,
   ext: ExternalReservation
 ): Promise<ProcessResult> {
@@ -331,6 +346,7 @@ async function applyReservation(
       status: "processed",
       reservationId: updated.id,
       detail: `Bron yangilandi: ${status}, xona ${roomId}`,
+      created: false,
     };
   }
 
@@ -422,6 +438,7 @@ async function applyReservation(
     status: "processed",
     reservationId: created.id,
     detail: `Yangi bron: xona ${assigned.roomId}, ${status}, ${ext.guest.fullName}`,
+    created: true,
   };
 }
 

@@ -64,6 +64,49 @@ control.post("/reset", (_req, res) => {
 });
 
 /**
+ * Bron qo'shish WEBHOOK YUBORMASDAN — polling fallback sinovi.
+ *
+ * TZ 10-band: "Webhook ishlamasa polling/sync fallback mexanizmi
+ * bo'lsin." Buni sinash uchun webhook yetib kelmagan holatni
+ * yaratish kerak: bron Beds24'da bor, PMS'da yo'q.
+ */
+control.post("/add-booking-silently", (req, res) => {
+  const {
+    roomTypeId = ROOM_TYPE_IDS.standard,
+    arrival,
+    departure,
+    firstName = "Silent",
+    lastName = "Booking",
+    status = "confirmed",
+    price = 100,
+    numAdult = 2,
+    referer = "Booking.com",
+  } = req.body ?? {};
+
+  if (!arrival || !departure) {
+    res.status(400).json({ error: "arrival va departure kerak" });
+    return;
+  }
+
+  const booking = state.addBooking({
+    roomId: Number(roomTypeId),
+    status,
+    arrival,
+    departure,
+    numAdult,
+    numChild: 0,
+    price,
+    firstName,
+    lastName,
+    phone: "+998900000000",
+    referer,
+  });
+
+  // Webhook YUBORILMAYDI — polling tutib olishi kerak
+  res.json({ ok: true, booking });
+});
+
+/**
  * Kreditni tiklash — testlar uchun.
  *
  * `/control/reset` dan farqi: bronlarni va calendarPushes'ni

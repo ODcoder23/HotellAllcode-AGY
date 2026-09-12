@@ -19,13 +19,16 @@ import { Queue, Worker, type Job } from "bullmq";
 import { config } from "../lib/config.js";
 import { QUEUE, redisConnection, registerWorker, registerQueue } from "./index.js";
 import { expireUnpaidBookings } from "../services/publicBooking.js";
+import { pollBookings, checkDrift, catchUpPending } from "../services/reconciliation.js";
 
 const connection = redisConnection as never;
 
 /** Vazifa turlari */
 export type MaintenanceJob =
   | { task: "expire_unpaid" }
-  | { task: "poll_beds24" };
+  | { task: "poll_beds24" }
+  | { task: "drift_check" }
+  | { task: "catch_up" };
 
 export const maintenanceQueue = new Queue<MaintenanceJob>(QUEUE.maintenance, {
   connection,
@@ -61,8 +64,42 @@ export const maintenanceWorker = new Worker<MaintenanceJob>(
       }
 
       case "poll_beds24": {
-        // FAZA 14 da to'ldiriladi (04-fayl §8 polling fallback)
-        return { ok: true, deferred: "FAZA 14" };
+        // TZ 10-band: webhook ishlamasa ham o'zgarishlar tushadi
+        // (04-fayl §8). Asosiy oqim emas — "tutib olish to'ri".
+        const result = await pollBookings();
+        if (config.isDev && result.fetched > 0) {
+          console.log(
+            `[maintenance] polling: ${result.fetched} bron tekshirildi, ` +
+            `${result.created} yangi, ${result.updated} yangilandi`
+          );
+        }
+        return result;
+      }
+
+      case "drift_check": {
+        // TZ 20-band: PMS va Beds24 bir xil inventory ko'rishi
+        // (07-fayl §6)
+        const result = await checkDrift(30);
+        if (result.driftDays > 0) {
+          console.warn(
+            `[maintenance] DRIFT: ${result.driftDays} kun farq qildi, ` +
+            `${result.corrected} tur tuzatishga qo'yildi`
+          );
+        }
+        return result;
+      }
+
+      case "catch_up": {
+        // TZ 17-band: "Beds24 qayta ishlaganda avtomatik yuborilsin"
+        const result = await catchUpPending();
+        const total = result.pendingWebhooks + result.pendingReservations + result.requeued;
+        if (config.isDev && total > 0) {
+          console.log(
+            `[maintenance] catch-up: ${result.pendingWebhooks} webhook, ` +
+            `${result.pendingReservations} bron, ${result.requeued} availability`
+          );
+        }
+        return result;
       }
 
       default:
@@ -99,8 +136,35 @@ export async function scheduleMaintenance(): Promise<void> {
       { name: "expire_unpaid", data: { task: "expire_unpaid" } }
     );
 
+    // Polling fallback — har 15 daqiqada (04-fayl §8, TZ 10-band)
+    await maintenanceQueue.upsertJobScheduler(
+      "cron_poll_beds24",
+      { every: config.pollIntervalMinutes * 60_000 },
+      { name: "poll_beds24", data: { task: "poll_beds24" } }
+    );
+
+    // Qolib ketgan sync — har 15 daqiqada (TZ 17-band).
+    // Polling'dan keyin ishlaydi: u yangi ma'lumot olib keladi,
+    // bu esa yuborilmay qolganlarni tozalaydi.
+    await maintenanceQueue.upsertJobScheduler(
+      "cron_catch_up",
+      { every: config.pollIntervalMinutes * 60_000, offset: 60_000 },
+      { name: "catch_up", data: { task: "catch_up" } }
+    );
+
+    // Drift tekshiruvi — kuniga bir marta, kam yuklamali vaqtda
+    // (07-fayl §6, TZ 20-band). Har kuni 04:00 da.
+    await maintenanceQueue.upsertJobScheduler(
+      "cron_drift_check",
+      { pattern: "0 4 * * *" },
+      { name: "drift_check", data: { task: "drift_check" } }
+    );
+
     if (config.isDev) {
-      console.log("  Davriy vazifalar: to'lanmagan bronlarni tozalash (har soat)");
+      console.log(
+        `  Davriy vazifalar: to'lanmagan bronlar (soatlik), ` +
+        `polling + catch-up (${config.pollIntervalMinutes} daq), drift (kunlik)`
+      );
     }
   } catch (e) {
     // Redis yo'q — PMS baribir ishlaydi (TZ 17, 19-band)
@@ -108,7 +172,12 @@ export async function scheduleMaintenance(): Promise<void> {
   }
 }
 
-/** Qo'lda ishga tushirish — admin endpoint'i uchun */
-export async function runExpireNow() {
-  return expireUnpaidBookings();
-}
+// --- Qo'lda ishga tushirish (admin endpoint'lari uchun) -----
+//
+// Dasturchi topshirishda va admin nosozlikda kutmasdan
+// tekshirishi uchun. Jadval o'z vaqtida baribir ishlaydi.
+
+export const runExpireNow = () => expireUnpaidBookings();
+export const runPollNow = () => pollBookings();
+export const runDriftCheckNow = (days?: number) => checkDrift(days ?? 30);
+export const runCatchUpNow = () => catchUpPending();

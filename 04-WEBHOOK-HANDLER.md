@@ -252,6 +252,35 @@ SyncState.lastSuccessfulAt = now()
 
 ---
 
+## 8.1. Amalga oshirilgan holat (FAZA 14 — bajarildi)
+
+Kod: `backend/src/services/reconciliation.ts` (`pollBookings`),
+jadval: `backend/src/queues/scheduler.ts`.
+
+**Kod takrorlanmadi.** Polling har bronni `applyReservation` orqali
+o'tkazadi — webhook worker'i ham aynan shuni chaqiradi. Shuning
+uchun dedup, xona biriktirish, to'lov sinxronizatsiyasi va echo
+himoyasi ikkala yo'lda bir xil ishlaydi. Buning uchun
+`applyReservation` private'dan eksportga chiqarildi.
+
+**`SyncState` vaqtni eslab qoladi** (`bookings_pull` kaliti).
+Vaqt so'rov YUBORILGAN paytda olinadi, javob kelganda emas — aks
+holda so'rov davomida o'zgargan bron ikki yurish orasiga tushib
+qolardi. Ustiga 2 daqiqa orqaga suriladi: chegarada turgan bron
+o'tkazib yuborilmasligi uchun.
+
+**Faqat muvaffaqiyatli yurishdan keyin belgilanadi.** Xato bo'lsa
+keyingi safar o'sha oraliq qayta so'raladi — ma'lumot yo'qolmaydi.
+
+**Jadval:** har `POLL_INTERVAL_MINUTES` (default 15) daqiqada.
+Qo'lda: `POST /api/admin/maintenance/poll`.
+
+**Tekshirilgan:** mock'ga bron webhook YUBORMASDAN qo'shildi
+(`/control/add-booking-silently`) — PMS bilmadi; polling ishga
+tushgach bron PMS'ga tushdi. Ikkinchi polling dublikat yaratmadi.
+
+---
+
 ## 9. Webhook validatsiyasi (TZ 10, 18-band)
 
 TZ 10-band birinchi qadam sifatida "validate" ni, 18-band esa

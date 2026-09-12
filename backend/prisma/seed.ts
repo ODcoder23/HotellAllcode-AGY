@@ -238,7 +238,33 @@ async function main() {
   console.log("\nSeed tugadi.");
 }
 
-main()
+/**
+ * Seed'ni qayta urinish bilan ishga tushiradi.
+ *
+ * NEGA KERAK: testlar ishlayotganda server ham DB bilan ishlaydi
+ * (worker'lar, WebSocket, davriy vazifalar). Seed `deleteMany`
+ * qilayotganda worker o'sha qatorga tegib qolsa - deadlock yoki
+ * serialization xatosi chiqadi. Bu o'tkinchi holat: bir necha yuz
+ * millisekunddan keyin qayta urinish o'tadi.
+ *
+ * Aks holda butun test yurishi sababsiz yiqiladi va sabab
+ * "PrismaClientUnknownRequestError" degan tushunarsiz xabar bo'ladi
+ * (bir marta kuzatilgan: 26 test birdan qulagan).
+ */
+async function runWithRetry(attempts = 3): Promise<void> {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      await main();
+      return;
+    } catch (e) {
+      if (i === attempts) throw e;
+      console.warn(`\nSeed urinish ${i}/${attempts} yiqildi, qayta urinamiz...`);
+      await new Promise((r) => setTimeout(r, 400 * i));
+    }
+  }
+}
+
+runWithRetry()
   .catch((e) => {
     console.error("\nSeed XATOSI:", e);
     process.exit(1);

@@ -24,6 +24,7 @@ import { parseAuth, authRequired } from "./lib/authMiddleware.js";
 import { internalLimiter, webhookLimiter } from "./lib/rateLimit.js";
 import "./queues/workers.js";     // worker'lar ishga tushadi
 import { scheduleMaintenance } from "./queues/scheduler.js";
+import "./queues/deadLetter.js";   // TZ 11-band: beds24-retry navbati
 
 const app = express();
 
@@ -82,7 +83,7 @@ app.get("/health", async (_req, res) => {
       auth: authRequired(),
       rateLimit: !config.rateLimitDisabled,
     },
-    phase: "13",
+    phase: "14",
     timestamp: new Date().toISOString(),
   });
 });

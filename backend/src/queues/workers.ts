@@ -27,6 +27,7 @@ import { processWebhookEvent } from "../services/webhookProcessor.js";
 import { syncAvailabilityRange } from "../services/availability.js";
 import { pushReservation } from "../services/reservationSync.js";
 import { syncRatesRange } from "../services/rates.js";
+import { moveToDeadLetter } from "./deadLetter.js";
 import { notifySyncFailed } from "../realtime/notify.js";
 import { RateLimitError, isRetryable, getRetryDelay } from "../services/beds24/client.js";
 
@@ -231,6 +232,16 @@ for (const w of allWorkers) {
       `[worker] ${w.name} ${final ? "TUGADI" : `urinish ${attempts}/${max}`}: ` +
       `${err.message.slice(0, 160)}`
     );
+
+    // Barcha urinish tugagach — o'lik xat navbatiga (TZ 11-band).
+    // Aks holda yiqilgan job faqat Redis ichida qoladi va admin
+    // panelda ko'rinmaydi, ya'ni yo'qolgan sync jim o'tib ketadi.
+    if (final && job) {
+      // `final` yuqorida hisoblangan: urinishlar tugadi YOKI
+      // UnrecoverableError (mapping yo'q kabi — qayta urinish
+      // foydasiz). Ikkala holat ham o'lik xatga tushadi.
+      void moveToDeadLetter(job, err.message, true);
+    }
   });
 
   if (config.isDev) {
