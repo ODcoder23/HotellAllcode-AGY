@@ -73,6 +73,34 @@ TZ uchta ma'lumot oqimini talab qiladi, har biri alohida hujjatda:
 
 ---
 
+## ⚙️ ISH CHEGARASI
+
+Bizda Beds24 hisobiga ulanish huquqi **yo'q**. Shunga qaramay tizim
+**to'liq ishlaydigan holatda** topshiriladi — Beds24 moduli ham yoziladi
+va mock server bilan uchdan-uchgacha test qilinadi.
+
+| Biz yozamiz | Dasturchi qiladi |
+|---|---|
+| Butun backend + PostgreSQL + Prisma | `.env` ga credentials qo'yadi |
+| Ichki REST API (Shaxmatka) | `npm run beds24:connect` ishga tushiradi |
+| Public API (Website) | Beds24 panelida webhook URL kiritadi |
+| WebSocket server | Mapping ekranida turlarni bog'laydi (3 klik) |
+| BullMQ + barcha worker'lar | Deploy qiladi |
+| `services/beds24/*` — to'liq modul | |
+| Mock Beds24 server + testlar | **Kod yozmaydi** |
+
+**Almashtirish bitta o'zgaruvchida:**
+
+```
+Test:       BEDS24_BASE_URL=http://localhost:4000
+Production: BEDS24_BASE_URL=https://api.beds24.com/v2
+```
+
+Tafsilot: [11 FAZA 0.5](11-BOSQICHLAR-ROADMAP.md) (mock server),
+[11 FAZA 15](11-BOSQICHLAR-ROADMAP.md) (topshirish qadamlari).
+
+---
+
 ## Savol bo'yicha navigatsiya
 
 | Savolingiz | Fayl |

@@ -24,60 +24,94 @@ tarzida to'xtaladi.
 - Mavjud backend tekshiriladi: Express/Prisma bormi, PostgreSQL/Redis
   ulanishi bormi. Yo'q bo'lsa — skelet tayyorlanadi (Docker Compose:
   api + postgres + redis), biznes-mantiq yozilmaydi.
-- Beds24'da test/sandbox property mavjudligi **tasdiqlanadi**
-  (mijozdan so'raladi, taxmin qilinmaydi).
+- Beds24 hisobiga kirish huquqi yo'q — mock server bilan ishlaymiz
+  (FAZA 0.5). Tizim to'liq ishlaydigan holatda topshiriladi.
 - Mavjud Admin Panel va Website kodiga kirish olinadi.
 
 **Mezon:** `docker compose up` ishlaydi, `/health` javob beradi.
 
 ---
 
-## FAZA 0.5 — Beds24 haqiqatini aniqlash (kod yozilmaydi)
+## FAZA 0.5 — Mock Beds24 server (kod yoziladi)
 
-**Nega bu faza boshda turadi.** Hujjatlarning katta qismi Beds24
-hisobi qanday sozlanganligi haqidagi **taxminlar** ustiga qurilgan:
-xonalar room type darajasidami yoki har biri alohida unit'mi, webhook
-signature beradimi, kredit limiti qancha. Bu javoblar
-[02](02-DATABASE-SXEMA.md), [06](06-XONA-MAPPING.md),
-[07](07-AVAILABILITY-VA-RATES-SYNC.md) va
-[12](12-PMS-DAN-BEDS24-GA-SYNC.md) fayllarining asosini o'zgartirishi
-mumkin. Ularni **kod yozilishidan oldin** bilish kerak — aks holda DB
-va API taxmin ustiga quriladi va keyin qayta yoziladi.
+> **Ish chegarasi.** Bizda Beds24 hisobiga ulanish huquqi **yo'q**, lekin
+> tizim **to'liq ishlaydigan holatda** topshiriladi. Beds24 moduli ham
+> biz tomonidan yoziladi va mock server bilan uchdan-uchgacha test
+> qilinadi. Dasturchi faqat credentials qo'yadi — kod yozmaydi.
 
-### Bajariladigan ish
+### Kim nima qiladi
 
-Faqat **o'qish** operatsiyalari. Hech narsa yozilmaydi, hech qanday
-bronga tegilmaydi:
+| Biz yozamiz | Dasturchi qiladi |
+|---|---|
+| Butun backend + DB + API | `.env` ga Beds24 credentials qo'yadi |
+| `services/beds24/*` (auth, client, bookings, calendar) | Beds24 panelida webhook URL kiritadi |
+| Webhook handler + BullMQ worker'lar | Mapping ekranida turlarni bog'laydi (3 klik) |
+| Mock Beds24 server + integratsiya testlari | Deploy qiladi |
+| WebSocket, Public API | **Boshqa hech narsa** |
+
+### Mock server
+
+`mock-beds24/` — kichik Express ilova, Beds24 API v2 ni taqlid qiladi:
 
 ```
-1. Invite code olinadi (Settings → Account → Access)
-2. GET /authentication/setup → refreshToken
-3. GET /authentication/token → accessToken
-4. GET /properties      ← ASOSIY CHAQIRUV
-5. GET /bookings?limit=5 (agar test bron bo'lsa)
+mock-beds24/
+  server.ts              Express, port 4000
+  routes/
+    authentication.ts    /authentication/setup, /token
+    properties.ts        GET /properties
+    bookings.ts          GET/POST /bookings
+    calendar.ts          GET/POST /inventory/rooms/calendar
+  fixtures/              namunaviy javoblar (room type, booking)
+  scenarios.ts           xato holatlari
+  webhook-sender.ts      PMS'ga webhook yuboradi
 ```
+
+**Nimani simulyatsiya qiladi:**
+
+| Holat | Qanday |
+|---|---|
+| Normal javob | Fixture'dan JSON |
+| Rate limit | `x-five-min-limit-remaining` kamayadi, 0 da `429` |
+| Server xatosi | `?scenario=500` bilan majburan `500` |
+| Timeout | `?scenario=timeout` bilan 30s kutadi |
+| Webhook | Bron yaratilganda PMS endpoint'iga POST |
+| Duplicate webhook | Bir xil payload ikki marta yuboradi |
+
+**Nega kerak:** usiz "tizim ishlaydi" degan gap asossiz bo'ladi. Mock
+bilan retry, rate-limit kechiktirish, echo loop himoyasi, duplicate
+dedup — hammasi real sinovdan o'tadi.
+
+### Almashtirish
+
+```
+Test:       BEDS24_BASE_URL=http://localhost:4000
+Production: BEDS24_BASE_URL=https://api.beds24.com/v2
+```
+
+Kod ikkalasida ham **bir xil** — `client.ts` faqat `BEDS24_BASE_URL`
+ni o'qiydi. Dasturchi bitta o'zgaruvchini almashtiradi.
 
 ### Aniqlanishi kerak bo'lgan 6 fakt
 
-| № | Savol | Nimaga ta'sir qiladi |
+Mock server hujjatdagi **taxminlar** asosida yoziladi. Dasturchi real
+hisobga ulangach quyidagilarni tasdiqlaydi va farq bo'lsa xabar beradi:
+
+| № | Taxmin | Agar farq qilsa |
 |---|---|---|
-| 1 | Xonalar room type darajasidami yoki unit darajasida? | [06 §2](06-XONA-MAPPING.md) — mapping darajasi; `ChannelMapping.externalUnitId` kerakmi |
-| 2 | Nechta room type bor va ularning `id` lari? | [06 §3](06-XONA-MAPPING.md) — mapping ekrani |
-| 3 | Har turda nechta xona (`qty`)? | [07 §2](07-AVAILABILITY-VA-RATES-SYNC.md) — agregatsiya to'g'rimi |
-| 4 | Webhook signature/secret beradimi? | [04 §9](04-WEBHOOK-HANDLER.md) — validatsiya usuli |
-| 5 | Kredit limiti (`x-five-min-limit-remaining`)? | [05 §3](05-SYNC-QUEUE-BULLMQ.md) — rate-limit chegarasi |
-| 6 | Test/sandbox property bormi? | FAZA 6, 9, 10 — test qayerda o'tkaziladi |
+| 1 | Xonalar room type darajasida | [06 §2](06-XONA-MAPPING.md) — unit mapping yoqiladi (kod tayyor) |
+| 2 | 3 room type (standard/double/deluxe) | Mapping ekranida ko'rinadi, kod o'zgarmaydi |
+| 3 | Har turda 6/4/2 xona | [07 §2](07-AVAILABILITY-VA-RATES-SYNC.md) — `Availability` qayta hisoblanadi |
+| 4 | Webhook signature beradi | [04 §9](04-WEBHOOK-HANDLER.md) — IP whitelist rejimiga o'tadi |
+| 5 | 100 kredit / 5 daqiqa | [05 §3](05-SYNC-QUEUE-BULLMQ.md) — chegara `.env` dan o'qiladi |
+| 6 | Test property bor | Yo'q bo'lsa — real hisobda ehtiyot bilan |
 
-### Natija
+Har biri uchun kod **ikkala holatni ham qo'llab-quvvatlaydi** —
+konfiguratsiya orqali. Ya'ni farq chiqsa kod qayta yozilmaydi.
 
-Javoblar `BEDS24-HAQIQAT.md` faylida qayd etiladi. Agar biror javob
-hujjatdagi taxmindan farq qilsa — **tegishli fayl darhol tuzatiladi**,
-keyingi fazaga o'tilmaydi.
+**Mezon:** mock server ishga tushadi, `GET /properties` javob beradi,
+webhook yuboradi; `BEDS24_BASE_URL` almashtirilganda kod o'zgarmaydi.
 
-**Mezon:** oltita savolga ham aniq javob bor; hujjatlar shu javoblarga
-mos keltirilgan.
-
-**TZ:** 5-band (mapping haqiqati), 18-band (credentials) — qisman
+**TZ:** 12-band (channel abstraksiyasi) ✅
 
 ---
 
@@ -153,13 +187,18 @@ bron yaratish DB'ga yoziladi; 6 ta status ham to'g'ri ko'rinadi.
 - `services/beds24/auth.ts` — token olish, cache, avtomatik yangilash.
 - `services/beds24/client.ts` — rate-limit headerlarini o'qiydi,
   kredit tugasa keyingi so'rovni kechiktiradi.
-- `ChannelConnection` yaratiladi (invite code CLI skript orqali).
-- Faqat `GET /properties` — **yozish operatsiyasi yo'q**.
-- Beds24 hisobi unit-level sozlanganmi — shu yerda aniqlanadi
+- `ChannelConnection` yaratiladi — invite code CLI skript orqali
+  kiritiladi (`npm run beds24:connect`). Dasturchi shu skriptni
+  real code bilan ishga tushiradi.
+- `MockAdapter` va `Beds24Adapter` — ikkalasi ham `ChannelAdapter`
+  interfeysini bajaradi ([01 §4](01-ARXITEKTURA-VA-QOIDALAR.md)).
+- Unit-level mapping **konfiguratsiya orqali** yoqiladi/o'chiriladi —
+  Beds24 qaysi rejimda bo'lishidan qat'i nazar kod ishlaydi
   ([06 §2](06-XONA-MAPPING.md)).
 
-**Mezon:** property ro'yxati muvaffaqiyatli olinadi; token avtomatik
-yangilanadi; kredit hisobi loglanadi.
+**Mezon:** mock server'dan property ro'yxati olinadi; token avtomatik
+yangilanadi; kredit hisobi loglanadi; `429` qaytganda job kechiktiriladi
+(xato sifatida sanalmaydi).
 
 **TZ:** 18-band (credentials) ✅
 
@@ -231,9 +270,10 @@ brauzerda **sahifani yangilamasdan** paydo bo'ladi.
 - Debounce + batch + `syncedCount` solishtiruvi (kredit tejash).
 - Barcha trigger'lar ulanadi ([07 §3](07-AVAILABILITY-VA-RATES-SYNC.md)).
 
-**Mezon:** Shaxmatkada xona band qilinganda, Beds24 control panelida
-shu sanalar uchun availability **to'g'ri songa** kamayadi
-(6 → 5 → 4 ...).
+**Mezon:** Shaxmatkada xona band qilinganda, mock server'ga
+`POST /inventory/rooms/calendar` yetib keladi va `numAvail` to'g'ri
+songa kamayadi (6 → 5 → 4 ...). Mock so'rovni qayd qiladi, test uni
+tekshiradi.
 
 **TZ:** 6-band ✅
 
@@ -249,11 +289,13 @@ TZ 2-bandining sakkiz amali to'liq.
   **check-in/check-out**.
 - Xona almashtirishda ikki tur availability'si ([12 §4](12-PMS-DAN-BEDS24-GA-SYNC.md)).
 - Echo loop himoyasi tekshiriladi.
-- **Status mapping real `GET /bookings` javobi bilan tasdiqlanadi**
-  (mock emas) — [08 §3](08-RESERVATION-STATUS-VA-TOLOV.md).
+- Status mapping `statusMap.ts` da markazlashtiriladi va mock
+  fixture'lari bilan test qilinadi. Real qiymatlar farq qilsa —
+  faqat shu fayl yangilanadi ([08 §3](08-RESERVATION-STATUS-VA-TOLOV.md)).
 
-**Mezon:** sakkiz amalning har biri Beds24 panelida aks etadi;
-cheksiz halqa yo'q.
+**Mezon:** sakkiz amalning har biri mock server'ga yetib keladi va
+to'g'ri payload bilan; echo loop testida cheksiz halqa yuzaga
+kelmaydi.
 
 **TZ:** 2, 8-band ✅
 
@@ -319,6 +361,76 @@ PMS to'liq ishlaydi.
 
 ---
 
+## FAZA 15 — Topshirish (real Beds24'ga ulash)
+
+Bu faza **dasturchi tomonidan** bajariladi. Bizning ish tugagan —
+tizim to'liq ishlaydi, mock bilan test qilingan. Qoladigan ish: real
+credentials qo'yish va sozlash.
+
+### Dasturchi uchun qadamlar
+
+```
+1. Beds24 panelida invite code yaratish
+   Settings → Account → Access → Generate invite code
+   Scope: bookings (read+write), inventory (read+write), properties (read)
+
+2. Credentials kiritish
+   npm run beds24:connect
+   → invite code so'raladi
+   → refreshToken olinadi va shifrlab DB'ga yoziladi
+
+3. .env da bitta o'zgaruvchi
+   BEDS24_BASE_URL=https://api.beds24.com/v2   (mock o'rniga)
+
+4. Webhook URL sozlash
+   Beds24: Settings → Properties → Access → Booking webhooks
+   URL: https://<domen>/api/webhooks/beds24/<token>
+   (token .env dagi WEBHOOK_URL_TOKEN dan olinadi)
+
+5. Mapping (Admin panel → Beds24 mapping)
+   Har PMS xona turini Beds24 turiga bog'lash — 3 ta tanlov
+   "Tekshirish" tugmasi → isComplete: true bo'lishi kerak
+
+6. Tekshirish
+   npm run beds24:verify
+   → GET /properties javob beradimi
+   → kredit limiti qancha
+   → webhook yetib keladimi (test bron bilan)
+```
+
+### Agar haqiqat taxmindan farq qilsa
+
+Kod **ikkala holatni ham qo'llab-quvvatlaydi**, faqat konfiguratsiya
+o'zgaradi:
+
+| Holat | Sozlama |
+|---|---|
+| Unit-level mapping kerak | Mapping ekranida "unit darajasi" yoqiladi |
+| Webhook signature yo'q | `WEBHOOK_AUTH_MODE=ip_token` |
+| Kredit limiti boshqa | `BEDS24_CREDIT_LIMIT=<son>` |
+| Xona sonlari boshqa | Seed qayta ishga tushiriladi |
+
+Hech bir holat kod o'zgartirishni talab qilmaydi.
+
+### Nima ishlashini tekshirish (qabul mezoni)
+
+```
+☐ npm run beds24:verify — barcha tekshiruvlar yashil
+☐ Beds24'da test bron → 3 soniyada Shaxmatkada ko'rinadi
+☐ Shaxmatkada bron → Beds24 panelida ko'rinadi
+☐ Xona band qilinsa → Beds24'da availability kamayadi
+☐ Narx o'zgartirilsa → Beds24'da narx yangilanadi
+☐ Beds24 o'chirilsa → PMS to'liq ishlayveradi
+☐ Beds24 qaytsa → navbat o'z-o'zidan bo'shaydi
+```
+
+**Mezon:** yetti tekshiruv ham o'tadi.
+
+**TZ:** 20-band (yakuniy natija) ✅
+
+
+---
+
 ## TZ bandlari qamrovi
 
 | TZ bandi | Faza | Hujjat |
@@ -342,7 +454,7 @@ PMS to'liq ishlaydi.
 | 17. Error holati | 14 | `05`, `07` |
 | 18. Security | 12 | `10` |
 | 19. Asosiy qoida | 14 | `01` |
-| 20. Yakuniy natija | 13, 14 | barchasi |
+| 20. Yakuniy natija | 13, 14, **15** | barchasi |
 
 ---
 
