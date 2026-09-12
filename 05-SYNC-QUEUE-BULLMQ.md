@@ -4,6 +4,14 @@
 > **6-band** ("har bir o'zgarish queue orqali yuborilsin"),
 > **17-band** (Beds24 ishlamasa PMS davom etadi).
 
+
+**Bu fayl javob beradi:**
+
+- Nechta navbat bor va har biri nima qiladi?
+- API xato bersa necha marta qayta urinadi?
+- Kredit tugasa nima bo'ladi?
+- Beds24 o'chsa foydalanuvchi sezadimi?
+
 ---
 
 ## 1. Navbatlar (TZ 11-band)
@@ -68,7 +76,7 @@ holatni yuboradi, eskisini emas.
 ### c) Debounce va batch
 
 Bitta xonaning bir necha kunlik availability'si ketma-ket o'zgarsa,
-har birini alohida job qilish kredit isrof qiladi (`03`-fayl §3:
+har birini alohida job qilish kredit isrof qiladi ([03 §3](03-BEDS24-API-INTEGRATSIYA.md):
 100 kredit / 5 daqiqa):
 
 ```
@@ -96,7 +104,7 @@ await availabilityQueue.add("sync", payload, {
 ## 3. Rate-limit-aware ishlov
 
 Beds24 cheklovi: **5 daqiqalik aylanma oyna, ~100 kredit**
-(`03`-fayl §3). Har javobda:
+([03 §3](03-BEDS24-API-INTEGRATSIYA.md)). Har javobda:
 
 ```
 x-five-min-limit-remaining
@@ -220,7 +228,7 @@ talab qiladi:
 await syncLog.create({
   channelId, action: "push_availability",
   direction: "PMS_TO_CHANNEL",
-  request: sanitizeForLog(requestBody),     // 10-fayl §2
+  request: sanitizeForLog(requestBody),     // [10 §2](10-SECURITY-VA-SYNCLOG.md)
   response: sanitizeForLog(responseBody),
   status: "SUCCESS" | "FAILED" | "RETRYING" | "SKIPPED",
   attempt: job.attemptsMade + 1,
@@ -229,7 +237,7 @@ await syncLog.create({
 ```
 
 `SKIPPED` holati — masalan source-of-truth boshqa tomonda bo'lgani
-uchun narx yuborilmadi (`07`-fayl §7). Bu xato emas, lekin ko'rinishi
+uchun narx yuborilmadi ([07 §7](07-AVAILABILITY-VA-RATES-SYNC.md)). Bu xato emas, lekin ko'rinishi
 kerak.
 
 ---

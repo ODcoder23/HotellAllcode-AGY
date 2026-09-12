@@ -4,6 +4,14 @@
 > **4-band** (*"Admin sahifani refresh qilmasdan ham yangi bronni
 > ko'rishi uchun WebSocket/real-time update ishlatilsin"*).
 
+
+**Bu fayl javob beradi:**
+
+- Yangi bron Shaxmatkada qanday paydo bo'ladi?
+- Qaysi event'lar yuboriladi?
+- Ulanish uzilsa nima bo'ladi?
+- Frontendga qancha o'zgartirish kerak?
+
 ---
 
 ## 1. Arxitektura
@@ -101,7 +109,7 @@ yetarli, yangi komponent kerak emas:
 }
 ```
 
-`02`-fayl §3 dagi moslik jadvali bu yerda ham amal qiladi:
+[02 §3](02-DATABASE-SXEMA.md) dagi moslik jadvali bu yerda ham amal qiladi:
 `guestName`/`phone` flatten, `Decimal` → `number`, sana
 `"YYYY-MM-DD"`, `source`/`status` kichik harfda.
 
@@ -142,7 +150,7 @@ WebSocket ulanishi mavjud JWT tokeni bilan tasdiqlanadi
 ```
 
 RBAC shu yerda ham amal qiladi: `STAFF` roli `sync.failed` kabi
-texnik event'larni olmaydi (`10`-fayl §1).
+texnik event'larni olmaydi ([10 §1](10-SECURITY-VA-SYNCLOG.md)).
 
 ---
 
@@ -178,9 +186,9 @@ To'liq zanjir:
 ```
 Booking.com'da mehmon bron qildi
    ↓  (Beds24 qabul qiladi)
-Webhook → POST /api/webhooks/beds24        (04-fayl)
+Webhook → POST /api/webhooks/beds24        ([04](04-WEBHOOK-HANDLER.md))
    ↓
-Queue → worker → xona avtomatik biriktiriladi   (06-fayl §5)
+Queue → worker → xona avtomatik biriktiriladi   ([06 §5](06-XONA-MAPPING.md))
    ↓
 Reservation DB'ga yozildi
    ↓
@@ -202,5 +210,5 @@ ko'z bilan tasdiqlanadi.
 - **Push-notification** (mobil/brauzer bildirishnoma) — TZ'da yo'q
 - **Customer Website uchun real-time** — TZ 15-bandi faqat
   Shaxmatka/Admin uchun talab qiladi; Website'da holat REST orqali
-  ko'rsatiladi (`13`-fayl §9)
+  ko'rsatiladi ([13 §9](13-WEBSITE-INTEGRATSIYA.md))
 - **Offline rejim** — TZ'da yo'q

@@ -8,11 +8,19 @@ Bir fazada ikkinchisining ishini boshlash taqiqlanadi. Har faza
 oxirida — *"shu faza tugadi, keyingisiga o'tishga ruxsat bering"*
 tarzida to'xtaladi.
 
+
+**Bu fayl javob beradi:**
+
+- Ish qanday tartibda bajariladi?
+- Har faza qachon tugagan hisoblanadi?
+- Qaysi TZ bandi qaysi fazada bajariladi?
+- Nima uchun Beds24 tekshiruvi boshda?
+
 ---
 
 ## FAZA 0 — Tayyorgarlik (kod yozilmaydi)
 
-- `TZ-ASL.md` va `01-ARXITEKTURA-VA-QOIDALAR.md` to'liq o'qiladi.
+- `TZ-ASL.md` va `[01](01-ARXITEKTURA-VA-QOIDALAR.md)` to'liq o'qiladi.
 - Mavjud backend tekshiriladi: Express/Prisma bormi, PostgreSQL/Redis
   ulanishi bormi. Yo'q bo'lsa — skelet tayyorlanadi (Docker Compose:
   api + postgres + redis), biznes-mantiq yozilmaydi.
@@ -24,12 +32,61 @@ tarzida to'xtaladi.
 
 ---
 
+## FAZA 0.5 — Beds24 haqiqatini aniqlash (kod yozilmaydi)
+
+**Nega bu faza boshda turadi.** Hujjatlarning katta qismi Beds24
+hisobi qanday sozlanganligi haqidagi **taxminlar** ustiga qurilgan:
+xonalar room type darajasidami yoki har biri alohida unit'mi, webhook
+signature beradimi, kredit limiti qancha. Bu javoblar
+[02](02-DATABASE-SXEMA.md), [06](06-XONA-MAPPING.md),
+[07](07-AVAILABILITY-VA-RATES-SYNC.md) va
+[12](12-PMS-DAN-BEDS24-GA-SYNC.md) fayllarining asosini o'zgartirishi
+mumkin. Ularni **kod yozilishidan oldin** bilish kerak — aks holda DB
+va API taxmin ustiga quriladi va keyin qayta yoziladi.
+
+### Bajariladigan ish
+
+Faqat **o'qish** operatsiyalari. Hech narsa yozilmaydi, hech qanday
+bronga tegilmaydi:
+
+```
+1. Invite code olinadi (Settings → Account → Access)
+2. GET /authentication/setup → refreshToken
+3. GET /authentication/token → accessToken
+4. GET /properties      ← ASOSIY CHAQIRUV
+5. GET /bookings?limit=5 (agar test bron bo'lsa)
+```
+
+### Aniqlanishi kerak bo'lgan 6 fakt
+
+| № | Savol | Nimaga ta'sir qiladi |
+|---|---|---|
+| 1 | Xonalar room type darajasidami yoki unit darajasida? | [06 §2](06-XONA-MAPPING.md) — mapping darajasi; `ChannelMapping.externalUnitId` kerakmi |
+| 2 | Nechta room type bor va ularning `id` lari? | [06 §3](06-XONA-MAPPING.md) — mapping ekrani |
+| 3 | Har turda nechta xona (`qty`)? | [07 §2](07-AVAILABILITY-VA-RATES-SYNC.md) — agregatsiya to'g'rimi |
+| 4 | Webhook signature/secret beradimi? | [04 §9](04-WEBHOOK-HANDLER.md) — validatsiya usuli |
+| 5 | Kredit limiti (`x-five-min-limit-remaining`)? | [05 §3](05-SYNC-QUEUE-BULLMQ.md) — rate-limit chegarasi |
+| 6 | Test/sandbox property bormi? | FAZA 6, 9, 10 — test qayerda o'tkaziladi |
+
+### Natija
+
+Javoblar `BEDS24-HAQIQAT.md` faylida qayd etiladi. Agar biror javob
+hujjatdagi taxmindan farq qilsa — **tegishli fayl darhol tuzatiladi**,
+keyingi fazaga o'tilmaydi.
+
+**Mezon:** oltita savolga ham aniq javob bor; hujjatlar shu javoblarga
+mos keltirilgan.
+
+**TZ:** 5-band (mapping haqiqati), 18-band (credentials) — qisman
+
+---
+
 ## FAZA 1 — Database (`02`)
 
 - Prisma schema to'liq yoziladi va migratsiya qilinadi (TZ 13-band:
   12 ta majburiy jadval + qo'shimchalar).
 - **Raw SQL migratsiya:** `btree_gist` + `reservation_no_overlap`
-  exclusion constraint (`02`-fayl §2). Buni Prisma o'zi yarata
+  exclusion constraint ([02 §2](02-DATABASE-SXEMA.md)). Buni Prisma o'zi yarata
   olmaydi — qo'lda yoziladi.
 - Seed: 12 xona (`Room.id` = xona raqami), 3 room type, test bronlar.
 
@@ -47,7 +104,7 @@ tasdiqlangan.
   `GET/POST /rooms`, `GET/POST/PATCH /reservations`,
   `POST /reservations/:id/payments`, `/charges`,
   `/check-in`, `/check-out`, `/cancel`, `/change-room`, `/change-dates`.
-- API javob formati `02`-fayl §3 jadvaliga qat'iy mos
+- API javob formati [02 §3](02-DATABASE-SXEMA.md) jadvaliga qat'iy mos
   (`guestName` flatten, `Decimal` → `number`, sana `"YYYY-MM-DD"`).
 - Shaxmatka **hali ulanmaydi** — Postman/curl bilan tekshiriladi.
 
@@ -63,9 +120,9 @@ frontend kutgan shaklda.
 Alohida faza — chunki bu TZ'ning eng muhim talabi va jiddiy
 test talab qiladi.
 
-- Transaction + `Serializable` isolation (`07`-fayl §5, 2-qatlam).
+- Transaction + `Serializable` isolation ([07 §5](07-AVAILABILITY-VA-RATES-SYNC.md), 2-qatlam).
 - Constraint xatosini (`23P01`) tutib, tushunarli xabarga aylantirish.
-- `Availability` agregatsiya funksiyasi (`07`-fayl §2).
+- `Availability` agregatsiya funksiyasi ([07 §2](07-AVAILABILITY-VA-RATES-SYNC.md)).
 - **Parallel test:** 20 ta bir vaqtdagi so'rov bitta xonaga →
   faqat bittasi muvaffaqiyatli bo'lishi sinaladi.
 
@@ -81,7 +138,7 @@ qoplanuvchi bron yaratilmaydi.
 - `useState(buildRooms())` / `useState(buildSeedReservations)`
   o'rniga backend API'dan `fetch`.
 - UI komponentlari, ko'rinish, mantiq — **o'zgarmaydi**.
-- `RES_STATUS` ga ikki yangi status qo'shiladi (`08`-fayl §1,
+- `RES_STATUS` ga ikki yangi status qo'shiladi ([08 §1](08-RESERVATION-STATUS-VA-TOLOV.md),
   mijoz qarori Q5) va `roomStatusForReservation` yangilanadi.
 
 **Mezon:** Shaxmatka brauzerda backend ma'lumotlarini ko'rsatadi;
@@ -99,7 +156,7 @@ bron yaratish DB'ga yoziladi; 6 ta status ham to'g'ri ko'rinadi.
 - `ChannelConnection` yaratiladi (invite code CLI skript orqali).
 - Faqat `GET /properties` — **yozish operatsiyasi yo'q**.
 - Beds24 hisobi unit-level sozlanganmi — shu yerda aniqlanadi
-  (`06`-fayl §2).
+  ([06 §2](06-XONA-MAPPING.md)).
 
 **Mezon:** property ro'yxati muvaffaqiyatli olinadi; token avtomatik
 yangilanadi; kredit hisobi loglanadi.
@@ -126,7 +183,7 @@ yangilanadi; kredit hisobi loglanadi.
 
 - `POST /api/webhooks/beds24` — validate, saqlash, dedup, queue.
 - Beds24 panelida webhook URL sozlanadi (mijoz bilan birga).
-- Signature bormi — shu yerda aniqlanadi (`04`-fayl §9).
+- Signature bormi — shu yerda aniqlanadi ([04 §9](04-WEBHOOK-HANDLER.md)).
 - Real webhook qabul qilinib, **aniq event nomlari qayd etiladi**.
 - Duplicate test: bir xil webhook ikki marta → ikkinchisi
   `IGNORED_DUPLICATE`.
@@ -142,7 +199,7 @@ paydo bo'ladi; takroriy webhook duplicate deb belgilanadi.
 
 - BullMQ barcha navbatlari (TZ 11-band: 5 ta navbat).
 - Webhook worker: `WebhookEvent` → `Reservation`.
-- **Avtomatik xona biriktirish** (`06`-fayl §5, mijoz qarori Q3).
+- **Avtomatik xona biriktirish** ([06 §5](06-XONA-MAPPING.md), mijoz qarori Q3).
 - Mapping yo'q / bo'sh xona yo'q holatlari test qilinadi.
 - Retry/backoff sinaladi (Beds24'ni vaqtincha bloklab).
 
@@ -170,9 +227,9 @@ brauzerda **sahifani yangilamasdan** paydo bo'ladi.
 ## FAZA 9 — PMS → Beds24: availability (`07`, `12`)
 
 - `beds24-availability-sync` to'liq yoziladi.
-- Agregatsiya: room type bo'yicha son (`07`-fayl §2).
+- Agregatsiya: room type bo'yicha son ([07 §2](07-AVAILABILITY-VA-RATES-SYNC.md)).
 - Debounce + batch + `syncedCount` solishtiruvi (kredit tejash).
-- Barcha trigger'lar ulanadi (`07`-fayl §3).
+- Barcha trigger'lar ulanadi ([07 §3](07-AVAILABILITY-VA-RATES-SYNC.md)).
 
 **Mezon:** Shaxmatkada xona band qilinganda, Beds24 control panelida
 shu sanalar uchun availability **to'g'ri songa** kamayadi
@@ -186,14 +243,14 @@ shu sanalar uchun availability **to'g'ri songa** kamayadi
 
 TZ 2-bandining sakkiz amali to'liq.
 
-- `beds24-reservation-sync` worker (`12`-fayl §2, §3).
+- `beds24-reservation-sync` worker ([12 §2](12-PMS-DAN-BEDS24-GA-SYNC.md), §3).
 - Sakkiz amal ham test qilinadi: yaratish, o'zgartirish, **xona
   almashtirish**, sana, mehmon soni, narx, bekor qilish,
   **check-in/check-out**.
-- Xona almashtirishda ikki tur availability'si (`12`-fayl §4).
+- Xona almashtirishda ikki tur availability'si ([12 §4](12-PMS-DAN-BEDS24-GA-SYNC.md)).
 - Echo loop himoyasi tekshiriladi.
 - **Status mapping real `GET /bookings` javobi bilan tasdiqlanadi**
-  (mock emas) — `08`-fayl §3.
+  (mock emas) — [08 §3](08-RESERVATION-STATUS-VA-TOLOV.md).
 
 **Mezon:** sakkiz amalning har biri Beds24 panelida aks etadi;
 cheksiz halqa yo'q.
@@ -207,7 +264,7 @@ cheksiz halqa yo'q.
 - `beds24-rate-sync`, source-of-truth konfiguratsiyasi.
 - Teskari yo'nalish (`rate.changed`) — SoT ga bo'ysunishi.
 - `payment.updated` oqimi to'liq ulanadi.
-- Narx admin tomonidan qo'lda belgilanadi (`07`-fayl §8) — avtomatik/dinamik narxlash mexanizmi **yo'q**.
+- Narx admin tomonidan qo'lda belgilanadi ([07 §8](07-AVAILABILITY-VA-RATES-SYNC.md)) — avtomatik/dinamik narxlash mexanizmi **yo'q**.
 
 **Mezon:** narx ikki yo'nalishda ham to'g'ri ishlaydi, loop yo'q;
 Beds24'dan kelgan to'lov Shaxmatkadagi "To'liq to'langan / Qarz bor"
@@ -225,7 +282,7 @@ belgisini to'g'ri ko'rsatadi.
 - `AuditLog` muhim amallarga ulanadi.
 - Rate limiting, HTTPS, `.env` tekshiruvi.
 
-**Mezon:** `10`-fayl §1 jadvalidagi 9 ta talab ham "bajarildi".
+**Mezon:** [10 §1](10-SECURITY-VA-SYNCLOG.md) jadvalidagi 9 ta talab ham "bajarildi".
 
 **TZ:** 16, 18-band ✅
 
@@ -248,8 +305,8 @@ xona band bo'ladi → Beds24'ga yuboriladi → OTA availability kamayadi.
 
 ## FAZA 14 — Fallback, drift va yuklama testi
 
-- Polling fallback (`04`-fayl §8) — webhook o'chirilib sinaladi.
-- Drift tekshiruvi (`07`-fayl §6) — reconciliation job.
+- Polling fallback ([04 §8](04-WEBHOOK-HANDLER.md)) — webhook o'chirilib sinaladi.
+- Drift tekshiruvi ([07 §6](07-AVAILABILITY-VA-RATES-SYNC.md)) — reconciliation job.
 - To'liq tizim darajasida overbooking testi (Beds24 bilan birga).
 - Beds24'ni butunlay o'chirib, PMS ishlashda davom etishi
   tekshiriladi (TZ 17, 19-band).

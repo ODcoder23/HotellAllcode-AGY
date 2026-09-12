@@ -9,6 +9,14 @@ TZ 3-bandi Website oqimini **aniq talab qiladi** va 20-band uni
 yakuniy natijaning birinchi bandi sifatida qaytaradi. Shuning uchun
 bu ish scope ichida.
 
+
+**Bu fayl javob beradi:**
+
+- Saytdan bron qilinsa nima bo'ladi?
+- Mehmon qaysi xonani oladi?
+- To'lanmagan bron qancha turadi?
+- Public API qanday himoyalangan?
+
 ---
 
 ## 1. Nima uchun alohida API kerak
@@ -63,7 +71,7 @@ GET  /api/public/reservations/:code     (bron kodi bilan tekshirish)
 }
 ```
 
-`availableCount` — `07`-fayl §2 dagi agregatsiya, lekin **butun oraliq
+`availableCount` — [07 §2](07-AVAILABILITY-VA-RATES-SYNC.md) dagi agregatsiya, lekin **butun oraliq
 bo'yicha minimal qiymat**: agar 15-da 3 ta, 17-da 1 ta bo'sh bo'lsa,
 5 kunlik bron uchun javob **1** bo'ladi. Aks holda mehmon bron
 qilmoqchi bo'lganda xato chiqadi.
@@ -104,7 +112,7 @@ Javob:
 ## 3. Xona avtomatik tanlash
 
 Mehmon **turni** tanlaydi, tizim **aniq xonani** o'zi biriktiradi.
-Bu Beds24'dan kelgan bron mantig'i bilan bir xil (`06`-fayl §5):
+Bu Beds24'dan kelgan bron mantig'i bilan bir xil ([06 §5](06-XONA-MAPPING.md)):
 
 ```ts
 function pickRoom(roomTypeId, checkIn, checkOut) {

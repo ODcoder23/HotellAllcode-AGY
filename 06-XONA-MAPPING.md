@@ -5,6 +5,14 @@
 > **Q2** (har xonaning o'z ID raqami bor), **Q3** (Beds24'dan kelgan
 > bron xonaga **avtomatik** biriktiriladi).
 
+
+**Bu fayl javob beradi:**
+
+- PMS xonasi Beds24'dagi qaysi xonaga bog'lanadi?
+- Mapping topilmasa nima bo'ladi?
+- Beds24'dan kelgan bron qaysi xonaga tushadi?
+- Bo'sh xona topilmasa?
+
 ---
 
 ## 1. TZ nima talab qiladi
@@ -20,7 +28,7 @@ Ya'ni mapping **ikki darajali**: tur ↔ tur, va xona ↔ unit.
 Va qat'iy qoida: *"Noto'g'ri xona turiga bron tushmasligi kerak."*
 
 **Muhim:** Beds24 tomonida mapping **API orqali sozlanmaydi** — faqat
-ularning control panelida qo'lda qilinadi (`03`-fayl §2). Bizning
+ularning control panelida qo'lda qilinadi ([03 §2](03-BEDS24-API-INTEGRATSIYA.md)). Bizning
 vazifamiz: (a) bu tashqi moslikni ichki tizimda **saqlash**,
 (b) har sync operatsiyasida **tekshirish**.
 
@@ -249,3 +257,17 @@ GET /api/admin/mapping/health
 
 Bu endpoint Admin panelda ogohlantirish ko'rsatish uchun ham,
 FAZA 5 ni tugatilgan deb hisoblash uchun ham ishlatiladi.
+
+---
+
+## Bu faylga tayanadi
+
+Mapping qoidalari o'zgarsa — quyidagilar tekshirilishi shart:
+
+| Fayl | Nimaga tayanadi |
+|---|---|
+| [04 §4](04-WEBHOOK-HANDLER.md) | Kelgan bron uchun xona tanlash |
+| [07 §4](07-AVAILABILITY-VA-RATES-SYNC.md) | Availability yuborishdan oldin mapping tekshiruvi |
+| [12 §3](12-PMS-DAN-BEDS24-GA-SYNC.md) | `resolveMapping()` — bron yuborish |
+| [13 §3](13-WEBSITE-INTEGRATSIYA.md) | Website bronida xona tanlash (bir xil algoritm) |
+| [11 FAZA 5](11-BOSQICHLAR-ROADMAP.md) | Mapping ekrani va tayyorlik mezoni |

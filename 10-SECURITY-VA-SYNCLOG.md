@@ -4,6 +4,14 @@
 > **16-band** (SyncLog tarkibi), **13-band** (credentials frontendga
 > chiqmasin).
 
+
+**Bu fayl javob beradi:**
+
+- Token'lar qanday himoyalanadi?
+- Nima log qilinmaydi?
+- Qaysi rollar bor va kim nima qila oladi?
+- SyncLog'da nima saqlanadi?
+
 ---
 
 ## 1. TZ 18-band — to'qqiz talab
@@ -14,7 +22,7 @@
 | 2 | `.env` / secure storage | `.env` `.gitignore` da; production'da Docker secrets yoki server env | 0 |
 | 3 | JWT authentication | Barcha `/api/*` (public'dan tashqari) JWT talab qiladi | 2A |
 | 4 | RBAC | 3 rol: `ADMIN` / `MANAGER` / `STAFF` (§3) | 12 |
-| 5 | Webhook validation | Signature yoki IP whitelist + URL token (`04`-fayl §9) | 6 |
+| 5 | Webhook validation | Signature yoki IP whitelist + URL token ([04 §9](04-WEBHOOK-HANDLER.md)) | 6 |
 | 6 | Rate limiting | `express-rate-limit` — webhook va public API'da qat'iy | 6, 13 |
 | 7 | HTTPS | Nginx + Let's Encrypt | 0 |
 | 8 | Audit log | `AuditLog` jadvali — kim, qachon, nima qildi (§4) | 12 |
@@ -229,7 +237,7 @@ serializatsiya qilinishining oldi olinadi.
 | Ichki API (JWT bilan) | 300/daqiqa | yumshoq |
 
 Webhook cheklovi **bizning himoyamiz** — Beds24'ning bizga qo'ygan
-cheklovi bilan aralashtirmaslik kerak (u `03`-fayl §3 da).
+cheklovi bilan aralashtirmaslik kerak (u [03 §3](03-BEDS24-API-INTEGRATSIYA.md) da).
 
 ---
 

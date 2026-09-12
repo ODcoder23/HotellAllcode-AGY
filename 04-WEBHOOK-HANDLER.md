@@ -5,6 +5,14 @@
 > **1-band** (qaysi ma'lumotlar keladi).
 > Mijoz qarori: **Q3** (bron xonaga avtomatik biriktiriladi).
 
+
+**Bu fayl javob beradi:**
+
+- Beds24'dan bron kelganda nima bo'ladi?
+- Bir xil webhook ikki marta kelsa?
+- Mapping yo'q bo'lsa bron nima bo'ladi?
+- Webhook ishlamay qolsa zaxira bormi?
+
 ---
 
 ## 1. Endpoint
@@ -18,7 +26,7 @@ orqali yoqiladi va shu URL kiritiladi.
 
 Beds24 webhook body'sida **to'liq bron ma'lumoti** JSON holida keladi —
 ko'p holatlarda qo'shimcha `GET` so'rov qilish shart emas. Bu kredit
-ham tejaydi (`03`-fayl §3).
+ham tejaydi ([03 §3](03-BEDS24-API-INTEGRATSIYA.md)).
 
 ---
 
@@ -39,7 +47,7 @@ Shaxmatkani update qilish.*
 │                                                                 │
 │ 2. EVENTNI SAQLASH                                              │
 │    - WebhookEvent.status = RECEIVED                             │
-│    - rawPayload to'liq (sanitizatsiyadan keyin — 10-fayl)       │
+│    - rawPayload to'liq (sanitizatsiyadan keyin — [10](10-SECURITY-VA-SYNCLOG.md))       │
 │    - payloadHash = SHA-256(rawPayload)                          │
 │                                                                 │
 │ 3. DUPLICATE TEKSHIRISH  (TZ 9-band)                            │
@@ -64,7 +72,7 @@ Shaxmatkani update qilish.*
 │    e. WebhookEvent.status = PROCESSED                           │
 │                                                                 │
 │ 7. SHAXMATKANI UPDATE QILISH                                    │
-│    - WebSocket event (09-fayl)                                  │
+│    - WebSocket event ([09](09-REALTIME-WEBSOCKET.md))                                  │
 │    - Admin sahifani yangilamasdan ko'radi (TZ 4-band)           │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -117,9 +125,9 @@ Webhook: yangi bron, roomId=12345, arrival=2026-09-15, departure=2026-09-20
         ↓
 1. ChannelMapping: externalRoomTypeId=12345 → roomTypeId="standard"
         ↓
-   Mapping yo'q?  → NEEDS_MANUAL_ACTION, bron yaratilmaydi (06-fayl §4)
+   Mapping yo'q?  → NEEDS_MANUAL_ACTION, bron yaratilmaydi ([06 §4](06-XONA-MAPPING.md))
         ↓
-2. Bo'sh xona tanlanadi (06-fayl §5): 101 band, 102 bo'sh → "102"
+2. Bo'sh xona tanlanadi ([06 §5](06-XONA-MAPPING.md)): 101 band, 102 bo'sh → "102"
         ↓
 3. Guest yaratiladi/topiladi (telefon yoki email bo'yicha)
         ↓
@@ -128,10 +136,10 @@ Webhook: yangi bron, roomId=12345, arrival=2026-09-15, departure=2026-09-20
      source = BOOKING_COM (referer'dan aniqlanadi)
      channelId = beds24
      externalReservationId = <Beds24 bookingId>
-     status = toPmsStatus(...)        (08-fayl §2)
+     status = toPmsStatus(...)        ([08 §2](08-RESERVATION-STATUS-VA-TOLOV.md))
      checkedInAt / checkedOutAt       (TZ 1-band)
         ↓
-5. To'lov ma'lumoti bo'lsa → Payment yaratiladi (08-fayl §7)
+5. To'lov ma'lumoti bo'lsa → Payment yaratiladi ([08 §7](08-RESERVATION-STATUS-VA-TOLOV.md))
         ↓
 6. Availability qayta hisoblanadi
         ↓
@@ -150,7 +158,7 @@ Beds24 bizda bo'lmagan xonani sotgan — real overbooking signali:
 ```
 
 Bron **avtomatik rad etilmaydi** — u real mehmon, OTA'da tasdiqlangan.
-Tafsilot: `06`-fayl §5.
+Tafsilot: [06 §5](06-XONA-MAPPING.md).
 
 ---
 
@@ -161,10 +169,10 @@ Tafsilot: `06`-fayl §5.
 | `booking.new` / `reservation.created` | Yangi `Reservation` (§4) |
 | `booking.modified` / `reservation.updated` | Sana, xona, mehmon soni, narx yangilanadi |
 | `booking.cancelled` | `status = CANCELLED`, xona va availability bo'shaydi |
-| `payment.updated` | `Payment` yaratiladi/yangilanadi (`08`-fayl §7) |
+| `payment.updated` | `Payment` yaratiladi/yangilanadi ([08 §7](08-RESERVATION-STATUS-VA-TOLOV.md)) |
 | `room.status.changed` | Beds24'da xona holati o'zgarsa (kamdan-kam) |
 | `availability.changed` | Faqat `SOURCE_OF_TRUTH_AVAILABILITY=beds24` bo'lsa |
-| `rate.changed` | Faqat `SOURCE_OF_TRUTH_RATES=beds24` bo'lsa (`07`-fayl §7) |
+| `rate.changed` | Faqat `SOURCE_OF_TRUTH_RATES=beds24` bo'lsa ([07 §7](07-AVAILABILITY-VA-RATES-SYNC.md)) |
 
 Beds24 event nomlari hisob sozlamasiga qarab farq qilishi mumkin —
 **FAZA 6** da real webhook qabul qilinib aniq nomlar qayd etiladi.
@@ -175,23 +183,14 @@ xato chiqarilmaydi (kelajakda kerak bo'lishi mumkin).
 
 ## 6. Echo loop himoyasi
 
-PMS Beds24'ga bron yuborganda, Beds24 o'sha bron haqida bizga webhook
-qaytaradi. Himoyasiz bo'lsa cheksiz halqa hosil bo'ladi:
+PMS yuborgan bron webhook bo'lib qaytadi — himoyasiz bo'lsa cheksiz
+halqa hosil bo'ladi. Worker ikki narsani tekshiradi: **`payloadHash`**
+DB'dagi holat bilan bir xil bo'lsa hech narsa yozilmaydi
+(`SyncLog.status = SKIPPED`), va **`referer: "PMS"`** belgisi qaytsa
+bu o'z aks-sadomiz ekani ma'lum bo'ladi.
 
-```
-PMS → Beds24 → webhook → PMS yangilandi → sync → Beds24 → webhook → ...
-```
-
-**Yechim — ikki qatlam:**
-
-1. **`payloadHash` solishtiruvi** (asosiy). Kelgan ma'lumot DB'dagi
-   joriy holat bilan bir xil bo'lsa — hech narsa yozilmaydi,
-   `SyncLog.status = SKIPPED`, WebSocket ham yuborilmaydi.
-2. **`referer: "PMS"`** maydoni (qo'shimcha). PMS yuborgan bronlarda
-   shu belgi bo'ladi; webhook'da qaytsa — o'z aks-sadomiz.
-
-Ikkinchisi yordamchi, chunki Beds24 bu maydonni har doim ham
-qaytarmasligi mumkin. Asosiy ishonch — birinchisida.
+→ To'liq mexanizm va nima uchun ikki qatlam kerakligi:
+[12 §3](12-PMS-DAN-BEDS24-GA-SYNC.md)
 
 ---
 
@@ -202,7 +201,7 @@ Worker xato berdi
    ↓
 WebhookEvent.status = FAILED, errorMessage saqlanadi, attempts++
    ↓
-beds24-retry navbatiga (exponential backoff — 05-fayl §3)
+beds24-retry navbatiga (exponential backoff — [05 §3](05-SYNC-QUEUE-BULLMQ.md))
    ↓
 5 urinishdan keyin ham bo'lmasa:
    → FAILED holatida qoladi
@@ -245,7 +244,7 @@ SyncState.lastSuccessfulAt = now()
 ```
 
 - `modifiedFrom` orqali **faqat o'zgarganlar** so'raladi — kredit
-  tejaladi (`03`-fayl §3).
+  tejaladi ([03 §3](03-BEDS24-API-INTEGRATSIYA.md)).
 - Bu **asosiy oqim emas**, faqat "tutib olish" mexanizmi. Asosiy
   oqim — real-time webhook.
 - Webhook butunlay ishlamay qolsa ham, 15 daqiqa ichida barcha
@@ -270,4 +269,4 @@ sozlamalari ko'rilgandan keyin. Ikkala holatda ham:
 - Endpoint `express-rate-limit` bilan himoyalanadi (TZ 18-band)
 - Validatsiyadan o'tmagan so'rov ham `WebhookEvent` ga yoziladi
   (`status = FAILED`) — hujum urinishlarini ko'rish uchun
-- Tokenlar hech qachon log qilinmaydi (`10`-fayl §2)
+- Tokenlar hech qachon log qilinmaydi ([10 §2](10-SECURITY-VA-SYNCLOG.md))

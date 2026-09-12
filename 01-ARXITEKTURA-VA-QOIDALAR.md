@@ -4,6 +4,14 @@
 > (channel abstraksiyasi), **19-band** (asosiy qoida), **7-band**
 > (source-of-truth), **20-band** (bir xil inventory).
 
+
+**Bu fayl javob beradi:**
+
+- Qaysi qatlam nimaga javobgar?
+- Beds24 o'chsa PMS ishlaydimi?
+- Narx/availability uchun kim source-of-truth?
+- Kelajakda boshqa kanal qanday qo'shiladi?
+
 ---
 
 ## 1. Umumiy sxema
@@ -67,11 +75,11 @@ bron/to'lov jarayonini to'liq davom ettira olishi kerak.
 Buning texnik kafolati:
 
 1. Hech qanday HTTP so'rov Beds24 javobini **kutmaydi** — barcha
-   tashqi chaqiruvlar navbat orqali, fire-and-forget (`05`-fayl §4).
+   tashqi chaqiruvlar navbat orqali, fire-and-forget ([05 §4](05-SYNC-QUEUE-BULLMQ.md)).
 2. Beds24 kodi alohida modulda (`services/beds24/*`), qolgan kod uni
    faqat interfeys orqali chaqiradi.
 3. Overbooking himoyasi **PMS ichida**, DB constraint darajasida —
-   Beds24'ga bog'liq emas (`07`-fayl §5).
+   Beds24'ga bog'liq emas ([07 §5](07-AVAILABILITY-VA-RATES-SYNC.md)).
 
 **Tekshirish usuli (FAZA 14):** `.env` da Beds24 o'chiriladi, butun
 PMS to'liq ishlashi tasdiqlanadi.
@@ -88,7 +96,7 @@ SOURCE_OF_TRUTH_RATES        = "pms" | "beds24"
 SOURCE_OF_TRUTH_AVAILABILITY = "pms"        ← deyarli har doim
 ```
 
-Qiymatlar `Settings` jadvalida saqlanadi (`02`-fayl), o'zgarishi
+Qiymatlar `Settings` jadvalida saqlanadi ([02](02-DATABASE-SXEMA.md)), o'zgarishi
 `AuditLog` ga yoziladi.
 
 **Availability uchun har doim `pms` tavsiya qilinadi.** Sabab: TZ
@@ -98,7 +106,7 @@ yoki Website'da xona band qilgan zahoti, boshqa hech kim (OTA ham)
 o'sha xonani ko'rmasligi kerak — bu TZ 3 va 20-bandning talabi.
 
 **Narx uchun** ikkala yo'nalish ham mumkin, lekin bir vaqtda faqat
-bittasi g'olib — aks holda cheksiz halqa (`07`-fayl §7).
+bittasi g'olib — aks holda cheksiz halqa ([07 §7](07-AVAILABILITY-VA-RATES-SYNC.md)).
 
 ---
 
@@ -137,7 +145,7 @@ TZ 11-band Redis + BullMQ ni, 13-band PostgreSQL ni to'g'ridan-to'g'ri
 talab qiladi. Qolganlari mavjud stackka mos tanlangan:
 
 - Backend: TypeScript, Node.js, Express
-- ORM: Prisma (+ raw SQL migratsiya — `02`-fayl §2)
+- ORM: Prisma (+ raw SQL migratsiya — [02 §2](02-DATABASE-SXEMA.md))
 - DB: PostgreSQL (`btree_gist` extension bilan)
 - Queue: Redis + BullMQ *(TZ 11-band)*
 - Real-time: WebSocket *(TZ 15-band)*
@@ -150,13 +158,13 @@ talab qiladi. Qolganlari mavjud stackka mos tanlangan:
 TZ uchta yo'nalishni alohida talab qiladi:
 
 ```
-① Beds24 → PMS          (TZ 1, 4-band)    → 04-WEBHOOK-HANDLER.md
+① Beds24 → PMS          (TZ 1, 4-band)    → [04](04-WEBHOOK-HANDLER.md)
    OTA'dan bron keladi, Shaxmatkada avtomatik ko'rinadi
 
-② PMS → Beds24          (TZ 2, 6, 7-band) → 12-PMS-DAN-BEDS24-GA-SYNC.md
+② PMS → Beds24          (TZ 2, 6, 7-band) → [12](12-PMS-DAN-BEDS24-GA-SYNC.md)
    Shaxmatkadagi 8 ta amal Beds24'ga yetkaziladi
 
-③ Website → PMS → Beds24 (TZ 3-band)      → 13-WEBSITE-INTEGRATSIYA.md
+③ Website → PMS → Beds24 (TZ 3-band)      → [13](13-WEBSITE-INTEGRATSIYA.md)
    Mijoz saytdan bron qiladi, zanjir oxirigacha boradi
 ```
 
@@ -183,11 +191,9 @@ amaliy kafolati — usiz vaqt o'tishi bilan sezilmas farqlar to'planadi.
 
 ---
 
-## 8. Nima bu hujjatlar to'plamiga KIRMAYDI
+## 8. Scope chegaralari
 
-- Admin Panel / Website / Shaxmatka UI qayta dizayni (TZ: "qayta
-  yasamang")
-- OTA'lar bilan to'g'ridan-to'g'ri integratsiya — Beds24 zimmasida
-- To'lov provayderi integratsiyasi — TZ 14-band faqat Beds24'dan
-  kelgan to'lovni bog'lashni talab qiladi
-- Mobil ilova, push-notification — TZ'da yo'q
+Qisqacha: UI qayta dizayni, OTA bilan to'g'ridan-to'g'ri integratsiya,
+to'lov provayderi va mobil ilova — **kirmaydi**.
+
+→ To'liq ro'yxat sabablari bilan: [00-INDEX](00-INDEX.md) oxirgi bo'lim

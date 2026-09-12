@@ -8,6 +8,14 @@ Bu hujjat TZ 2-bandining to'liq texnik yoyilmasi. Boshqa hujjatlarda
 `beds24-reservation-sync` navbati faqat nomi bilan tilga olingan edi —
 uning **mazmuni shu yerda**.
 
+
+**Bu fayl javob beradi:**
+
+- Shaxmatkadagi o'zgarish Beds24'ga qanday boradi?
+- Xona almashtirilsa nima bo'ladi?
+- Check-in Beds24'ga yuboriladimi?
+- Cheksiz halqa qanday oldi olinadi?
+
 ---
 
 ## 1. TZ 2-band: sakkiz amalning to'liq jadvali
@@ -84,7 +92,7 @@ async function pushReservation(reservationId: string) {
                payments: true, charges: true },
   });
 
-  // 1) Mapping majburiy — topilmasa sync RAD ETILADI (06-fayl §3)
+  // 1) Mapping majburiy — topilmasa sync RAD ETILADI ([06 §3](06-XONA-MAPPING.md))
   const mapping = await resolveMapping(res.room);
   if (!mapping) {
     await syncLog.fail("push_reservation", res.id, "mapping topilmadi");
@@ -101,7 +109,7 @@ async function pushReservation(reservationId: string) {
         ? { id: Number(res.externalReservationId) }   // update
         : { roomId: Number(mapping.externalRoomTypeId) }), // create
     ...(mapping.externalUnitId && { unitId: Number(mapping.externalUnitId) }),
-    status:     toBeds24Status(res.status),    // 08-fayl §1
+    status:     toBeds24Status(res.status),    // [08 §1](08-RESERVATION-STATUS-VA-TOLOV.md)
     arrival:    fmtDate(res.checkIn),          // "YYYY-MM-DD"
     departure:  fmtDate(res.checkOut),
     numAdult:   res.adults,
@@ -222,7 +230,7 @@ Mijoz tasdiqladi: **Beds24 buni qo'llab-quvvatlaydi, sync qilinadi.**
 Aniq maydon nomi Beds24 hisobi sozlamasiga qarab farq qilishi mumkin
 (`status`, `subStatus`, yoki custom flag). Shuning uchun:
 
-- Mapping **bitta joyda** — `services/beds24/statusMap.ts` (08-fayl §1).
+- Mapping **bitta joyda** — `services/beds24/statusMap.ts` ([08 §1](08-RESERVATION-STATUS-VA-TOLOV.md)).
 - **FAZA 10** da real `GET /bookings` javobi olinib, aniq maydon nomi
   tasdiqlanadi va `statusMap.ts` shunga moslanadi. Mock bilan emas,
   haqiqiy javob bilan.
@@ -265,7 +273,7 @@ Ikkinchisi `SOURCE_OF_TRUTH_RATES` ga bo'ysunadi.
 
 ## 8. Sync holatini kuzatish
 
-Har bron `syncStatus` maydoniga ega (`02`-fayl):
+Har bron `syncStatus` maydoniga ega ([02](02-DATABASE-SXEMA.md)):
 
 ```
 PENDING  → navbatda turibdi

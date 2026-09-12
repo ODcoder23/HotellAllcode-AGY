@@ -4,6 +4,14 @@
 > (rates sync), **3-band** (overbooking), **20-band** (bir xil inventory).
 > Mijoz qarorlari: **Q1/Q2** (har xona alohida, o'z ID raqami bilan).
 
+
+**Bu fayl javob beradi:**
+
+- Beds24'ga nechta bo'sh xona yuboriladi?
+- Overbooking qanday to'xtatiladi?
+- Narxni kim belgilaydi?
+- Narxlar paneli qanday ko'rinadi?
+
 ---
 
 ## 1. Ikki daraja — va ular orasidagi ko'prik
@@ -21,8 +29,8 @@ qiladi (`numAvail`). Shuning uchun tizim ikki darajada ishlaydi:
 │  PMS ICHIDA — aniq xona darajasi (haqiqat manbai)     │
 │                                                        │
 │  15-sentabr:  101 ██band   102 ░bo'sh   105 ░bo'sh    │
-│               107 ░bo'sh   109 ██band                  │
-│  (standard turida 5 xona: 2 band, 3 bo'sh)            │
+│               107 ░bo'sh   109 ██band   111 ░bo'sh    │
+│  (standard turida 6 xona: 2 band, 4 bo'sh)            │
 └───────────────────────┬──────────────────────────────┘
                         │  AGREGATSIYA
                         ▼
@@ -31,7 +39,7 @@ qiladi (`numAvail`). Shuning uchun tizim ikki darajada ishlaydi:
 │                                                        │
 │  POST /inventory/rooms/calendar                        │
 │  { roomId: <standard>, from: "2026-09-15",            │
-│    numAvail: 3 }                                       │
+│    numAvail: 4 }                                       │
 └──────────────────────────────────────────────────────┘
 ```
 
@@ -108,8 +116,8 @@ TZ 6-band: *"Har bir o'zgarish queue orqali yuborilsin."*
 | Website'dan bron | `checkIn` … `checkOut` |
 | Beds24/OTA'dan bron keldi | `checkIn` … `checkOut` |
 | Bron bekor qilindi | `checkIn` … `checkOut` (bo'shaydi) |
-| Sana o'zgardi | **eski ∪ yangi** oraliq (`12`-fayl §5) |
-| Xona almashdi (tur o'zgarsa) | **ikkala tur** uchun (`12`-fayl §4) |
+| Sana o'zgardi | **eski ∪ yangi** oraliq ([12 §5](12-PMS-DAN-BEDS24-GA-SYNC.md)) |
+| Xona almashdi (tur o'zgarsa) | **ikkala tur** uchun ([12 §4](12-PMS-DAN-BEDS24-GA-SYNC.md)) |
 | Xona `OUT_OF_ORDER` qilindi | bugundan + N kun oldinga |
 | Erta check-out | qolgan kunlar bo'shaydi |
 | Xona `isActive=false` | butun kelajak oraliq |
@@ -132,7 +140,7 @@ await availabilitySyncQueue.add("sync", {
 async function pushAvailability(roomTypeId, from, to) {
   const mapping = await getRoomTypeMapping(roomTypeId);
   if (!mapping) {
-    // 06-fayl §3 — taxminiy mapping ASLO ishlatilmaydi
+    // [06 §3](06-XONA-MAPPING.md) — taxminiy mapping ASLO ishlatilmaydi
     await syncLog.fail("push_availability", null, "mapping topilmadi");
     return;
   }
@@ -162,7 +170,7 @@ async function pushAvailability(roomTypeId, from, to) {
 }
 ```
 
-**Uch daraja kredit tejash** (`03`-fayl §3 dagi 100 kredit / 5 daqiqa
+**Uch daraja kredit tejash** ([03 §3](03-BEDS24-API-INTEGRATSIYA.md) dagi 100 kredit / 5 daqiqa
 cheklovi sababli):
 
 1. O'zgarmagan kunlar umuman yuborilmaydi (`syncedCount` solishtiruvi)
@@ -190,7 +198,7 @@ EXCLUDE USING gist (
 
 Bu PostgreSQL darajasidagi **jismoniy** to'siq. Dastur mantig'i xato
 qilsa ham, ikki parallel so'rov bir vaqtda kelsa ham — ikkinchisi
-`23P01` xatosi bilan rad etiladi. To'liq matni: `02`-fayl §2.
+`23P01` xatosi bilan rad etiladi. To'liq matni: [02 §2](02-DATABASE-SXEMA.md).
 
 ### 2-qatlam: Transaction ichida tekshiruv
 
@@ -318,11 +326,12 @@ bo'ladi. Shuning uchun:
 
 ## 8. Narx qanday belgilanadi
 
-**Narxni admin qo'lda belgilaydi.** Avtomatik/dinamik narxlash
-mexanizmi **yo'q** — mijoz qarori bilan olib tashlandi.
+**Narxni admin qo'lda belgilaydi.** Avtomatik o'suvchi narx mexanizmi
+(`base + confirmedCount × increment`) **olib tashlanadi** — mijoz
+qarori Q8.
 
 ```
-Admin narxni belgilaydi (Admin panel yoki bron yaratishda)
+Admin narxni belgilaydi (Shaxmatka → Narxlar paneli)
         ↓
 RatePlan.price yangilanadi, source = "pms"
         ↓
@@ -331,17 +340,16 @@ beds24-rate-sync job (SOURCE_OF_TRUTH_RATES = "pms" bo'lsa)
 Beds24 → OTA
 ```
 
-### Nega olib tashlandi
+### Nega avtomatik mexanizm olib tashlandi
 
-Mavjud Shaxmatka frontendida quyidagi mexanizm bor edi:
+Mavjud frontendda ishlaydigan formula:
 
 ```js
 currentBasePrice = clamp(base + confirmedCount * increment, min, max)
 ```
 
-`confirmedCount` — tasdiqlangan bronlar soni, va u **faqat o'sardi**,
-hech qachon kamaymasdi. Natijada narx bir tomonga surilib, `max`
-qiymatiga tegib qotib qolardi:
+`confirmedCount` faqat **o'sadi**, hech qachon kamaymaydi. Natijada
+narx bir tomonga surilib, `max` qiymatiga tegib qotib qolardi:
 
 | Bronlar soni | Standart xona narxi |
 |---|---|
@@ -351,37 +359,81 @@ qiymatiga tegib qotib qolardi:
 | 17+ | **$200** — shift, o'zgarmaydi |
 
 Bu Beds24 orqali OTA'ga chiqsa, Booking.com'dagi narx har brondan
-keyin ko'tarilib, oxir-oqibat sotilmaydigan darajaga yetardi.
+keyin ko'tarilib, sotilmaydigan darajaga yetardi. Uch sabab bilan
+olib tashlandi: TZ'da bunday mexanizm yo'q; formula xato (to'g'ri
+occupancy pricing **sanadagi bandlik foiziga** qarashi kerak, jami
+bronlar soniga emas); va yangi biznes-mantiq qo'shish TZ doirasidan
+tashqarida.
 
-Uch sabab bilan olib tashlandi:
+### Narxlar paneli — UI spetsifikatsiyasi
 
-1. **TZ'da bu mexanizm yo'q.** TZ 7-bandi faqat "narx o'zgarsa
-   sinxronlashtirilsin" deydi — narxni kim/qanday belgilashi
-   haqida hech narsa demaydi.
-2. **Formula xato.** To'g'ri occupancy pricing ma'lum **sanadagi
-   bandlik foiziga** qarashi kerak (bron bekor bo'lsa narx qaytishi
-   kerak), jami bronlar soniga emas.
-3. **"Qayta yasamang" qoidasi.** Yangi narxlash mantig'ini yozish —
-   mavjud tizimga yangi biznes-mantiq qo'shish, TZ doirasidan tashqari.
-
-### Frontendga ta'siri
-
-`PricingPanel` komponenti va `pricing` state Shaxmatkada qoladi,
-lekin narx endi **backenddan** keladi:
+Frontenddagi `PricingPanel` komponenti **saqlanib qoladi** (TZ "qayta
+yasamang"), lekin mazmuni o'zgaradi: avtomatik hisoblash o'rniga
+`RatePlan` narxlarini ko'rsatadi va tahrirlashga imkon beradi.
 
 ```
-GET /api/rate-plans?from=...&to=...
-  → [{ roomTypeId, date, price, minStay }]
+┌─ Narxlar ───────────────────────────┐
+│ Sana: [15 sen] – [20 sen]           │
+├─────────────────────────────────────┤
+│ Standart       [ $35 ]  ● yuborildi │
+│ Ikki kishilik  [ $42 ]  ○ kutmoqda  │
+│ Lyuks          [ $52 ]  ⚠ xato [↻]  │
+├─────────────────────────────────────┤
+│ ⚠ O'zgarish Beds24 → OTA'ga ketadi  │
+│              [Bekor]   [Saqlash]    │
+└─────────────────────────────────────┘
 ```
 
-Bron yaratishda taklif qilinadigan narx shu jadvaldan olinadi.
-Admin uni istalgan vaqtda o'zgartirishi mumkin — `Reservation.pricePerNight`
-bron darajasida alohida saqlanadi va `RatePlan` ga bog'liq emas.
+**Olib tashlanadigan elementlar** (mexanizm bilan birga ma'nosini
+yo'qotadi): `enabled` toggle, "Har bir bron narxni oshiradi" izohi,
+"Har bir bron uchun oshirish" selecti, min/maks narx maydonlari,
+"Tasdiqlangan bronlar" hisoblagichi, "Keyingi bron narxi" qatori.
 
-> **Eslatma:** Agar kelajakda bandlik asosidagi narxlash kerak bo'lsa —
-> `RatePlan` strukturasi `(roomTypeId, date)` bo'yicha allaqachon
-> tayyor, faqat hisoblash mantig'i qo'shiladi. Bu **alohida TZ**
-> talab qiladi.
+**Qoladigan element:** uch xona turi va ularning narxlari — endi
+tahrirlanadigan holda.
+
+### Saqlash oqimi va sync holati
+
+TZ 17-bandi admin Beds24'ni kutmasligini talab qiladi, lekin admin
+OTA'da narx yangilanganini **ko'rishi** kerak — aks holda eski narxda
+bron kelib qolishi mumkin.
+
+```
+"Saqlash" bosildi
+        ↓
+RatePlan DB'ga yoziladi (millisekundlar)
+        ↓
+✓ "Saqlandi" — panel yopiladi          ← admin kutmaydi
+        ↓
+(fonda) beds24-rate-sync → retry → retry
+        ↓
+WebSocket: rate.sync.updated → panel holati yangilanadi
+```
+
+Panel qayta ochilganda har narx yonida holat ko'rinadi:
+
+| Belgi | Ma'nosi | Manba |
+|---|---|---|
+| ● yuborildi | Beds24 qabul qildi | `RatePlan.syncedAt` bor |
+| ○ kutmoqda | Navbatda turibdi | job bor, `syncedAt` yo'q |
+| ⚠ xato | 5 urinish ham bo'lmadi | `SyncLog.status = FAILED` |
+
+Xato holatida `[↻]` tugmasi job'ni qayta navbatga qo'yadi.
+
+**Interaction state'lar:**
+
+| Holat | Ko'rinish |
+|---|---|
+| Loading | Narx maydonlari o'rniga skeleton |
+| Empty | `RatePlan` yo'q → "narx belgilanmagan", input bo'sh |
+| Error | Saqlash muvaffaqiyatsiz → qizil xabar, qiymatlar saqlanadi |
+| Success | ✓ "Saqlandi", 2 soniyada yo'qoladi |
+| Partial | DB saqlandi, Beds24 kutmoqda → ○ belgisi |
+
+> Bu — Shaxmatka frontendidagi **ikkinchi va oxirgi** o'zgartirish
+> ([00-INDEX](00-INDEX.md) qoida 1). Birinchisi — `RES_STATUS` ga ikki
+> status qo'shish ([08 §1](08-RESERVATION-STATUS-VA-TOLOV.md)).
+> Boshqa komponentlarga tegilmaydi.
 
 ---
 
@@ -396,7 +448,7 @@ DB yangilandi (darhol, ichki holat to'g'ri)   ← PMS uchun yetarli
   ↓
 Job navbatga (fire-and-forget)
   ↓
-Beds24 javob bermadi → retry → retry → retry (05-fayl §3)
+Beds24 javob bermadi → retry → retry → retry ([05 §3](05-SYNC-QUEUE-BULLMQ.md))
   ↓
 5 urinish ham bo'lmasa → SyncLog: FAILED, Admin ko'radi
 ```
@@ -406,3 +458,17 @@ Bu vaqt ichida:
 - Overbooking xavfi **yo'q** (PMS ichki himoyasi mustaqil)
 - Faqat OTA tomonidagi ko'rinish kechikadi
 - Beds24 qaytganda navbat o'z-o'zidan bo'shaydi (TZ 17-band)
+
+---
+
+## Bu faylga tayanadi
+
+Agregatsiya yoki overbooking qoidasi o'zgarsa — tekshirilishi shart:
+
+| Fayl | Nimaga tayanadi |
+|---|---|
+| [02 §2](02-DATABASE-SXEMA.md) | Exclusion constraint — bir xil chegara qoidasi `'[)'` |
+| [04 §4](04-WEBHOOK-HANDLER.md) | Webhook'dan keyin availability qayta hisoblash |
+| [12 §4-5](12-PMS-DAN-BEDS24-GA-SYNC.md) | Xona/sana o'zgarganda qaysi oraliq qayta hisoblanadi |
+| [13 §2](13-WEBSITE-INTEGRATSIYA.md) | Public API'da bo'sh xonalar soni |
+| [11 FAZA 2B, 9](11-BOSQICHLAR-ROADMAP.md) | Overbooking testi va availability sync |

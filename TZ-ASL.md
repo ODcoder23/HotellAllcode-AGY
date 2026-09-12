@@ -480,7 +480,7 @@ amalga oshirilgan.
 | Q5 | `PENDING_PAYMENT` va `NO_SHOW` statuslari | **Shaxmatkaga qo'shiladi** (Variant B). TZ 8-bandi 6 ta statusni talab qiladi — hammasi to'liq qo'llab-quvvatlanadi. | `08` §2 |
 | Q6 | Xona almashtirilsa | **Beds24'da ham ko'rinishi kerak** — sync majburiy. | `07` §4, `12` |
 | Q7 | Check-in / check-out Beds24'ga | **Qo'llab-quvvatlanadi, muammo yo'q** — sync qilinadi. | `08` §5, `12` |
-| Q8 | Dinamik (avtomatik o'suvchi) narxlash | **Umuman olib tashlanadi.** TZ'da bunday mexanizm yo'q; narxni **admin qo'lda** belgilaydi. | `07` §8 |
+| Q8 | Dinamik (avtomatik o'suvchi) narxlash | **Mexanizm olib tashlanadi** (`base + confirmedCount × increment`) — TZ'da bunday talab yo'q va formula xato (jami bronlar soniga qaraydi, sanadagi bandlikka emas). **Narxlar paneli UI sifatida qoladi**, endi `RatePlan` qiymatlarini ko'rsatadi va tahrirlashga imkon beradi. | [07 §8](07-AVAILABILITY-VA-RATES-SYNC.md) |
 
 **Qolgan barcha savollarga javob TZ'ning o'zidan olinadi** — mijoz
 ko'rsatmasi: *"qolgan savolarga javobni shu TZ dan topasan"*. Ya'ni

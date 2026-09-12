@@ -60,7 +60,7 @@ mappingni ichki tizimimizda saqlash va tekshirish uchun.
   javoban to'g'ridan-to'g'ri Beds24'ga so'rov yubormaslik kerak.
 - POST payload cheklovi: ~1MB, massivda ≤10000 top-level element.
 - Amaliy xulosa: barcha yozish operatsiyalari **navbat (queue)
-  orqali**, guruhlab (batch) yuboriladi — `05-SYNC-QUEUE-BULLMQ.md`ga
+  orqali**, guruhlab (batch) yuboriladi — `[05](05-SYNC-QUEUE-BULLMQ.md)`ga
   qarang. O'qish uchun esa iloji boricha webhook ishlatiladi, GET
   so'rovlar minimallashtiriladi (Beds24'ning o'zi ham buni tavsiya
   qiladi: "if you need data such as new bookings when they come in,
@@ -88,9 +88,17 @@ rate-limit va retry mantig'ini bitta joyda ushlab turish.
 - `refreshToken` va `accessToken` DB ustunida **app-level shifrlash**
   bilan saqlanadi (masalan AES-256, kalit `.env`da, `.env` repoga
   kirmaydi).
-- Hech qanday token log qilinmaydi (`10-SECURITY-VA-SYNCLOG.md`).
+- Hech qanday token log qilinmaydi (`[10](10-SECURITY-VA-SYNCLOG.md)`).
 - Frontend (Admin Panel) faqat "ulangan/ulanmagan" holatini ko'radi,
   tokenning o'zini hech qachon olmaydi.
+
+
+**Bu fayl javob beradi:**
+
+- Beds24'ga qanday autentifikatsiya qilinadi?
+- Qaysi endpoint'lar ishlatiladi?
+- Kredit limiti qancha va qanday tejaymiz?
+- Token'lar qayerda saqlanadi?
 
 ---
 
@@ -102,12 +110,12 @@ Bu hujjat `TZ-ASL.md` ning quyidagi bandlariga xizmat qiladi:
 |---|---|
 | 13-band — "Beds24 API credentials frontendga chiqmasin" | §5 |
 | 18-band — ".env / secure storage" | §5 |
-| 10-band — webhook | §2 (`/webhooks/bookings`), tafsilot `04`-faylda |
+| 10-band — webhook | §2 (`/webhooks/bookings`), tafsilot [04](04-WEBHOOK-HANDLER.md)da |
 | 6-band — availability sync | §2 (`/inventory/rooms/calendar`) |
 | 7-band — rates sync | §2 (o'sha endpoint, `price1`) |
 | 1, 2-band — bronlarni olish/yuborish | §2 (`/bookings` GET/POST) |
 | 5-band — mapping | §2 (`/properties`) + **muhim cheklov**: mapping API orqali sozlanmaydi |
-| 11, 17-band — queue, retry | §3 (rate limit) → `05`-fayl |
+| 11, 17-band — queue, retry | §3 (rate limit) → [05](05-SYNC-QUEUE-BULLMQ.md) |
 
 ## 7. Endpoint'lar — qaysi hujjatda ishlatiladi
 

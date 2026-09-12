@@ -6,6 +6,14 @@
 > Mijoz qarorlari: **Q5** (ikki yangi status Shaxmatkaga qo'shiladi),
 > **Q7** (check-in/check-out Beds24 bilan sinxronlanadi).
 
+
+**Bu fayl javob beradi:**
+
+- 6 ta status qanday qo'llab-quvvatlanadi?
+- Beds24 statuslari PMS'ga qanday map qilinadi?
+- To'lov qanday hisoblanadi?
+- Boshqa valyutada bron kelsa?
+
 ---
 
 ## 1. TZ 8-band: oltita status to'liq qo'llab-quvvatlanadi
@@ -59,7 +67,7 @@ ko'rsatish edi. Bu rad etildi, chunki:
   xatosi, mehmon kelganda tushunmovchilik chiqadi
 - TZ 8-bandi "qo'llab-quvvatlansin" deydi; yashirish qo'llab-quvvatlash
   emas
-- Website'dan kelgan har bron `PENDING_PAYMENT` bo'ladi (`13`-fayl §5) —
+- Website'dan kelgan har bron `PENDING_PAYMENT` bo'ladi ([13 §5](13-WEBSITE-INTEGRATSIYA.md)) —
   ya'ni bu kamdan-kam holat emas, balki kundalik oqim
 
 ### `roomStatusForReservation` ham yangilanadi
@@ -78,7 +86,7 @@ function roomStatusForReservation(res) {
 ```
 
 `pending_payment` → `reserved`: to'lanmagan bron ham xonani band
-qiladi (`13`-fayl §5). `no_show` → `available`: mehmon kelmadi,
+qiladi ([13 §5](13-WEBSITE-INTEGRATSIYA.md)). `no_show` → `available`: mehmon kelmadi,
 xona bo'shaydi (§4).
 
 ---
@@ -186,7 +194,7 @@ Reservation.status = CHECKED_IN
 Reservation.checkedInAt = now()      ← TZ 1-band: check-in vaqti saqlanadi
 Room.status = OCCUPIED
         ↓
-reservation-sync job → Beds24 (12-fayl §6)
+reservation-sync job → Beds24 ([12 §6](12-PMS-DAN-BEDS24-GA-SYNC.md))
 ```
 
 ```
@@ -229,9 +237,9 @@ hisoblaydi va shunday qolaveradi — ikkalasi bir xil natija beradi.
 Yangi maydonlar qo'shimcha sifatida boradi, frontend ularni
 e'tiborsiz qoldiradi.
 
-**`Decimal` → `number`.** Prisma `Decimal` obyekt qaytaradi, frontend
-esa son kutadi (`reduce` ustida arifmetika). Konvertatsiya API
-serializatsiya qatlamida, bitta markaziy joyda.
+**`Decimal` → `number`** konvertatsiyasi API serializatsiya qatlamida
+bajariladi — qoida va to'liq moslik jadvali:
+[02 §3](02-DATABASE-SXEMA.md).
 
 ---
 
