@@ -26,6 +26,7 @@ import {
 import { processWebhookEvent } from "../services/webhookProcessor.js";
 import { syncAvailabilityRange } from "../services/availability.js";
 import { pushReservation } from "../services/reservationSync.js";
+import { syncRatesRange } from "../services/rates.js";
 import { notifySyncFailed } from "../realtime/notify.js";
 import { RateLimitError, isRetryable, getRetryDelay } from "../services/beds24/client.js";
 
@@ -172,12 +173,32 @@ export const availabilitySyncWorker = new Worker<AvailabilitySyncJob>(
 export const rateSyncWorker = new Worker<RateSyncJob>(
   QUEUE.rateSync,
   async (job, token) => {
+    const { roomTypeIds, from, to } = job.data;
+
     try {
-      console.log(
-        `[worker] rate-sync: ${job.data.roomTypeIds.join(",")} ` +
-        `${job.data.from}..${job.data.to} — FAZA 11`
-      );
-      return { ok: true, deferred: "FAZA 11" };
+      if (config.isDev) {
+        console.log(`[worker] rate-sync: ${roomTypeIds.join(",")} ${from}..${to}`);
+      }
+
+      const result = await syncRatesRange(roomTypeIds, from, to);
+
+      // Mapping yo'q kabi xatolar qayta urinishda tuzalmaydi —
+      // admin aralashuvi kerak (06-fayl §3).
+      if (result.failed > 0) {
+        const errors = result.outcomes
+          .filter((o) => o.status === "failed")
+          .map((o) => (o.status === "failed" ? `${o.roomTypeId}: ${o.error}` : ""))
+          .join("; ");
+
+        notifySyncFailed("push_rates", errors);
+        throw new Error(errors);
+      }
+
+      if (config.isDev && result.sent > 0) {
+        console.log(`[worker] narx yuborildi: ${result.sent} tur`);
+      }
+
+      return { ok: true, sent: result.sent, skipped: result.skipped };
     } catch (e) {
       if (e instanceof RateLimitError) return delayForRateLimit(job, e, token);
       if (!isRetryable(e)) throw new UnrecoverableError(String(e).slice(0, 200));

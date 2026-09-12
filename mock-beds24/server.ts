@@ -25,7 +25,7 @@ import { authRouter } from "./routes/authentication.js";
 import { propertiesRouter } from "./routes/properties.js";
 import { bookingsRouter } from "./routes/bookings.js";
 import { calendarRouter } from "./routes/calendar.js";
-import { sendWebhook, sendDuplicateWebhook } from "./webhook-sender.js";
+import { sendWebhook, sendDuplicateWebhook, sendRateWebhook } from "./webhook-sender.js";
 import { ROOM_TYPE_IDS } from "./fixtures/properties.js";
 
 const app = express();
@@ -86,6 +86,27 @@ control.get("/state", (_req, res) => {
     webhooksSent: state.webhooksSent,
     roomTypeIds: ROOM_TYPE_IDS,
   });
+});
+
+/** Beds24'da narx o'zgarganini simulyatsiya qilish (TZ 7-band) */
+control.post("/simulate-rate-change", async (req, res) => {
+  const { roomId = ROOM_TYPE_IDS.standard, rates = [] } = req.body ?? {};
+
+  if (!Array.isArray(rates) || rates.length === 0) {
+    res.status(400).json({ error: "rates massivi kerak" });
+    return;
+  }
+
+  // Mock o'z kalendarida ham yangilaydi — GET bilan solishtirish uchun
+  state.setCalendar(rates.map((r: { date: string; price: number }) => ({
+    roomId: Number(roomId),
+    from: r.date,
+    to: r.date,
+    price1: r.price,
+  })));
+
+  await sendRateWebhook(Number(roomId), rates);
+  res.json({ ok: true, sent: rates.length });
 });
 
 /** Beds24'dan bron kelishini simulyatsiya qilish (OTA -> Beds24 -> PMS) */

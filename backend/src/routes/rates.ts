@@ -9,6 +9,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, ValidationError } from "../lib/errors.js";
 import { toNumber, toDateKey, fromDateKey } from "../lib/serialize.js";
+import { onRatesChanged, pushRates } from "../services/rates.js";
 
 export const ratesRouter = Router();
 
@@ -28,7 +29,9 @@ ratesRouter.get("/", asyncHandler(async (req, res) => {
     price: toNumber(p.price),
     minStay: p.minStay,
     source: p.source,
-    syncStatus: p.syncedAt ? "synced" : "pending",
+    // 07-fayl §8: ● yuborildi / ○ kutmoqda / ⚠ xato
+    syncStatus: p.syncError ? "error" : p.syncedAt ? "synced" : "pending",
+    syncError: p.syncError,
   })));
 }));
 
@@ -58,6 +61,41 @@ ratesRouter.put("/", asyncHandler(async (req, res) => {
     }
   }
 
-  // FAZA 9: bu yerda beds24-rate-sync job qo'yiladi
+  // Beds24'ga fonda yuboriladi — admin kutmaydi (07-fayl §8).
+  // Panel holatni `rate.sync.updated` event'i orqali ko'radi.
+  await onRatesChanged(Object.keys(prices), start, end);
+
   res.json({ updated: count, syncStatus: "pending" });
+}));
+
+// --- POST /api/rate-plans/resync — xatoni qayta yuborish ----
+// 07-fayl §8: panel'dagi [↻] tugmasi
+const resyncSchema = z.object({
+  roomTypeIds: z.array(z.string().min(1)).min(1),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+
+ratesRouter.post("/resync", asyncHandler(async (req, res) => {
+  const { roomTypeIds, from, to } = resyncSchema.parse(req.body);
+  const start = fromDateKey(from);
+  const end = fromDateKey(to);
+
+  // Xato belgisini tozalaymiz — aks holda qayta urinish ham
+  // "xato" bo'lib ko'rinaveradi
+  await prisma.ratePlan.updateMany({
+    where: { roomTypeId: { in: roomTypeIds }, date: { gte: start, lte: end } },
+    data: { syncedAt: null, syncError: null },
+  });
+
+  const outcomes = [];
+  for (const id of roomTypeIds) {
+    outcomes.push(await pushRates(id, start, end));
+  }
+
+  res.json({
+    outcomes,
+    sent: outcomes.filter((o) => o.status === "sent").length,
+    failed: outcomes.filter((o) => o.status === "failed").length,
+  });
 }));

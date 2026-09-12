@@ -73,3 +73,39 @@ export async function sendDuplicateWebhook(
   await sendWebhook(event, booking);
   await sendWebhook(event, booking);
 }
+
+/**
+ * Narx o'zgarishi webhook'i — TZ 7-band teskari yo'nalish.
+ *
+ * Beds24 narxni o'zi yoki boshqa kanal orqali o'zgartirganda
+ * shunday event yuboradi. PMS `SOURCE_OF_TRUTH_RATES` ga qarab
+ * qabul qiladi yoki rad etadi (07-fayl §7).
+ */
+export async function sendRateWebhook(
+  roomId: number,
+  rates: Array<{ date: string; price: number; minStay?: number }>
+): Promise<void> {
+  const payload = {
+    event: "rate.changed",
+    timestamp: new Date().toISOString(),
+    propertyId: 12345,
+    roomId,
+    rates,
+  };
+
+  try {
+    const url = `${PMS_WEBHOOK_URL}/${WEBHOOK_TOKEN}`;
+    await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    state.webhooksSent.push({
+      at: new Date().toISOString(),
+      event: "rate.changed" as never,
+      bookingId: 0,
+    });
+  } catch (e) {
+    console.warn(`[webhook] rate.changed yuborilmadi: ${String(e).slice(0, 80)}`);
+  }
+}

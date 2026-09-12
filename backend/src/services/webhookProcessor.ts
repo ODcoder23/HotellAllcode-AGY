@@ -26,6 +26,7 @@ import { recalcRoomStatus } from "./reservations.js";
 import { toPmsStatus } from "./beds24/statusMap.js";
 export { toPmsStatus };
 import { onAvailabilityChanged } from "./availability.js";
+import { applyExternalRate } from "./rates.js";
 import type { ExternalReservation } from "./channel/types.js";
 import {
   notifyReservation, notifyPayment, notifyWebhookNeedsAttention,
@@ -171,6 +172,17 @@ export async function processWebhookEvent(webhookEventId: string): Promise<Proce
     await markProcessed(webhookEventId, "O'z aks-sadosi (referer=PMS) — e'tiborsiz qoldirildi");
     await logSync("webhook_echo_skipped", "SKIPPED", null, "referer=PMS");
     return { status: "skipped", detail: "O'z aks-sadosi" };
+  }
+
+  // --- Narx o'zgarishi (TZ 7-band, 07-fayl §7) ---
+  // Bron ma'lumoti yo'q, lekin e'tiborsiz qoldirib bo'lmaydi:
+  // TZ "Beds24dan narx o'zgarsa PMSga ham update kelishi kerak"
+  // deydi. Source of truth qaroriga `applyExternalRate` o'zi
+  // qaraydi — halqa himoyasi o'sha yerda.
+  if (parsed.event === "rate.changed" || parsed.event === "price.changed") {
+    const applied = await applyRateEvent(event.rawPayload);
+    await markProcessed(webhookEventId, applied);
+    return { status: "processed", detail: applied };
   }
 
   // --- Bron ma'lumoti yo'q event (ping, noma'lum tur) ---
@@ -498,6 +510,48 @@ async function markProcessed(id: string, detail: string): Promise<void> {
   if (process.env.NODE_ENV === "development") {
     console.log(`[webhook] ishlandi: ${detail}`);
   }
+}
+
+/**
+ * `rate.changed` payload'idan narxlarni ajratib qo'llaydi.
+ *
+ * Beds24 bir nechta shakl yuborishi mumkin (bitta kun yoki massiv),
+ * shuning uchun ikkalasini ham qabul qilamiz. Shakl tanilmasa —
+ * xato emas, shunchaki e'tiborsiz (TZ 17-band).
+ */
+async function applyRateEvent(raw: unknown): Promise<string> {
+  const body = (raw ?? {}) as Record<string, unknown>;
+  const list = Array.isArray(body.rates)
+    ? body.rates
+    : Array.isArray(body.calendar)
+      ? body.calendar
+      : body.rate
+        ? [body.rate]
+        : [];
+
+  const roomId = String(body.roomId ?? body.propertyRoomId ?? "");
+  let applied = 0;
+  let skipped = 0;
+
+  for (const item of list as Array<Record<string, unknown>>) {
+    const date = String(item.date ?? item.from ?? "");
+    const priceRaw = item.price ?? item.price1;
+    const external = String(item.roomId ?? roomId);
+
+    if (!date || priceRaw === undefined || !external) { skipped++; continue; }
+
+    const outcome = await applyExternalRate({
+      externalRoomTypeId: external,
+      date,
+      price: Number(priceRaw),
+      ...(item.minStay !== undefined ? { minStay: Number(item.minStay) } : {}),
+    });
+
+    if (outcome.status === "applied") applied++;
+    else skipped++;
+  }
+
+  return `narx event'i: ${applied} qo'llandi, ${skipped} o'tkazildi`;
 }
 
 /** SyncLog (TZ 16-band) — 8 maydon */

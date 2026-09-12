@@ -18,6 +18,7 @@ import { prisma } from "../lib/prisma.js";
 import { asyncHandler, ValidationError, NotFoundError } from "../lib/errors.js";
 import { toNumber, toDateKey } from "../lib/serialize.js";
 import * as mapping from "../services/mapping.js";
+import { listSettings, setSetting, SETTING_KEYS } from "../services/settings.js";
 import { beds24Adapter } from "../services/beds24/adapter.js";
 import { getConnectionStatus } from "../services/beds24/auth.js";
 import { getCreditState } from "../services/beds24/client.js";
@@ -256,4 +257,40 @@ adminRouter.get("/status", asyncHandler(async (_req, res) => {
       pendingWebhooks,
     },
   });
+}));
+
+// ============================================================
+//  Sozlamalar — source of truth (TZ 7-band, 07-fayl §7)
+// ============================================================
+
+/** GET /api/admin/settings — joriy sozlamalar */
+adminRouter.get("/settings", asyncHandler(async (_req, res) => {
+  res.json(await listSettings());
+}));
+
+/**
+ * PUT /api/admin/settings — source of truth o'zgartirish
+ *
+ * Bu qaror narx halqasining oldini oladi: bir vaqtda faqat bitta
+ * tomon g'olib (07-fayl §7). O'zgarish AuditLog'ga yoziladi
+ * (FAZA 12 da `updatedBy` haqiqiy foydalanuvchi bo'ladi).
+ */
+const settingsSchema = z.object({
+  ratesSoT: z.enum(["pms", "beds24"]).optional(),
+  availabilitySoT: z.enum(["pms", "beds24"]).optional(),
+});
+
+adminRouter.put("/settings", asyncHandler(async (req, res) => {
+  const parsed = settingsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new ValidationError(
+      parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
+    );
+  }
+
+  const { ratesSoT, availabilitySoT } = parsed.data;
+  if (ratesSoT) await setSetting(SETTING_KEYS.ratesSoT, ratesSoT);
+  if (availabilitySoT) await setSetting(SETTING_KEYS.availabilitySoT, availabilitySoT);
+
+  res.json(await listSettings());
 }));

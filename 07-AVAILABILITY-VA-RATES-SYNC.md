@@ -482,6 +482,62 @@ Xato holatida `[↻]` tugmasi job'ni qayta navbatga qo'yadi.
 
 ---
 
+## 8.1. Amalga oshirilgan holat (FAZA 11 — bajarildi)
+
+Kod joylashuvi:
+
+| Fayl | Vazifasi |
+|------|----------|
+| `backend/src/services/rates.ts` | pushRates, applyExternalRate, navbat |
+| `backend/src/services/settings.ts` | source of truth (DB'da, `.env` emas) |
+| `backend/src/routes/rates.ts` | GET/PUT narx, POST /resync |
+| `backend/src/rates.test.ts` | 26 test |
+| `index (7).html` | `PricingPanel` qayta yozildi |
+
+**Source of truth DB'da saqlanadi**, `.env` da emas. Sabab: qiymat
+ishlash paytida o'zgarishi mumkin (admin panelda tugma), `.env`
+o'zgarishi esa serverni qayta ishga tushirishni talab qiladi — bu
+ishlab turgan mehmonxonada qabul qilib bo'lmaydi. `.env` qiymati
+boshlang'ich qiymat sifatida qoladi: DB'da yozuv bo'lmasa o'sha
+olinadi. Endpoint: `GET/PUT /api/admin/settings`.
+
+**Loop himoyasi uch qatlam** (tekshirilgan):
+
+1. Bir vaqtda bitta tomon g'olib. `SoT = pms` bo'lsa Beds24'dan
+   kelgan narx rad etiladi va — muhimi — **javob qaytarilmaydi**.
+   Test buni aniq tekshiradi: Beds24 narx yuborgandan keyin
+   `calendarPushes` bo'sh qoladi.
+2. Yutqazgan tomon `SyncLog` ga `SKIPPED` yozadi, hech narsa
+   o'zgartirmaydi.
+3. Kelgan qiymat DB'dagi bilan bir xil bo'lsa hech narsa yozilmaydi.
+
+**Beds24'dan kelgan narx `syncedAt` bilan yoziladi** — ya'ni
+allaqachon sinxron deb belgilanadi. Aks holda keyingi push uni
+"yuborilmagan" deb ko'rib Beds24'ga qaytarardi: halqa.
+
+**Frontend o'zgarishi.** `PricingPanel` avtomatik hisoblash
+o'rniga `RatePlan` narxlarini tahrirlaydi (Q8). Eski mexanizm
+(`base + confirmedCount × increment`) butunlay olib tashlandi:
+`priceForType` endi `RatePlan` dan o'qiydi, `pricing` state'i yo'q.
+Toolbar tugmasi hisoblangan narx o'rniga "Narxlar" yozuvini
+ko'rsatadi.
+
+Panel holat belgilari (§8 jadvali) ishlaydi: yashil = Beds24 qabul
+qildi, kulrang = navbatda, qizil + [↻] = xato. Qayta yuborish
+`POST /api/rate-plans/resync` orqali.
+
+**Ishlatilmagan `PayPill` komponenti olib tashlandi.** U hech qayerda
+chaqirilmas edi; TZ 14-band talab qilgan to'lov ko'rsatkichi
+allaqachon ikki joyda ishlaydi — bron kartochkasida qarz summasi
+yoki ✓ belgisi, detail modalda "To'langan" va "Qoldiq" qatorlari.
+
+**Tekshirilgan zanjir (brauzer + mock):** Narxlar panelida Standart
+narxi 58 qilib saqlandi -> mock Beds24 `price1 = 58` oldi, 7 kunlik
+oraliq bitta push'ga yig'ildi -> panel qayta ochilganda Standart
+yonida yashil "Beds24 qabul qildi" belgisi.
+
+---
+
 ## 9. Xato holatida (TZ 6, 17-band)
 
 TZ 6-band: *"Temporary API xatosi PMS ishini to'xtatmasin."*
