@@ -376,10 +376,13 @@ model RatePlan {
   price       Decimal  @db.Decimal(12, 2)
   minStay     Int      @default(1)
   source      String   @default("pms")   // "pms" | "beds24" — oxirgi yangilanish qayerdan kelgan
+  syncedAt    DateTime?                   // Beds24'ga yuborilgan vaqt (null = kutmoqda)
+  syncError   String?                     // oxirgi sync xatosi (07 §8 — panel belgisi)
   updatedAt   DateTime @updatedAt
 
   @@unique([roomTypeId, date])
   @@index([date])
+  @@index([syncedAt])
 }
 
 // ===================== AVAILABILITY (TZ 6, 13-band) =====================

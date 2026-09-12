@@ -1,0 +1,121 @@
+/**
+ * Xato boshqaruvi
+ *
+ * Manba: 02-DATABASE-SXEMA.md §2 — constraint xatosi (23P01) foydalanuvchi
+ * tushunadigan xabarga aylantiriladi. Shaxmatkadagi mavjud `conflictMsg`
+ * mexanizmi shu xabarni ko'rsatadi.
+ */
+
+import type { Request, Response, NextFunction } from "express";
+import { Prisma } from "@prisma/client";
+
+export class AppError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly code?: string
+  ) {
+    super(message);
+    this.name = "AppError";
+  }
+}
+
+/** 409 — xona band (overbooking himoyasi ishga tushdi) */
+export class RoomUnavailableError extends AppError {
+  constructor(msg = "Bu xona ushbu sanalar uchun band.") {
+    super(409, msg, "ROOM_UNAVAILABLE");
+  }
+}
+
+/** 404 */
+export class NotFoundError extends AppError {
+  constructor(what: string) {
+    super(404, `${what} topilmadi.`, "NOT_FOUND");
+  }
+}
+
+/** 400 */
+export class ValidationError extends AppError {
+  constructor(msg: string) {
+    super(400, msg, "VALIDATION");
+  }
+}
+
+/**
+ * PostgreSQL xato kodlarini AppError'ga aylantiradi.
+ *
+ * 23P01 — exclusion_violation: reservation_no_overlap constraint.
+ *         TZ 3-bandning DB darajasidagi himoyasi ishga tushdi.
+ * P2002 — Prisma unique constraint (TZ 9-band duplicate himoyasi).
+ * P2025 — yozuv topilmadi.
+ */
+export function translatePrismaError(e: unknown): AppError | null {
+  // Raw SQL constraint (EXCLUDE) — Prisma uni P2010 ichida beradi
+  const raw = String(e);
+  if (raw.includes("reservation_no_overlap") || raw.includes("23P01")) {
+    return new RoomUnavailableError();
+  }
+
+  if (e instanceof Prisma.PrismaClientKnownRequestError) {
+    if (e.code === "P2002") {
+      const fields = (e.meta?.target as string[] | undefined)?.join(", ") ?? "";
+      if (fields.includes("externalReservationId")) {
+        // TZ 9-band: bu xato emas, "aslida update" signali
+        return new AppError(409, "Bu bron allaqachon mavjud.", "DUPLICATE_RESERVATION");
+      }
+      return new AppError(409, `Takrorlanuvchi qiymat: ${fields}`, "DUPLICATE");
+    }
+    if (e.code === "P2025") {
+      return new NotFoundError("Yozuv");
+    }
+    if (e.code === "P2003") {
+      return new ValidationError("Bog'liq yozuv topilmadi (foreign key).");
+    }
+  }
+
+  return null;
+}
+
+/** Express xato handler — oxirgi middleware */
+export function errorHandler(
+  err: unknown,
+  _req: Request,
+  res: Response,
+  _next: NextFunction
+) {
+  const translated = err instanceof AppError ? err : translatePrismaError(err);
+
+  if (translated) {
+    res.status(translated.status).json({
+      error: translated.message,
+      code: translated.code,
+    });
+    return;
+  }
+
+  // Kutilmagan xato — to'liq log, foydalanuvchiga umumiy xabar
+  console.error("[XATO]", err);
+  res.status(500).json({
+    error: "Serverda kutilmagan xato yuz berdi.",
+    code: "INTERNAL",
+  });
+}
+
+/**
+ * Route handler ichida ishlatiladigan so'rov tipi.
+ *
+ * Express 5 da `req.params` qiymati `string | string[]` — bu wildcard
+ * marshrutlar uchun. Bizda ularga ehtiyoj yo'q, shuning uchun
+ * `params` ni `string` deb aniqlaymiz. Bitta joyda, har route'da emas.
+ */
+export type Req = Omit<Request, "params" | "query"> & {
+  params: Record<string, string>;
+  query: Record<string, string | undefined>;
+};
+
+/** async route handler'larni o'raydi — try/catch takrorlanmasin */
+export const asyncHandler =
+  (fn: (req: Req, res: Response, next: NextFunction) => Promise<void>) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    fn(req as unknown as Req, res, next).catch(next);
+  };
