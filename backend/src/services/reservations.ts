@@ -391,6 +391,50 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
   return r.updated;
 }
 
+/**
+ * Bronni tasdiqlash: PENDING_PAYMENT -> CONFIRMED (13-fayl §5).
+ *
+ * Website'dan kelgan bron to'lov kutilayotgan holatda yaratiladi.
+ * Admin to'lovni qabul qilgach shu amal chaqiriladi.
+ *
+ * NEGA ALOHIDA AMAL, `updateReservation` ichida emas: status
+ * o'zgarishi biznes hodisasi — u Beds24'ga boshqa status yuboradi
+ * (request -> confirmed), xona holatini qayta hisoblaydi va
+ * kelajakda AuditLog talab qiladi. Uni oddiy maydon tahriri bilan
+ * aralashtirish xatoga olib keladi.
+ *
+ * Faqat PENDING_PAYMENT dan o'tish mumkin: bekor qilingan yoki
+ * chiqib ketgan bronni "tasdiqlash" ma'nosiz.
+ */
+export async function confirmReservation(id: string) {
+  const r = await prisma.$transaction(async (tx) => {
+    const res = await tx.reservation.findUnique({ where: { id } });
+    if (!res) throw new NotFoundError("Bron");
+
+    if (res.status !== "PENDING_PAYMENT") {
+      throw new ValidationError(
+        `Faqat to'lov kutilayotgan bronni tasdiqlash mumkin (joriy holat: ${res.status.toLowerCase()})`
+      );
+    }
+
+    const updated = await tx.reservation.update({
+      where: { id },
+      data: { status: "CONFIRMED", syncStatus: "PENDING" },
+      include: reservationInclude,
+    });
+
+    await recalcRoomStatus(res.roomId, tx);
+    return updated;
+  });
+
+  await notifyReservation("reservation.updated", r.id);
+  await notifyRoomStatus(r.roomId);
+
+  // Beds24'da status request -> confirmed (08-fayl §2)
+  await onReservationChanged(r.id, "updated");
+  return r;
+}
+
 /** 5. Check-in (TZ 2-band, mijoz qarori Q7) */
 export async function checkIn(id: string) {
   const r = await prisma.$transaction(async (tx) => {

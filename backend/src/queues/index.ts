@@ -49,6 +49,8 @@ export const QUEUE = {
   rateSync: "beds24-rate-sync",
   webhook: "beds24-webhook",
   retry: "beds24-retry",
+  /** Davriy vazifalar: to'lanmagan bronlar, polling fallback */
+  maintenance: "pms-maintenance",
 } as const;
 
 // --- Job payload tiplari ------------------------------------
@@ -118,6 +120,17 @@ export const allQueues = [
   availabilitySyncQueue,
   rateSyncQueue,
 ];
+
+/**
+ * Navbatni monitoring ro'yxatiga qo'shadi.
+ *
+ * `scheduler.ts` shu faylni import qiladi, teskarisi emas —
+ * sikl bo'lmasligi uchun o'zini ro'yxatga shu funksiya bilan
+ * qo'shadi.
+ */
+export function registerQueue(q: Queue): void {
+  if (!allQueues.includes(q)) allQueues.push(q);
+}
 
 // --- Monitoring (05-fayl §8) --------------------------------
 

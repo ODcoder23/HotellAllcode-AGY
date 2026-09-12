@@ -85,9 +85,18 @@ try {
  * Testlar bitta server bilan ishlaydi va uning webhook worker'i
  * doimiy ishlab turadi. Seed DB'ni tozalaganda worker hali eski
  * event'ni ishlab turgan bo'lishi mumkin — natijada keyingi test
- * kutilmagan holatni ko'radi. Qisqa pauza buni yo'qotadi.
+ * kutilmagan holatni ko'radi.
+ *
+ * FAZA 13 dan keyin uzaytirildi: `public.test.ts` o'nlab bron
+ * yaratadi, ularning har biri reservation-sync va availability-sync
+ * job'i qo'yadi. Fayl tugaganda bu job'lar hali navbatda turadi va
+ * keyingi faylning worker'ini band qiladi — natijada FAZA 10
+ * testlari "Beds24'ga yetmadi" deb yiqiladi.
+ *
+ * Yuqoridagi kalit tozalash navbatni bo'shatadi, bu pauza esa
+ * ishlab turgan job tugashini kutadi.
  */
-await new Promise((r) => setTimeout(r, 600));
+await new Promise((r) => setTimeout(r, 1500));
 
 
 /**
@@ -147,3 +156,18 @@ if (health?.security?.auth === true) {
     console.warn("[test] auth yoqilgan, lekin login bo'lmadi — testlar 401 olishi mumkin");
   }
 }
+
+
+/**
+ * Mock Beds24 kreditini tiklaymiz.
+ *
+ * Mock 100 kredit / 5 daqiqa cheklovini haqiqiy Beds24 kabi
+ * qo'llaydi (03-fayl §3). Testlar ketma-ket ishlaganda cheklov
+ * tugab qoladi va sync job'lari KECHIKTIRILADI — bu to'g'ri
+ * xatti-harakat, lekin keyingi test faylini yiqitadi.
+ *
+ * Cheklovning o'zi `beds24.test.ts` da ataylab sinaladi
+ * (`/control/drain-credits`), shuning uchun uni bu yerda tiklash
+ * qopqoqni yopmaydi.
+ */
+await fetch("http://localhost:4000/control/refill-credits", { method: "POST" }).catch(() => {});

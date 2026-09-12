@@ -63,6 +63,20 @@ control.post("/reset", (_req, res) => {
   res.json({ ok: true, message: "Holat tozalandi" });
 });
 
+/**
+ * Kreditni tiklash — testlar uchun.
+ *
+ * `/control/reset` dan farqi: bronlarni va calendarPushes'ni
+ * TEGMAYDI. Testlar ketma-ket ishlaganda 100 kredit/5daqiqa
+ * cheklovi tugab qoladi va job'lar kechiktiriladi — bu haqiqiy
+ * xatti-harakat, lekin testni to'xtatib qo'yadi. Shu endpoint
+ * faqat kredit hisobini nolga qaytaradi.
+ */
+control.post("/refill-credits", (_req, res) => {
+  state.credits.reset();
+  res.json({ ok: true, remaining: state.credits.remaining });
+});
+
 /** Kreditni sun'iy tugatish — rate-limit retry sinovi */
 control.post("/drain-credits", (_req, res) => {
   state.credits.drain();

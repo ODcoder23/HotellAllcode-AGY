@@ -143,6 +143,8 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
     await prisma.availability.deleteMany({ where: { date: { gte: D("2028-01-01") } } });
 
     await mockControl("reset");
+    // Kredit cheklovi test oqimini to'xtatmasin (03-fayl §3)
+    await fetch(`${MOCK}/control/refill-credits`, { method: "POST" }).catch(() => {});
 
     const conn = await prisma.channelConnection.findFirst({
       where: { channel: { code: "beds24" }, isActive: true },

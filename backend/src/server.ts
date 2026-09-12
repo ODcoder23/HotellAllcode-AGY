@@ -19,9 +19,11 @@ import { webhooksRouter } from "./routes/webhooks.js";
 import { isRedisHealthy, getQueueCounts, shutdownQueues } from "./queues/index.js";
 import { startRealtimeServer, stopRealtimeServer, getRealtimeStats } from "./realtime/server.js";
 import { authRouter } from "./routes/auth.js";
+import { publicRouter } from "./routes/public.js";
 import { parseAuth, authRequired } from "./lib/authMiddleware.js";
 import { internalLimiter, webhookLimiter } from "./lib/rateLimit.js";
 import "./queues/workers.js";     // worker'lar ishga tushadi
+import { scheduleMaintenance } from "./queues/scheduler.js";
 
 const app = express();
 
@@ -80,7 +82,7 @@ app.get("/health", async (_req, res) => {
       auth: authRequired(),
       rateLimit: !config.rateLimitDisabled,
     },
-    phase: "12",
+    phase: "13",
     timestamp: new Date().toISOString(),
   });
 });
@@ -96,6 +98,11 @@ app.get("/api/admin/queues", async (_req, res) => {
 
 // --- API ----------------------------------------------------
 app.use("/api/auth", authRouter);
+
+// Website uchun ommaviy API (TZ 3, 20-band).
+// JWT TALAB QILINMAYDI — mijoz ro'yxatdan o'tmagan. Himoya: rate
+// limiting, honeypot, qat'iy validatsiya (13-fayl §6).
+app.use("/api/public", publicRouter);
 app.use("/api/rooms", internalLimiter, roomsRouter);
 app.use("/api/reservations", internalLimiter, reservationsRouter);
 app.use("/api/rate-plans", internalLimiter, ratesRouter);
@@ -128,6 +135,11 @@ const server = app.listen(config.port, () => {
 // WebSocket shu HTTP server ustiga o'rnatiladi — alohida port kerak
 // emas, Nginx ham bitta proxy qoidasi bilan o'tkazadi (09-fayl §4).
 startRealtimeServer(server);
+
+// Davriy vazifalar (13-fayl §5): to'lanmagan bronlarni tozalash.
+// Redis yo'q bo'lsa jim o'tkazib yuboriladi (TZ 17, 19-band).
+void scheduleMaintenance();
+
 console.log("");
 
 // Toza to'xtash

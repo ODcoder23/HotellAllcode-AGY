@@ -110,6 +110,8 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
     await setSetting(SETTING_KEYS.ratesSoT, "pms");
 
     await mockControl("reset");
+    // Kredit cheklovi test oqimini to'xtatmasin (03-fayl §3)
+    await fetch(`${MOCK}/control/refill-credits`, { method: "POST" }).catch(() => {});
 
     const conn = await prisma.channelConnection.findFirst({
       where: { channel: { code: "beds24" }, isActive: true },

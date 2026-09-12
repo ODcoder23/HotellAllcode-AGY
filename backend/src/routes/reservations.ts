@@ -89,6 +89,12 @@ reservationsRouter.patch("/:id", requireAuth, requirePermission("reservation.wri
 }));
 
 // --- Status amallari ----------------------------------------
+// Tasdiqlash: PENDING_PAYMENT -> CONFIRMED (13-fayl §5).
+// `reservation.write` huquqi: MANAGER ham to'lovni tasdiqlaydi.
+reservationsRouter.post("/:id/confirm", requireAuth, requirePermission("reservation.write"), asyncHandler(async (req, res) => {
+  res.json(serializeReservation(await svc.confirmReservation(req.params.id)));
+}));
+
 reservationsRouter.post("/:id/check-in", requireAuth, requirePermission("checkin.write"), asyncHandler(async (req, res) => {
   res.json(serializeReservation(await svc.checkIn(req.params.id)));
 }));

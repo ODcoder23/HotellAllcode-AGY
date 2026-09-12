@@ -211,6 +211,7 @@ model RoomType {
   id          String   @id            // "standard" | "double" | "deluxe" — Shaxmatka bilan bir xil kalit
   label       String                  // "Standart" | "Ikki kishilik" | "Lyuks"
   multiplier  Float    @default(1)    // Shaxmatkadagi ROOM_TYPES.multiplier bilan bir xil
+  maxAdults   Int      @default(2)    // Website qidiruvida filtr (13-fayl §2)
   sortOrder   Int      @default(0)
 
   rooms       Room[]
@@ -294,6 +295,15 @@ model Reservation {
   cancelledAt           DateTime?
 
   // Sync holati (TZ 17-band: xato bo'lsa ham PMS ishlayveradi)
+  /**
+   * Mehmonga ko'rsatiladigan bron kodi — "IMR-8F3K2" (13-fayl §2).
+   *
+   * Faqat Website'dan kelgan bronlarda bo'ladi: mijoz bronini shu
+   * kod bilan tekshiradi. Ichki `id` (cuid) berilmaydi — u uzun va
+   * ketma-ket emasligi kafolatlanmagan.
+   */
+  code                  String?  @unique
+
   syncStatus            EntitySyncStatus @default(PENDING)
   lastSyncedAt          DateTime?
 

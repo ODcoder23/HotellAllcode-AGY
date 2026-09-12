@@ -253,6 +253,67 @@ TZ** talab qiladi.
 
 ---
 
+## 7.1. Amalga oshirilgan holat (FAZA 13 — bajarildi)
+
+Kod joylashuvi:
+
+| Fayl | Vazifasi |
+|------|----------|
+| `backend/src/services/publicBooking.ts` | Qidiruv, xona tanlash, bron, kod, tozalash |
+| `backend/src/routes/public.ts` | Uchta endpoint + honeypot |
+| `backend/src/queues/scheduler.ts` | Davriy vazifa (to'lanmagan bronlar) |
+| `backend/src/public.test.ts` | 33 test |
+
+**Yangi DB maydonlari:** `Reservation.code` (unique, "IMR-XXXXX") va
+`RoomType.maxAdults`. Kod `crypto.randomInt` bilan yasaladi —
+ketma-ket emas, chalkashadigan belgilar (0/O, 1/I) alifbodan
+chiqarilgan (mijoz kodni telefonda aytishi mumkin).
+
+**Overbooking himoyasi qayta yozilmadi.** Public bron ham
+`createReservation` orqali o'tadi — ya'ni `EXCLUDE USING gist`
+constraint'i bilan himoyalangan. Website, Shaxmatka va OTA bitta
+to'siqdan o'tadi. Test: 6 parallel so'rov, deluxe'da 2 xona —
+ko'pi bilan 2 tasi o'tadi.
+
+**Narxsiz tur ko'rsatilmaydi.** `RatePlan` da narx bo'lmasa tur
+qidiruv natijasidan chiqariladi va bron rad etiladi. Mijozga
+"0 so'm" ko'rsatib keyin haqiqiy narx aytish yomon tajriba.
+
+**`PENDING_PAYMENT` → `CONFIRMED` yo'li ochildi.** Avval bunday
+o'tish umuman yo'q edi: `PATCH /api/reservations/:id` status
+maydonini qabul qilmasdi, ya'ni Website'dan kelgan bron abadiy
+to'lov kutilayotgan holatda qolardi. Yangi endpoint:
+`POST /api/reservations/:id/confirm`. Alohida amal qilib
+yozildi — status o'zgarishi biznes hodisasi: Beds24'ga boshqa
+status yuboradi (`request` → `confirmed`), xona holatini qayta
+hisoblaydi.
+
+**Davriy tozalash ishlaydi.** `pms-maintenance` navbati, har soat
+boshida (`upsertJobScheduler`, BullMQ v6). To'lanmagan bron
+`PENDING_PAYMENT_TIMEOUT_HOURS` dan oshsa `cancelReservation`
+chaqiriladi — xona bo'shaydi, availability Beds24'ga ketadi,
+OTA'da qayta sotuvga chiqadi.
+
+**Xavfsizlik (§6) amalda:**
+
+| Himoya | Holat |
+|---|---|
+| JWT talab qilinmaydi | mijoz ro'yxatdan o'tmagan — to'g'ri |
+| Rate limiting | qidiruv 30/daqiqa, bron 5/soat |
+| Honeypot `website` maydoni | to'ldirilgan bo'lsa 400, neytral xabar |
+| Sana validatsiyasi | o'tmish yo'q, max 365 kecha, 1 yildan uzoq yo'q |
+| Spam | bir raqamga 24 soatda 3 ta to'lanmagan bron |
+| Ma'lumot sizishi | javobda ichki id, Beds24 id, sync holati, telefon yo'q |
+| Kod topilmasa | 404, noto'g'ri shakl bilan bir xil javob |
+
+**Tekshirilgan zanjir (TZ 3, 20-band):** `POST /api/public/reservations`
+→ bron `IMR-LXWU4`, xona 106 avtomatik tanlandi → Shaxmatka API'sida
+darhol ko'rindi (`source: website`, `pending_payment`) → deluxe
+availability 2 dan 1 ga tushdi → mock Beds24 `status: request`,
+`referer: PMS` oldi → `numAvail: 1` yuborildi.
+
+---
+
 ## 8. Website frontend'iga o'zgartirish
 
 > **Ish chegarasi.** Customer Website kodiga kirish huquqi **yo'q**.
