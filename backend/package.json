@@ -15,7 +15,9 @@
     "db:reset": "prisma migrate reset --force",
     "db:studio": "prisma studio",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "beds24:connect": "tsx --env-file=.env scripts/beds24-connect.ts",
+    "beds24:verify": "tsx --env-file=.env scripts/beds24-verify.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

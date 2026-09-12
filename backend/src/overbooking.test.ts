@@ -110,13 +110,16 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
     it("qisman kesishuvchi sanalar — faqat bittasi o'tadi", async () => {
       const ROOM = "103";
 
-      // Har biri boshqa oraliq, lekin hammasi kesishadi
+      // Hammasi 222-kunni QOPLAYDI, shuning uchun faqat bittasi o'tishi
+      // kerak. Diqqat: '[)' qoidasida 218-221 va 221-225 KESISHMAYDI
+      // (biri chiqadi, ikkinchisi o'sha kuni kiradi) — shuning uchun
+      // har oraliq umumiy kunni o'z ichiga olishi shart.
       const results = await Promise.all([
-        book(ROOM, 220, 225, "A"),   // 220-225
-        book(ROOM, 222, 227, "B"),   // 222-227  kesishadi
-        book(ROOM, 218, 221, "C"),   // 218-221  kesishadi
-        book(ROOM, 224, 226, "D"),   // 224-226  kesishadi
-        book(ROOM, 219, 230, "E"),   // 219-230  hammasini qoplaydi
+        book(ROOM, 220, 225, "A"),   // 220..224 egallaydi
+        book(ROOM, 222, 227, "B"),   // 222..226
+        book(ROOM, 218, 223, "C"),   // 218..222
+        book(ROOM, 221, 226, "D"),   // 221..225
+        book(ROOM, 219, 230, "E"),   // 219..229
       ]);
 
       const created = results.filter((r) => r.status === 201);
@@ -124,6 +127,21 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
 
       expect(created).toHaveLength(1);
       expect(await activeBookings(ROOM, 215, 235)).toHaveLength(1);
+    }, 30_000);
+
+    it("chegara qoidasi: 218-221 va 221-225 KESISHMAYDI", async () => {
+      const ROOM = "112";
+
+      // Bu ikkisi parallel yuborilsa ham ikkalasi ham o'tishi kerak —
+      // '[)' qoidasi: checkOut kirmaydi. Agar bittasi rad etilsa,
+      // himoya haddan tashqari keng ishlayapti va har check-out kuni
+      // bitta xona bekorga yo'qoladi.
+      const results = await Promise.all([
+        book(ROOM, 218, 221, "Chiqadi"),
+        book(ROOM, 221, 225, "Kiradi"),
+      ]);
+
+      expect(results.filter((r) => r.status === 201)).toHaveLength(2);
     }, 30_000);
   });
 
