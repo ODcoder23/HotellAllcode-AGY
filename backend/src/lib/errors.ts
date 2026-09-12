@@ -56,6 +56,22 @@ export function translatePrismaError(e: unknown): AppError | null {
     return new RoomUnavailableError();
   }
 
+  // P2034 / 40001 — serializatsiya konflikti.
+  // Bu XATO EMAS: ikki tranzaksiya bir vaqtda bir xil ma'lumotga
+  // tegdi va PostgreSQL birini bekor qildi. Qayta urinish kerak.
+  // Bu yerga yetib kelsa — retry tugagan, demak haqiqiy to'qnashuv.
+  if (
+    e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034" ||
+    raw.includes("40001") ||
+    raw.includes("could not serialize")
+  ) {
+    return new AppError(
+      409,
+      "Bir vaqtda bir nechta so'rov keldi. Qayta urinib ko'ring.",
+      "CONCURRENT_CONFLICT"
+    );
+  }
+
   if (e instanceof Prisma.PrismaClientKnownRequestError) {
     if (e.code === "P2002") {
       const fields = (e.meta?.target as string[] | undefined)?.join(", ") ?? "";

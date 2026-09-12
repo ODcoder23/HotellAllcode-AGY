@@ -24,7 +24,7 @@ const api = async (path: string, init?: RequestInit) => {
     ...init,
     headers: { "Content-Type": "application/json", ...init?.headers },
   });
-  const body = res.status === 204 ? null : await res.json();
+  const body = res.status === 204 ? null : ((await res.json()) as any);
   return { status: res.status, body };
 };
 

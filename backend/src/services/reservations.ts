@@ -15,6 +15,7 @@ import { Prisma, type ReservationStatus, type ReservationSource } from "@prisma/
 import { prisma } from "../lib/prisma.js";
 import { NotFoundError, RoomUnavailableError, ValidationError } from "../lib/errors.js";
 import { fromDateKey } from "../lib/serialize.js";
+import { serializableTx } from "../lib/tx.js";
 
 /** Bron o'qishda har doim shu bog'liqliklar kerak (serializeReservation uchun) */
 export const reservationInclude = {
@@ -139,46 +140,74 @@ export async function recalcRoomStatus(
 
 /**
  * Availability'ni qayta hisoblaydi (07-fayl §2 agregatsiya formulasi).
- * Beds24'ga yuborish FAZA 9 da qo'shiladi — hozircha faqat DB.
+ *
+ * TRANZAKSIYADAN TASHQARIDA chaqiriladi. Sabab: bu funksiya butun
+ * room type bo'yicha o'qiydi, shuning uchun `Serializable` tranzaksiya
+ * ichida bo'lsa — turli xonalarga parallel bron ham konflikt beradi
+ * (ikkalasi bir xil `Availability` sahifalariga tegadi).
+ *
+ * Overbooking himoyasiga ta'sir qilmaydi: u `reservation_no_overlap`
+ * constraint bilan ta'minlanadi, `Availability` esa hisobot/keshdir.
+ * Vaqtincha eskirgan qiymat zarar keltirmaydi — keyingi chaqiruv
+ * to'g'rilaydi.
+ *
+ * Bitta SQL so'rov bilan bajariladi — N+1 dan qochish uchun.
  */
 export async function recalcAvailability(
   roomTypeIds: string[],
   from: Date,
-  to: Date,
-  tx: Prisma.TransactionClient = prisma
+  to: Date
 ): Promise<void> {
-  for (const roomTypeId of roomTypeIds) {
-    const rooms = await tx.room.findMany({
-      where: { roomTypeId, isActive: true },
-      select: { id: true },
-    });
-    const totalRooms = rooms.length;
+  if (roomTypeIds.length === 0) return;
 
-    for (let d = new Date(from); d < to; d.setUTCDate(d.getUTCDate() + 1)) {
-      const date = new Date(d);
-
-      const bookedRooms = await tx.reservation.count({
-        where: {
-          room: { roomTypeId },
-          status: { notIn: ["CANCELLED", "NO_SHOW"] },
-          checkIn: { lte: date },
-          checkOut: { gt: date },
-        },
-      });
-
-      const blockedRooms = await tx.roomDayStatus.count({
-        where: { room: { roomTypeId }, date, isBlocked: true },
-      });
-
-      const availableCount = Math.max(0, totalRooms - bookedRooms - blockedRooms);
-
-      await tx.availability.upsert({
-        where: { roomTypeId_date: { roomTypeId, date } },
-        create: { roomTypeId, date, totalRooms, bookedRooms, blockedRooms, availableCount },
-        update: { totalRooms, bookedRooms, blockedRooms, availableCount },
-      });
-    }
-  }
+  // Bitta so'rov: har tur × har kun uchun band xonalar soni.
+  // generate_series sana oralig'ini yoyadi, LEFT JOIN bronlarni sanaydi.
+  await prisma.$executeRaw`
+    INSERT INTO "Availability" (
+      id, "roomTypeId", date, "totalRooms", "bookedRooms",
+      "blockedRooms", "availableCount", "updatedAt"
+    )
+    SELECT
+      gen_random_uuid()::text,
+      rt.id,
+      d.date::date,
+      rt.total,
+      COALESCE(b.cnt, 0),
+      COALESCE(bl.cnt, 0),
+      GREATEST(0, rt.total - COALESCE(b.cnt, 0) - COALESCE(bl.cnt, 0)),
+      NOW()
+    FROM (
+      SELECT t.id, COUNT(r.id)::int AS total
+      FROM "RoomType" t
+      LEFT JOIN "Room" r ON r."roomTypeId" = t.id AND r."isActive" = true
+      WHERE t.id = ANY(${roomTypeIds})
+      GROUP BY t.id
+    ) rt
+    CROSS JOIN generate_series(${from}::date, ${to}::date - 1, '1 day') AS d(date)
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS cnt
+      FROM "Reservation" res
+      JOIN "Room" rm ON rm.id = res."roomId"
+      WHERE rm."roomTypeId" = rt.id
+        AND res.status NOT IN ('CANCELLED', 'NO_SHOW')
+        AND res."checkIn" <= d.date
+        AND res."checkOut" > d.date
+    ) b ON true
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS cnt
+      FROM "RoomDayStatus" rds
+      JOIN "Room" rm ON rm.id = rds."roomId"
+      WHERE rm."roomTypeId" = rt.id
+        AND rds.date = d.date
+        AND rds."isBlocked" = true
+    ) bl ON true
+    ON CONFLICT ("roomTypeId", date) DO UPDATE SET
+      "totalRooms"     = EXCLUDED."totalRooms",
+      "bookedRooms"    = EXCLUDED."bookedRooms",
+      "blockedRooms"   = EXCLUDED."blockedRooms",
+      "availableCount" = EXCLUDED."availableCount",
+      "updatedAt"      = NOW()
+  `;
 }
 
 // ============================================================
@@ -212,7 +241,7 @@ export async function createReservation(input: CreateInput) {
     throw new ValidationError("Chiqish sanasi kirish sanasidan keyin bo'lishi kerak.");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const result = await serializableTx(async (tx) => {
     const room = await tx.room.findUnique({ where: { id: input.roomId } });
     if (!room) throw new NotFoundError(`Xona ${input.roomId}`);
 
@@ -265,10 +294,11 @@ export async function createReservation(input: CreateInput) {
     });
 
     await recalcRoomStatus(input.roomId, tx);
-    await recalcAvailability([room.roomTypeId], checkIn, checkOut, tx);
+    return { reservation, roomTypeId: room.roomTypeId };
+  }, "createReservation");
 
-    return reservation;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  await recalcAvailability([result.roomTypeId], checkIn, checkOut);
+  return result.reservation;
 }
 
 /** 2. Bronni o'zgartirish — mehmon soni, narx, izoh (TZ 2-band) */
@@ -308,7 +338,7 @@ export async function updateReservation(
 
 /** 3. Xonani almashtirish (TZ 2-band, mijoz qarori Q6) */
 export async function changeRoom(id: string, newRoomId: string) {
-  return prisma.$transaction(async (tx) => {
+  const r = await serializableTx(async (tx) => {
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
     if (!res) throw new NotFoundError("Bron");
 
@@ -335,10 +365,12 @@ export async function changeRoom(id: string, newRoomId: string) {
     const types = oldTypeId === newRoom.roomTypeId
       ? [oldTypeId]
       : [oldTypeId, newRoom.roomTypeId];
-    await recalcAvailability(types, res.checkIn, res.checkOut, tx);
 
-    return updated;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    return { updated, types, from: res.checkIn, to: res.checkOut };
+  }, "changeRoom");
+
+  await recalcAvailability(r.types, r.from, r.to);
+  return r.updated;
 }
 
 /** 4. Sanani o'zgartirish (TZ 2-band) */
@@ -350,7 +382,7 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
     throw new ValidationError("Chiqish sanasi kirish sanasidan keyin bo'lishi kerak.");
   }
 
-  return prisma.$transaction(async (tx) => {
+  const r = await serializableTx(async (tx) => {
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
     if (!res) throw new NotFoundError("Bron");
 
@@ -369,10 +401,12 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
     // 12-fayl §5: eski ∪ yangi oraliq
     const from = res.checkIn < checkIn ? res.checkIn : checkIn;
     const to = res.checkOut > checkOut ? res.checkOut : checkOut;
-    await recalcAvailability([res.room.roomTypeId], from, to, tx);
 
-    return updated;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    return { updated, roomTypeId: res.room.roomTypeId, from, to };
+  }, "changeDates");
+
+  await recalcAvailability([r.roomTypeId], r.from, r.to);
+  return r.updated;
 }
 
 /** 5. Check-in (TZ 2-band, mijoz qarori Q7) */
@@ -394,7 +428,7 @@ export async function checkIn(id: string) {
 
 /** 6. Check-out (TZ 2-band, mijoz qarori Q7) */
 export async function checkOut(id: string) {
-  return prisma.$transaction(async (tx) => {
+  const r = await prisma.$transaction(async (tx) => {
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
     if (!res) throw new NotFoundError("Bron");
 
@@ -405,14 +439,16 @@ export async function checkOut(id: string) {
     });
 
     await recalcRoomStatus(res.roomId, tx);
-    await recalcAvailability([res.room.roomTypeId], res.checkIn, res.checkOut, tx);
-    return updated;
+    return { updated, roomTypeId: res.room.roomTypeId, from: res.checkIn, to: res.checkOut };
   });
+
+  await recalcAvailability([r.roomTypeId], r.from, r.to);
+  return r.updated;
 }
 
 /** 7. Bekor qilish (TZ 2-band) */
 export async function cancelReservation(id: string) {
-  return prisma.$transaction(async (tx) => {
+  const r = await prisma.$transaction(async (tx) => {
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
     if (!res) throw new NotFoundError("Bron");
 
@@ -423,14 +459,16 @@ export async function cancelReservation(id: string) {
     });
 
     await recalcRoomStatus(res.roomId, tx);
-    await recalcAvailability([res.room.roomTypeId], res.checkIn, res.checkOut, tx);
-    return updated;
+    return { updated, roomTypeId: res.room.roomTypeId, from: res.checkIn, to: res.checkOut };
   });
+
+  await recalcAvailability([r.roomTypeId], r.from, r.to);
+  return r.updated;
 }
 
 /** No-show (08-fayl §4 — faqat qo'lda, avtomatik emas) */
 export async function markNoShow(id: string) {
-  return prisma.$transaction(async (tx) => {
+  const r = await prisma.$transaction(async (tx) => {
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
     if (!res) throw new NotFoundError("Bron");
 
@@ -441,9 +479,11 @@ export async function markNoShow(id: string) {
     });
 
     await recalcRoomStatus(res.roomId, tx);
-    await recalcAvailability([res.room.roomTypeId], res.checkIn, res.checkOut, tx);
-    return updated;
+    return { updated, roomTypeId: res.room.roomTypeId, from: res.checkIn, to: res.checkOut };
   });
+
+  await recalcAvailability([r.roomTypeId], r.from, r.to);
+  return r.updated;
 }
 
 // --- To'lov va xarajat (TZ 14-band) -------------------------
