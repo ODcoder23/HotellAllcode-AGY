@@ -17,6 +17,7 @@ import { ratesRouter } from "./routes/rates.js";
 import { adminRouter } from "./routes/admin.js";
 import { webhooksRouter } from "./routes/webhooks.js";
 import { isRedisHealthy, getQueueCounts, shutdownQueues } from "./queues/index.js";
+import { startRealtimeServer, stopRealtimeServer, getRealtimeStats } from "./realtime/server.js";
 import "./queues/workers.js";     // worker'lar ishga tushadi
 
 const app = express();
@@ -62,7 +63,8 @@ app.get("/health", async (_req, res) => {
     status: dbOk ? (redisOk ? "ok" : "degraded") : "down",
     database: dbOk ? "connected" : "disconnected",
     redis: redisOk ? "connected" : "disconnected",
-    phase: "7",
+    realtime: getRealtimeStats(),
+    phase: "8",
     timestamp: new Date().toISOString(),
   });
 });
@@ -101,14 +103,20 @@ app.use(errorHandler);
 
 // --- Ishga tushirish ----------------------------------------
 const server = app.listen(config.port, () => {
-  console.log(`\n  Imron PMS backend — FAZA 2A`);
+  console.log(`\n  Imron PMS backend — FAZA 8`);
   console.log(`  http://localhost:${config.port}`);
-  console.log(`  DB: ${config.databaseUrl.replace(/:[^:@]*@/, ":***@")}\n`);
+  console.log(`  DB: ${config.databaseUrl.replace(/:[^:@]*@/, ":***@")}`);
 });
+
+// WebSocket shu HTTP server ustiga o'rnatiladi — alohida port kerak
+// emas, Nginx ham bitta proxy qoidasi bilan o'tkazadi (09-fayl §4).
+startRealtimeServer(server);
+console.log("");
 
 // Toza to'xtash
 const shutdown = async (sig: string) => {
   console.log(`\n${sig} — to'xtatilmoqda...`);
+  await stopRealtimeServer().catch(() => {});
   server.close();
   await shutdownQueues().catch(() => {});
   await prisma.$disconnect();

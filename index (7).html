@@ -259,6 +259,102 @@ const api = {
     apiFetch("/api/rate-plans", { method: "PUT", body: JSON.stringify({ from, to, prices }) }),
 };
 
+/* ========================================================================
+   FAZA 8 — REAL-TIME (WebSocket)
+
+   Manba: 09-REALTIME-WEBSOCKET.md §3, §5 | TZ 4, 15-band
+
+   TZ 4: "Admin sahifani refresh qilmasdan ham yangi bronni ko'rishi
+   uchun WebSocket/real-time update ishlatilsin."
+
+   MUHIM PRINTSIP (09-fayl §5): WebSocket faqat "delta" yetkazish
+   vositasi, HAQIQAT MANBAI EMAS. Ulanish uzilganda o'tkazib
+   yuborilgan event'lar bo'ladi, shuning uchun qayta ulanganda
+   to'liq `reload()` chaqiriladi.
+
+   Server tomon payload'ni `serializeReservation` bilan yuboradi —
+   ayni `api.reservations()` qaytaradigan shakl. Shuning uchun
+   konvertatsiya kerak emas: to'g'ridan-to'g'ri massivga qo'shamiz.
+======================================================================== */
+
+const WS_URL = (window.WS_URL || API_BASE.replace(/^http/, "ws")) + "/ws";
+
+/**
+ * Avtomatik qayta ulanadigan WebSocket.
+ *
+ * Qayta ulanish: 1s, 2s, 4s ... 30s gacha (exponential backoff).
+ * Server qayta ishga tushganda darhol bosim bermaslik uchun jitter.
+ */
+function createRealtimeClient({ onEvent, onStatus }) {
+  let ws = null;
+  let closed = false;
+  let attempt = 0;
+  let timer = null;
+  /** Server qayta ishga tushganini aniqlash uchun (09-fayl §5) */
+  let lastServerStartedAt = null;
+
+  function connect() {
+    if (closed) return;
+
+    try {
+      ws = new WebSocket(WS_URL);
+    } catch {
+      scheduleReconnect();
+      return;
+    }
+
+    ws.onopen = () => {
+      attempt = 0;
+      onStatus("online");
+    };
+
+    ws.onmessage = (ev) => {
+      if (ev.data === "pong") return;
+
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+
+      // Ulanish tasdig'i. Agar server ID o'zgargan bo'lsa — restart
+      // yoki uzoq uzilish: o'tkazib yuborilgan event'lar bor,
+      // to'liq qayta yuklash kerak (09-fayl §5).
+      if (msg.type === "connected") {
+        const restarted = lastServerStartedAt && lastServerStartedAt !== msg.serverStartedAt;
+        lastServerStartedAt = msg.serverStartedAt;
+        if (restarted) onEvent({ type: "__resync" });
+        return;
+      }
+
+      onEvent(msg);
+    };
+
+    ws.onclose = () => {
+      onStatus("offline");
+      scheduleReconnect();
+    };
+
+    ws.onerror = () => {
+      // onclose baribir chaqiriladi — shu yerda hech narsa qilmaymiz
+    };
+  }
+
+  function scheduleReconnect() {
+    if (closed || timer) return;
+    const delay = Math.min(1000 * 2 ** attempt, 30000) + Math.random() * 500;
+    attempt++;
+    timer = setTimeout(() => { timer = null; connect(); }, delay);
+  }
+
+  connect();
+
+  return {
+    close() {
+      closed = true;
+      if (timer) clearTimeout(timer);
+      if (ws) { ws.onclose = null; ws.close(); }
+    },
+  };
+}
+
 /* ============================== SMALL UI PRIMITIVES ============================== */
 
 function Field({ label, children }) {
@@ -364,6 +460,8 @@ function App() {
   const [subPanel, setSubPanel] = useState(null); // 'payment' | 'changeRoom' | 'changeDates' | 'checkout' | 'charge'
   const [roomMenu, setRoomMenu] = useState(null); // {roomId, x, y}
   const [conflictMsg, setConflictMsg] = useState(null);
+  /** FAZA 8: 'online' | 'offline' — real-time ulanish holati */
+  const [wsStatus, setWsStatus] = useState("offline");
 
   const gridRef = useRef(null);
   const dragRef = useRef(null);
@@ -409,6 +507,73 @@ function App() {
   const refreshRooms = useCallback(async () => {
     try { setRooms(await api.rooms()); } catch { /* jim — asosiy amal bajarilgan */ }
   }, []);
+
+  /* ------------------------------ FAZA 8: real-time event'lar ------------------------------ */
+
+  /**
+   * Server event'ini ekranga qo'llaydi.
+   *
+   * Manba: 09-REALTIME-WEBSOCKET.md §3 — TZ 15-band talab qilgan
+   * oltita event. Payload `api.reservations()` shakli bilan aynan
+   * bir xil, shuning uchun `applyReservation` to'g'ridan-to'g'ri
+   * ishlaydi.
+   *
+   * MUHIM: event o'z amalimizdan ham qaytib keladi (biz bron
+   * yaratsak, server hammaga yuboradi — bizga ham). Bu muammo
+   * emas: `applyReservation` id bo'yicha almashtiradi, dublikat
+   * yaratmaydi. Natija — bir xil, faqat qayta yozilgan.
+   */
+  const handleRealtime = useCallback((msg) => {
+    switch (msg.type) {
+      // Uzoq uzilishdan keyin — o'tkazib yuborilgan event'lar bor
+      case "__resync":
+        reload();
+        break;
+
+      case "reservation.created":
+      case "reservation.updated":
+        applyReservation(msg.reservation);
+        if (msg.room) setRooms((rs) => rs.map((r) => (r.id === msg.room.id ? msg.room : r)));
+        break;
+
+      case "reservation.cancelled":
+        // Bron massivda QOLADI, statusi 'cancelled' bo'ladi —
+        // TZ 2-band: tarix o'chirilmaydi. Grid esa bekor
+        // qilinganlarni ko'rsatmaydi (pastdagi filtr), shuning
+        // uchun xona bo'shab ko'rinadi. Filtr "Bekor qilingan"ga
+        // qo'yilsa bron yana ko'rinadi.
+        applyReservation(msg.reservation);
+        if (msg.room) setRooms((rs) => rs.map((r) => (r.id === msg.room.id ? msg.room : r)));
+        break;
+
+      case "payment.updated":
+        // PayPill (to'lov holati) yangilanadi — TZ 14-band
+        applyReservation(msg.reservation);
+        break;
+
+      case "room.status.changed":
+        setRooms((rs) => rs.map((r) => (r.id === msg.room.id ? msg.room : r)));
+        break;
+
+      case "availability.changed":
+        // Shaxmatka bandlikni bronlardan o'zi hisoblaydi — bu event
+        // Website/Admin panel uchun. E'tiborsiz qoldiramiz.
+        break;
+
+      default:
+        // sync.failed, webhook.needs_attention, rate.sync.updated —
+        // admin panel event'lari, Shaxmatka ko'rsatmaydi.
+        break;
+    }
+  }, [reload, applyReservation]);
+
+  useEffect(() => {
+    const client = createRealtimeClient({
+      onEvent: handleRealtime,
+      onStatus: setWsStatus,
+    });
+    return () => client.close();
+  }, [handleRealtime]);
 
   /* ------------------------------ derived pricing ------------------------------ */
   const currentBasePrice = clamp(pricing.base + pricing.confirmedCount * pricing.increment, pricing.min, pricing.max);
@@ -698,6 +863,7 @@ function App() {
         filtersOpen={filtersOpen} setFiltersOpen={setFiltersOpen} filters={filters} setFilters={setFilters}
         pricing={pricing} setPricing={setPricing} pricingOpen={pricingOpen} setPricingOpen={setPricingOpen}
         currentBasePrice={currentBasePrice} priceForType={priceForType}
+        wsStatus={wsStatus}
         onAddReservation={() => setCreateDraft({ roomId: rooms[0].id, checkIn: toKey(today), checkOut: toKey(addDays(today, 1)) })}
       />
 
@@ -724,7 +890,15 @@ function App() {
 
           {/* room rows */}
           {visibleRooms.map((room) => {
-            const roomReservations = reservations.filter((r) => r.roomId === room.id && r.status !== "cancelled");
+            // Bekor qilinganlar odatda gridda ko'rinmaydi — xona bo'sh
+            // deb hisoblanadi. Lekin filtr aynan "Bekor qilingan"ga
+            // qo'yilsa ularni ko'rsatamiz: aks holda filtr hech nima
+            // topmaydi va bekor qilingan bron tarixini ko'rish
+            // imkonsiz bo'ladi (TZ 2-band: tarix saqlanadi).
+            const showCancelled = filters.resStatus === "cancelled";
+            const roomReservations = reservations.filter(
+              (r) => r.roomId === room.id && (showCancelled ? true : r.status !== "cancelled")
+            );
             return (
               <div key={room.id} className="flex relative border-b border-gray-100" style={{ height: ROW_HEIGHT }}>
                 <div
@@ -861,6 +1035,7 @@ function Toolbar(props) {
     viewStart, today, rangeLen, onToday, onPrev, onNext, onSetRange, onSetViewStart,
     onZoomIn, onZoomOut, search, onSearch, filtersOpen, setFiltersOpen, filters, setFilters,
     pricing, setPricing, pricingOpen, setPricingOpen, currentBasePrice, priceForType, onAddReservation,
+    wsStatus,
   } = props;
 
   return (
@@ -869,6 +1044,16 @@ function Toolbar(props) {
         <div className="flex items-center gap-1 mr-2">
           <div className="h-7 w-7 rounded-md bg-blue-600 flex items-center justify-center text-white font-bold text-xs">SH</div>
           <span className="font-semibold text-sm text-gray-800 mr-1">Shaxmatka</span>
+          {/* FAZA 8: real-time ulanish holati (TZ 4-band).
+              Yashil = event'lar keladi, sariq = uzilgan, qayta
+              ulanmoqda. Uzilganda ma'lumot eskiradi — foydalanuvchi
+              buni bilishi kerak (09-fayl §5). */}
+          <span
+            title={wsStatus === "online"
+              ? "Real-time ulangan — o'zgarishlar darhol ko'rinadi"
+              : "Real-time uzilgan — qayta ulanmoqda. Ma'lumot eskirgan bo'lishi mumkin."}
+            className={`h-2 w-2 rounded-full mr-1 ${wsStatus === "online" ? "bg-green-500" : "bg-amber-400 animate-pulse"}`}
+          />
         </div>
 
         <div className="flex items-center rounded-md border border-gray-300 overflow-hidden">

@@ -205,7 +205,55 @@ ko'z bilan tasdiqlanadi.
 
 ---
 
-## 7. Nima bu bosqichga kirmaydi
+## 7. Amalga oshirilgan holat (FAZA 8 — bajarildi)
+
+Kod joylashuvi:
+
+| Fayl | Vazifasi |
+|------|----------|
+| `backend/src/realtime/events.ts` | Event turlari, `RealtimeMessage` union |
+| `backend/src/realtime/server.ts` | WebSocket server + Redis pub/sub |
+| `backend/src/realtime/notify.ts` | Event yuborish yordamchilari |
+| `backend/src/realtime.test.ts` | 16 test (FAZA 8 mezoni ichida) |
+| `index (7).html` | `createRealtimeClient`, `handleRealtime` |
+
+Aniqlashtirilgan tafsilotlar:
+
+- **Yo'l:** `ws://<host>:3000/ws` — HTTP server ustiga o'rnatiladi,
+  alohida port kerak emas. Nginx uchun bitta `location /ws` qoidasi.
+- **Redis kanali:** `pms:realtime`. Redis bo'lmasa `broadcast()`
+  lokal klientlarga tushadi — bitta instansiyada Redis shart emas
+  (TZ 17-band).
+- **`connected` xabari:** ulanishda server `serverStartedAt` yuboradi.
+  Bu qiymat o'zgargan bo'lsa — server qayta ishga tushgan, ya'ni
+  o'tkazib yuborilgan event'lar bor: frontend `reload()` chaqiradi
+  (§5 printsipi).
+- **Heartbeat:** server har 30 soniyada `ping` yuboradi va o'lik
+  ulanishlarni ro'yxatdan chiqaradi.
+- **Monitoring:** `GET /health` javobida
+  `realtime: { clients, redisPubSub, serverStartedAt }`.
+- **Event tartibi:** event faqat DB transaction muvaffaqiyatli
+  tugagandan **keyin** yuboriladi. Event yuborilmasa asosiy amal
+  baribir bajarilgan — `notify*` xatolari log'ga tushadi, so'rovni
+  yiqitmaydi.
+
+Shaxmatka tomonidagi xatti-harakat:
+
+- Logo yonida ulanish indikatori: yashil = ulangan, sariq (pulsatsiya)
+  = uzilgan, qayta ulanmoqda. Uzilganda ma'lumot eskirishi mumkin —
+  foydalanuvchi buni ko'radi.
+- `availability.changed` e'tiborsiz qoldiriladi: Shaxmatka bandlikni
+  bronlardan o'zi hisoblaydi. Event Website/Admin uchun.
+- Admin event'lari (`sync.failed`, `webhook.needs_attention`,
+  `rate.sync.updated`) Shaxmatkada ko'rsatilmaydi.
+- `reservation.cancelled` kelganda bron massivda **qoladi**, statusi
+  `cancelled` bo'ladi (TZ 2-band: tarix saqlanadi). Grid bekor
+  qilinganlarni ko'rsatmaydi — xona bo'shab ko'rinadi. "Bron holati"
+  filtri `Bekor qilingan`ga qo'yilsa ular yana ko'rinadi.
+
+---
+
+## 8. Nima bu bosqichga kirmaydi
 
 - **Push-notification** (mobil/brauzer bildirishnoma) — TZ'da yo'q
 - **Customer Website uchun real-time** — TZ 15-bandi faqat

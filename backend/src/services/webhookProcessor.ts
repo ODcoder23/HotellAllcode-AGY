@@ -22,6 +22,9 @@ import { beds24Adapter } from "./beds24/adapter.js";
 import { findByExternal } from "./mapping.js";
 import { recalcAvailability, recalcRoomStatus } from "./reservations.js";
 import type { ExternalReservation } from "./channel/types.js";
+import {
+  notifyReservation, notifyPayment, notifyAvailability, notifyWebhookNeedsAttention,
+} from "../realtime/notify.js";
 
 export type ProcessResult = {
   status: "processed" | "skipped" | "needs_manual_action" | "failed";
@@ -210,6 +213,8 @@ export async function processWebhookEvent(webhookEventId: string): Promise<Proce
         data: { status: "NEEDS_MANUAL_ACTION", errorMessage: result.detail },
       });
       await logSync("webhook_needs_action", "FAILED", null, result.detail);
+      // Admin panelga ogohlantirish (09-fayl §2)
+      notifyWebhookNeedsAttention(webhookEventId, result.detail);
       return result;
     }
 
@@ -321,6 +326,14 @@ async function applyReservation(
       fromDateKey(ext.checkOut) > existing.checkOut ? fromDateKey(ext.checkOut) : existing.checkOut
     );
 
+    // TZ 4, 15-band: Shaxmatka sahifani yangilamasdan ko'radi.
+    // DB transaction tugagandan KEYIN yuboriladi (09-fayl §1).
+    await notifyReservation(
+      status === "CANCELLED" ? "reservation.cancelled" : "reservation.updated",
+      updated.id
+    );
+    if ((ext.payments ?? []).length > 0) await notifyPayment(updated.id);
+
     return {
       status: "processed",
       reservationId: updated.id,
@@ -391,6 +404,15 @@ async function applyReservation(
   await syncPayments(created.id, channel.id, ext);
   await recalcRoomStatus(assigned.roomId);
   await recalcAvailability(
+    [assigned.roomTypeId],
+    fromDateKey(ext.checkIn),
+    fromDateKey(ext.checkOut)
+  );
+
+  // TZ 4-band: OTA'dan kelgan bron Shaxmatkada DARHOL ko'rinadi
+  await notifyReservation("reservation.created", created.id);
+  if ((ext.payments ?? []).length > 0) await notifyPayment(created.id);
+  notifyAvailability(
     [assigned.roomTypeId],
     fromDateKey(ext.checkIn),
     fromDateKey(ext.checkOut)

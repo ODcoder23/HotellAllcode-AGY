@@ -16,6 +16,9 @@ import { prisma } from "../lib/prisma.js";
 import { NotFoundError, RoomUnavailableError, ValidationError } from "../lib/errors.js";
 import { fromDateKey } from "../lib/serialize.js";
 import { serializableTx } from "../lib/tx.js";
+import {
+  notifyReservation, notifyPayment, notifyAvailability, notifyRoomStatus,
+} from "../realtime/notify.js";
 
 /** Bron o'qishda har doim shu bog'liqliklar kerak (serializeReservation uchun) */
 export const reservationInclude = {
@@ -86,6 +89,16 @@ export async function isRoomFree(
  * ularga tegmaydi — ta'mirdagi xona bron sababli "bo'sh" bo'lib
  * qolmasligi kerak.
  */
+/** Xona holatini qo'lda o'rnatadi va event yuboradi */
+export async function setRoomStatus(roomId: string, status: string) {
+  const room = await prisma.room.update({
+    where: { id: roomId },
+    data: { status: status.toUpperCase() as never },
+  });
+  await notifyRoomStatus(roomId);
+  return room;
+}
+
 export async function recalcRoomStatus(
   roomId: string,
   tx: Prisma.TransactionClient = prisma
@@ -298,6 +311,11 @@ export async function createReservation(input: CreateInput) {
   }, "createReservation");
 
   await recalcAvailability([result.roomTypeId], checkIn, checkOut);
+
+  // TZ 15-band: boshqa ochiq Shaxmatka oynalari ham ko'radi
+  await notifyReservation("reservation.created", result.reservation.id);
+  notifyAvailability([result.roomTypeId], checkIn, checkOut);
+
   return result.reservation;
 }
 
@@ -306,7 +324,7 @@ export async function updateReservation(
   id: string,
   patch: Partial<Pick<CreateInput, "adults" | "children" | "pricePerNight" | "notes" | "withMeal" | "guestName" | "phone">>
 ) {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const existing = await tx.reservation.findUnique({ where: { id }, include: { guest: true } });
     if (!existing) throw new NotFoundError("Bron");
 
@@ -334,6 +352,9 @@ export async function updateReservation(
       include: reservationInclude,
     });
   });
+
+  await notifyReservation("reservation.updated", result.id);
+  return result;
 }
 
 /** 3. Xonani almashtirish (TZ 2-band, mijoz qarori Q6) */
@@ -370,6 +391,8 @@ export async function changeRoom(id: string, newRoomId: string) {
   }, "changeRoom");
 
   await recalcAvailability(r.types, r.from, r.to);
+  await notifyReservation("reservation.updated", r.updated.id);
+  notifyAvailability(r.types, r.from, r.to);
   return r.updated;
 }
 
@@ -406,12 +429,14 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
   }, "changeDates");
 
   await recalcAvailability([r.roomTypeId], r.from, r.to);
+  await notifyReservation("reservation.updated", r.updated.id);
+  notifyAvailability([r.roomTypeId], r.from, r.to);
   return r.updated;
 }
 
 /** 5. Check-in (TZ 2-band, mijoz qarori Q7) */
 export async function checkIn(id: string) {
-  return prisma.$transaction(async (tx) => {
+  const r = await prisma.$transaction(async (tx) => {
     const res = await tx.reservation.findUnique({ where: { id } });
     if (!res) throw new NotFoundError("Bron");
 
@@ -424,6 +449,10 @@ export async function checkIn(id: string) {
     await recalcRoomStatus(res.roomId, tx);
     return updated;
   });
+
+  await notifyReservation("reservation.updated", r.id);
+  await notifyRoomStatus(r.roomId);
+  return r;
 }
 
 /** 6. Check-out (TZ 2-band, mijoz qarori Q7) */
@@ -443,6 +472,9 @@ export async function checkOut(id: string) {
   });
 
   await recalcAvailability([r.roomTypeId], r.from, r.to);
+  await notifyReservation("reservation.updated", r.updated.id);
+  await notifyRoomStatus(r.updated.roomId);
+  notifyAvailability([r.roomTypeId], r.from, r.to);
   return r.updated;
 }
 
@@ -463,6 +495,9 @@ export async function cancelReservation(id: string) {
   });
 
   await recalcAvailability([r.roomTypeId], r.from, r.to);
+  await notifyReservation("reservation.cancelled", r.updated.id);
+  await notifyRoomStatus(r.updated.roomId);
+  notifyAvailability([r.roomTypeId], r.from, r.to);
   return r.updated;
 }
 
@@ -483,6 +518,9 @@ export async function markNoShow(id: string) {
   });
 
   await recalcAvailability([r.roomTypeId], r.from, r.to);
+  await notifyReservation("reservation.cancelled", r.updated.id);
+  await notifyRoomStatus(r.updated.roomId);
+  notifyAvailability([r.roomTypeId], r.from, r.to);
   return r.updated;
 }
 
@@ -507,10 +545,12 @@ export async function addPayment(
     },
   });
 
-  return prisma.reservation.findUniqueOrThrow({
+  const updated = await prisma.reservation.findUniqueOrThrow({
     where: { id: reservationId },
     include: reservationInclude,
   });
+  await notifyPayment(reservationId);
+  return updated;
 }
 
 /** To'lovni qaytarish — manfiy summa sifatida (frontend mantiqi bilan bir xil) */
@@ -529,10 +569,12 @@ export async function reversePayment(reservationId: string, paymentId: string) {
     },
   });
 
-  return prisma.reservation.findUniqueOrThrow({
+  const updated = await prisma.reservation.findUniqueOrThrow({
     where: { id: reservationId },
     include: reservationInclude,
   });
+  await notifyPayment(reservationId);
+  return updated;
 }
 
 export async function addCharge(reservationId: string, label: string, amount: number) {
@@ -543,10 +585,13 @@ export async function addCharge(reservationId: string, label: string, amount: nu
     data: { reservationId, label, amount: new Prisma.Decimal(amount) },
   });
 
-  return prisma.reservation.findUniqueOrThrow({
+  const updated = await prisma.reservation.findUniqueOrThrow({
     where: { id: reservationId },
     include: reservationInclude,
   });
+  // Xarajat total'ni o'zgartiradi -> PayPill yangilanishi kerak
+  await notifyPayment(reservationId);
+  return updated;
 }
 
 // --- O'qish -------------------------------------------------
