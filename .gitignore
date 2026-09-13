@@ -12,3 +12,7 @@ backend/dist/
 backend/.env
 backend/.pgdata/
 mock-beds24/node_modules/
+
+# Redis snapshot — ishlash paytida yaratiladi, repoda saqlanmaydi
+dump.rdb
+backend/dump.rdb
