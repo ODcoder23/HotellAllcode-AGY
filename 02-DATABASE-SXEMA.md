@@ -50,7 +50,12 @@ chiqariladi**. Tafsilot: `[07](07-AVAILABILITY-VA-RATES-SYNC.md)` §2.
 
 ## 1. Modellar — to'liq ro'yxat
 
-> **To'liq schema alohida faylda:** [schema.prisma](schema.prisma)
+> **To'liq schema kodda:** [backend/prisma/schema.prisma](backend/prisma/schema.prisma)
+>
+> Yagona nusxa — Prisma o'sha fayldan migratsiya va klient yasaydi.
+> Ilgari ildizda ko'chirma nusxa turardi va u eskirib qolgan edi
+> (Settings, SYNCING, maxAdults yo'q edi); topshirishdan oldin
+> o'chirildi.
 > (18 model, 8 enum, 421 qator). U yerdagi kod **yagona manba** —
 > bu yerda nusxa saqlanmaydi, chunki ikki joydagi schema muqarrar
 > ravishda ajralib ketadi.

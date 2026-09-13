@@ -1,6 +1,6 @@
 # 00 — INDEX: Imron Hotel PMS × Beds24 integratsiyasi
 
-Bu papkada **15 ta hujjat** + `schema.prisma` + `check-docs.sh` bor. Ular bitta katta TZ o'rniga ataylab
+Bu papkada **15 ta hujjat** + `check-docs.sh` bor. Ular bitta katta TZ o'rniga ataylab
 bo'lib tashlangan — har biri bitta mavzuga qat'iy chegaralangan.
 Ijrochi bir vaqtning o'zida faqat **bitta** faylni ochib, o'sha fazani
 tugatmasdan keyingisiga o'tmasligi kerak.
@@ -13,7 +13,7 @@ tugatmasdan keyingisiga o'tmasligi kerak.
 TZ-ASL.md                          ← AVVAL SHU. Mijoz talabi + Q1–Q8.
 00-INDEX.md                        ← siz hozir shu yerdasiz
 01-ARXITEKTURA-VA-QOIDALAR.md      ← qoidalar, albatta o'qilsin
-02-DATABASE-SXEMA.md               → schema.prisma (kod alohida)
+02-DATABASE-SXEMA.md               → backend/prisma/schema.prisma
 03-BEDS24-API-INTEGRATSIYA.md
 04-WEBHOOK-HANDLER.md              (Beds24 → PMS)
 05-SYNC-QUEUE-BULLMQ.md
@@ -26,7 +26,6 @@ TZ-ASL.md                          ← AVVAL SHU. Mijoz talabi + Q1–Q8.
 12-PMS-DAN-BEDS24-GA-SYNC.md       (PMS → Beds24)
 13-WEBSITE-INTEGRATSIYA.md         (Website → PMS → Beds24)
 
-schema.prisma                      ← Prisma schema (18 model, 8 enum)
 check-docs.sh                      ← butunlik tekshiruvi
 ```
 
@@ -128,7 +127,7 @@ Tafsilot: [11 FAZA 0.5](11-BOSQICHLAR-ROADMAP.md) (mock server),
 |---|---|
 | Mijoz aynan nima talab qilgan? | [TZ-ASL](TZ-ASL.md) |
 | Qaysi qatlam nimaga javobgar? | [01](01-ARXITEKTURA-VA-QOIDALAR.md) |
-| Qaysi jadvallar bor? | [02](02-DATABASE-SXEMA.md) → [schema.prisma](schema.prisma) |
+| Qaysi jadvallar bor? | [02](02-DATABASE-SXEMA.md) → [schema.prisma](backend/prisma/schema.prisma) |
 | Beds24 API qanday ishlaydi? | [03](03-BEDS24-API-INTEGRATSIYA.md) |
 | OTA'dan bron kelsa nima bo'ladi? | [04](04-WEBHOOK-HANDLER.md) |
 | Navbat va retry qanday? | [05](05-SYNC-QUEUE-BULLMQ.md) |

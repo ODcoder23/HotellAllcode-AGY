@@ -49,19 +49,21 @@ else
 fi
 
 # --- 2. schema.prisma --------------------------------------
+# Yagona nusxa kodda turadi — Prisma o'sha fayldan ishlaydi
+SCHEMA="backend/prisma/schema.prisma"
 echo
 echo "[2/6] schema.prisma..."
-if [ ! -f schema.prisma ]; then
-  red "  ✗ schema.prisma topilmadi"
+if [ ! -f "$SCHEMA" ]; then
+  red "  ✗ $SCHEMA topilmadi"
   ERRORS=$((ERRORS+1))
 else
-  MODELS=$(grep -c '^model ' schema.prisma)
-  ENUMS=$(grep -c '^enum ' schema.prisma)
+  MODELS=$(grep -c '^model ' "$SCHEMA")
+  ENUMS=$(grep -c '^enum ' "$SCHEMA")
   green "  ✓ $MODELS model, $ENUMS enum"
   # TZ 13-band majburiy 12 jadval
   for m in Channel ChannelConnection ChannelMapping WebhookEvent SyncLog \
            Reservation Room RoomType Guest Payment RatePlan Availability; do
-    grep -q "^model $m " schema.prisma || {
+    grep -q "^model $m " "$SCHEMA" || {
       red "  ✗ TZ 13-band talab qilgan '$m' modeli yo'q"
       ERRORS=$((ERRORS+1))
     }
