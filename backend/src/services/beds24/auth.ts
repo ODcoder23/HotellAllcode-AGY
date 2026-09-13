@@ -74,6 +74,13 @@ export async function setupConnection(
     },
   });
 
+  // Ulanish o'zgardi — room type keshi eskirdi (06-fayl §3).
+  //
+  // Aks holda yangi hisobga ulangandan keyin ham eski hisobning
+  // xona turlari ko'rsatilardi va admin noto'g'ri mapping qo'yardi.
+  const { invalidateRoomTypes } = await import("../channel/propertyCache.js");
+  invalidateRoomTypes();
+
   return { channelId: channel.id, propertyId };
 }
 

@@ -17,7 +17,19 @@
 import type { ExternalProperty } from "./types.js";
 import { getChannel } from "./registry.js";
 
-const TTL_MS = 10 * 60_000;
+/**
+ * Kesh muddati — `PROPERTY_CACHE_TTL_MS` bilan sozlanadi.
+ *
+ * Standart 10 daqiqa: ro'yxat kamdan-kam o'zgaradi va har chaqiruv
+ * ~5 kredit sarflaydi (03-fayl §3).
+ *
+ * NOLGA QO'YISH testlarda kerak: ular mock holatini qayta-qayta
+ * tozalaydi (`/control/reset`) va kesh eski javobni qaytarib
+ * turardi. Kesh SERVER jarayonida yashaydi, shuning uchun
+ * `NODE_ENV` bilan aniqlab bo'lmaydi — server dev rejimida
+ * ishlaydi.
+ */
+const TTL_MS = Number(process.env.PROPERTY_CACHE_TTL_MS ?? 10 * 60_000);
 
 type Entry = { at: number; data: ExternalProperty[] };
 

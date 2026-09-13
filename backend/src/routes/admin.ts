@@ -69,6 +69,7 @@ adminRouter.get("/mapping/external", asyncHandler(async (req, res) => {
   try {
     // `?refresh=true` keshni chetlab o'tadi (admin "Yangilash")
     const force = req.query.refresh === "true";
+    if (force) invalidateRoomTypes();
     const properties = await getRoomTypesCached(undefined, { force });
     res.json({ connected: true, properties });
   } catch (e) {

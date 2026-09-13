@@ -38,14 +38,16 @@ cp .env.example .env
 |---|---|
 | `DATABASE_URL` | PostgreSQL manzili |
 | `REDIS_URL` | Redis manzili |
-| `ENCRYPTION_KEY` | Beds24 token'larini shifrlash (32 bayt, base64) |
+| `ENCRYPTION_KEY` | Beds24 token'larini shifrlash (32 bayt **hex** = 64 belgi) |
 | `JWT_SECRET` | Sessiya imzosi |
 | `WEBHOOK_URL_TOKEN` | Webhook URL'idagi maxfiy token |
 
-Kalit yasash:
+Kalit yasash (**hex**, base64 emas):
 
 ```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+openssl rand -hex 32
+# yoki Windows'da:
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 ### 3. Baza

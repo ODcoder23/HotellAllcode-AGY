@@ -16,7 +16,7 @@
  * Shart: server (:3000), mock (:4000), PostgreSQL, Redis
  */
 
-import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { prisma } from "./lib/prisma.js";
 import { setupConnection } from "./services/beds24/auth.js";
 import { upsertMapping } from "./services/mapping.js";
@@ -200,6 +200,21 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
     // qolgan job ishga tushib "mapping topilmadi" bilan
     // yiqilardi — keyingi test esa worker'ni kutib qolardi.
     // `upsertMapping` idempotent, o'chirish shart emas.
+    await mapAll();
+  });
+
+  /**
+   * Mapping'ni TIKLAB ketamiz.
+   *
+   * Ba'zi testlar mapping YO'QLIGINI sinaydi va uni o'chiradi.
+   * Fayl shu holatda tugasa — keyingi fayllarning sync
+   * worker'lari "mapping topilmadi" bilan yiqiladi va ular
+   * worker'ni kutib 20 soniya o'tirib qoladi.
+   *
+   * Server worker'lari testlar orasida ham ishlab turadi, ya'ni
+   * holat fayllar orasida oqib o'tadi.
+   */
+  afterAll(async () => {
     await mapAll();
   });
 

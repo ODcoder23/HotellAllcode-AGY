@@ -12,7 +12,7 @@
  * Shart: server (:3000), mock (:4000), PostgreSQL
  */
 
-import { describe, it, expect, beforeAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { prisma } from "./lib/prisma.js";
 import { setupConnection } from "./services/beds24/auth.js";
 import * as mapping from "./services/mapping.js";
@@ -58,6 +58,22 @@ describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
     });
     if (!conn) await setupConnection("mock-invite-code", "12345");
     await clearMappings();
+  });
+
+  /**
+   * Mapping'ni TIKLAB ketamiz.
+   *
+   * Bu fayl mapping YO'QLIGINI sinaydi, shuning uchun `beforeEach`
+   * uni o'chiradi. Lekin fayl tugagach mapping o'chirilgan holda
+   * qolsa — keyingi test fayllarining sync worker'lari "mapping
+   * topilmadi" bilan yiqiladi va ular worker'ni kutib 20 soniya
+   * o'tirib qoladi.
+   *
+   * Server worker'lari testlar orasida ham ishlab turadi, ya'ni
+   * holat fayllar orasida oqib o'tadi.
+   */
+  afterAll(async () => {
+    await mapAll();
   });
 
   // --- FAZA 5 mezoni ---------------------------------------
