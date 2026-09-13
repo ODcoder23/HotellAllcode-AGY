@@ -19,7 +19,7 @@ import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { config } from "../lib/config.js";
 import { sanitizeForJson } from "../lib/sanitize.js";
-import { beds24Adapter } from "./beds24/adapter.js";
+import { getChannel } from "./channel/registry.js";
 import { webhookQueue } from "../queues/index.js";
 
 export type WebhookIntake = {
@@ -181,7 +181,7 @@ export async function intakeWebhook(
   let eventType = "unknown";
   let externalId: string | null = null;
   try {
-    const parsed = beds24Adapter.parseWebhook(payload);
+    const parsed = getChannel().parseWebhook(payload);
     eventType = parsed.event;
     externalId = parsed.externalId;
   } catch {

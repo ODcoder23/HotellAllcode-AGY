@@ -30,6 +30,32 @@ const MOCK = "http://localhost:4000";
 const TOKEN = "dev-webhook-token";
 
 /**
+ * WebSocket uchun JWT token (TZ 18-band, 09-fayl §4).
+ *
+ * `AUTH_REQUIRED=true` bo'lganda ulanish token talab qiladi.
+ * Dev'da (`false`) bo'sh qoladi va ulanish ochiq bo'ladi —
+ * ikkala rejimda ham testlar ishlashi kerak.
+ */
+let wsToken = "";
+
+async function loadWsToken(): Promise<void> {
+  const health = await fetch(`${PMS}/health`).then((r) => r.json() as any);
+  if (health?.security?.auth !== true) return;
+
+  const res = await fetch(`${PMS}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "admin@imron.local", password: "admin12345" }),
+  });
+  const body = (await res.json()) as { token?: string };
+  wsToken = body.token ?? "";
+}
+
+/** Token bilan WebSocket manzili */
+const wsUrl = (): string =>
+  wsToken ? `${WS_URL}?token=${encodeURIComponent(wsToken)}` : WS_URL;
+
+/**
  * WebSocket klienti — brauzer o'rnida.
  *
  * Event'lar navbatga yig'iladi, `waitFor` kutib oladi. Polling
@@ -58,7 +84,7 @@ class TestClient {
   }
 
   static async connect(): Promise<TestClient> {
-    const ws = new WebSocket(WS_URL);
+    const ws = new WebSocket(wsUrl());
     await new Promise<void>((resolve, reject) => {
       ws.once("open", () => resolve());
       ws.once("error", reject);
@@ -155,6 +181,7 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
     if (!res.ok) throw new Error("Server ishlamayapti");
     const health = (await res.json()) as any;
     if (!health.realtime) throw new Error("/health'da realtime yo'q — server yangilanmagan");
+    await loadWsToken();
 
     const mockRes = await fetch(`${MOCK}/authentication/setup`, { headers: { code: "mock-invite-code" } });
     if (!mockRes.ok) throw new Error("Mock server ishlamayapti");
@@ -226,7 +253,7 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
     });
 
     it("ping -> pong", async () => {
-      const ws = new WebSocket(WS_URL);
+      const ws = new WebSocket(wsUrl());
       await new Promise<void>((r, j) => { ws.once("open", () => r()); ws.once("error", j); });
       const pong = await new Promise<string>((resolve) => {
         ws.on("message", (raw) => {
@@ -238,6 +265,53 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
       expect(pong).toBe("pong");
       ws.close();
     });
+  });
+
+  // --- Autentifikatsiya (TZ 18-band, 09-fayl §4) --------------
+  describe("ulanish autentifikatsiyasi", () => {
+    /** Ulanish natijasini aniqlaydi: qabul qilindimi yoki yopildimi */
+    const probe = (url: string): Promise<{ accepted: boolean; code?: number }> =>
+      new Promise((resolve) => {
+        const ws = new WebSocket(url);
+        const timer = setTimeout(() => { ws.close(); resolve({ accepted: false }); }, 5000);
+
+        ws.on("message", () => {
+          clearTimeout(timer); ws.close();
+          resolve({ accepted: true });
+        });
+        ws.on("close", (code) => {
+          clearTimeout(timer);
+          resolve({ accepted: false, code });
+        });
+        ws.on("error", () => {
+          clearTimeout(timer);
+          resolve({ accepted: false });
+        });
+      });
+
+    it("to'g'ri token bilan ulanish qabul qilinadi", async () => {
+      const r = await probe(wsUrl());
+      expect(r.accepted, "to'g'ri token rad etildi").toBe(true);
+    }, 15000);
+
+    it("AUTH_REQUIRED=true bo'lsa tokensiz ulanish rad etiladi", async () => {
+      // Dev rejimida (`false`) ulanish ochiq — test o'zini
+      // o'tkazib yuboradi
+      if (!wsToken) return;
+
+      const r = await probe(WS_URL);
+      expect(r.accepted, "tokensiz ulanish qabul qilindi").toBe(false);
+      // 1008 = Policy Violation
+      expect(r.code).toBe(1008);
+    }, 15000);
+
+    it("buzilgan token rad etiladi", async () => {
+      if (!wsToken) return;
+
+      const r = await probe(`${WS_URL}?token=buzilgan.token.qiymati`);
+      expect(r.accepted).toBe(false);
+      expect(r.code).toBe(1008);
+    }, 15000);
   });
 
   // --- ASOSIY MEZON: Beds24 broni refresh'siz ko'rinadi --------

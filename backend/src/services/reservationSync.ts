@@ -22,7 +22,7 @@ import { prisma } from "../lib/prisma.js";
 import { toDateKey } from "../lib/serialize.js";
 import { logPush } from "../lib/syncLog.js";
 import { findRoomTypeMapping } from "./mapping.js";
-import { beds24Adapter } from "./beds24/adapter.js";
+import { getChannel } from "./channel/registry.js";
 import { toBeds24Status } from "./beds24/statusMap.js";
 import { notifySyncFailed } from "../realtime/notify.js";
 import { reservationSyncQueue, type ReservationSyncJob } from "../queues/index.js";
@@ -235,7 +235,7 @@ async function doPush(reservationId: string): Promise<SyncOutcome> {
     (payload as { externalId?: string }).externalId = existingId;
   }
 
-  const result = await beds24Adapter.pushReservation(payload);
+  const result = await getChannel().pushReservation(payload);
 
   const durationMs = Date.now() - started;
 

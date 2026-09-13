@@ -144,6 +144,32 @@ mantig'i **qayta yozilmaydi**.
 scraping yoki browser automation **ishlatilmaydi**. Adapter yozish
 uchun rasmiy API shart.
 
+### Amalga oshirilgan holat (audit natijasi)
+
+Interfeys `backend/src/services/channel/types.ts` da, adapter
+`backend/src/services/beds24/adapter.ts` da.
+
+**Registr qo'shildi** — `backend/src/services/channel/registry.ts`.
+Sabab: audit paytida aniqlandiki, biznes qatlami (`availability.ts`,
+`rates.ts`, `reservationSync.ts`, `reconciliation.ts`, `mapping.ts`,
+`webhookProcessor.ts`, `webhook.ts`) `beds24Adapter` ni
+**to'g'ridan-to'g'ri import qilardi**. Ya'ni interfeys bor edi,
+lekin uni hech kim ishlatmasdi — yangi kanal qo'shish uchun yettita
+faylni tahrirlash kerak bo'lardi, TZ 12-bandi esa buni taqiqlaydi.
+
+Endi ular `getChannel()` chaqiradi va `ChannelAdapter` tipini
+ko'radi. Yangi kanal qo'shish = `registry.ts` ga bitta qator:
+
+```ts
+const adapters = new Map<string, ChannelAdapter>([
+  ["beds24", beds24Adapter],
+  // ["bronevik", bronevikAdapter],   <- kelajakda
+]);
+```
+
+`beds24Adapter` nomini endi faqat registr biladi (grep bilan
+tasdiqlangan).
+
 ---
 
 ## 5. Texnologik stack

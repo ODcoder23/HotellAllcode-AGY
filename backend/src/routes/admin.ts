@@ -26,7 +26,8 @@ import {
 } from "../queues/scheduler.js";
 import { checkChannelHealth } from "../services/reconciliation.js";
 import { listDeadLetters, requeueDeadLetter, clearDeadLetters } from "../queues/deadLetter.js";
-import { beds24Adapter } from "../services/beds24/adapter.js";
+import { getChannel } from "../services/channel/registry.js";
+import { getRoomTypesCached, invalidateRoomTypes } from "../services/channel/propertyCache.js";
 import { getConnectionStatus } from "../services/beds24/auth.js";
 import { getCreditState } from "../services/beds24/client.js";
 import * as webhookSvc from "../services/webhook.js";
@@ -58,7 +59,7 @@ adminRouter.get("/mapping/health", asyncHandler(async (_req, res) => {
 }));
 
 /** GET /api/admin/mapping/external — Beds24'dagi turlar (tanlash uchun) */
-adminRouter.get("/mapping/external", asyncHandler(async (_req, res) => {
+adminRouter.get("/mapping/external", asyncHandler(async (req, res) => {
   const status = await getConnectionStatus();
   if (!status.isConnected) {
     res.json({ connected: false, properties: [] });
@@ -66,7 +67,9 @@ adminRouter.get("/mapping/external", asyncHandler(async (_req, res) => {
   }
 
   try {
-    const properties = await beds24Adapter.getRoomTypes();
+    // `?refresh=true` keshni chetlab o'tadi (admin "Yangilash")
+    const force = req.query.refresh === "true";
+    const properties = await getRoomTypesCached(undefined, { force });
     res.json({ connected: true, properties });
   } catch (e) {
     res.json({
@@ -154,7 +157,7 @@ adminRouter.get("/connection", asyncHandler(async (_req, res) => {
 
 /** POST /api/admin/connection/ping — ulanishni tekshirish */
 adminRouter.post("/connection/ping", requireAuth, requirePermission("channel.connect"), asyncHandler(async (_req, res) => {
-  res.json(await beds24Adapter.ping());
+  res.json(await getChannel().ping());
 }));
 
 // ============================================================

@@ -23,7 +23,7 @@ import { prisma } from "../lib/prisma.js";
 import { toDateKey, fromDateKey } from "../lib/serialize.js";
 import { logPush } from "../lib/syncLog.js";
 import { findRoomTypeMapping } from "./mapping.js";
-import { beds24Adapter } from "./beds24/adapter.js";
+import { getChannel } from "./channel/registry.js";
 import { notifyAvailability } from "../realtime/notify.js";
 import { availabilitySyncQueue } from "../queues/index.js";
 
@@ -205,7 +205,7 @@ export async function pushAvailability(
   }
 
   // --- 4. Yuborish (oraliqqa yig'ish adapter ichida) ---
-  const result = await beds24Adapter.pushAvailability({
+  const result = await getChannel().pushAvailability({
     externalRoomTypeId: mapping.externalRoomTypeId,
     days: changed.map((d) => ({ date: d.date, available: d.availableCount })),
   });

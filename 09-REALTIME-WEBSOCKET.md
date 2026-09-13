@@ -152,6 +152,36 @@ WebSocket ulanishi mavjud JWT tokeni bilan tasdiqlanadi
 RBAC shu yerda ham amal qiladi: `STAFF` roli `sync.failed` kabi
 texnik event'larni olmaydi ([10 §1](10-SECURITY-VA-SYNCLOG.md)).
 
+### Amalga oshirilgan holat (audit natijasi)
+
+Kod: `backend/src/realtime/server.ts`.
+
+Avval bu yerda `// FAZA 12` izohi turardi va ulanish ochiq edi.
+Audit paytida aniqlandi va yopildi.
+
+**Token ikki joydan olinadi:**
+
+1. `?token=...` — asosiy yo'l. Brauzerning `WebSocket` API'si
+   maxsus sarlavha yubora olmaydi, shuning uchun URL parametri.
+2. `Authorization: Bearer` — server-server ulanishlar uchun.
+
+Token yaroqsiz bo'lsa ulanish **1008 (Policy Violation)** kodi bilan
+yopiladi. Klient buni ko'rib login sahifasiga yo'naltiradi va
+qayta ulanishga urinmaydi.
+
+**RBAC filtri `sendLocal()` ichida.** Har klientning roli
+saqlanadi; `ADMIN_EVENTS` (`sync.failed`, `webhook.needs_attention`,
+`rate.sync.updated`) faqat `synclog.read` huquqi borlarga yuboriladi
+— ya'ni `ADMIN` va `MANAGER` ga. `STAFF` ularni olmaydi.
+
+**Dev rejimi:** `AUTH_REQUIRED=false` bo'lsa ulanish ochiq qoladi va
+`ADMIN` huquqi beriladi — Shaxmatka hozircha login ekranisiz
+ishlaydi.
+
+**Tekshirilgan:** tokensiz va buzilgan token → 1008; to'g'ri token
+→ `connected` xabari. STAFF va ADMIN bir vaqtda ulanib, drift
+yuzaga keltirildi: `sync.failed` faqat ADMIN'ga yetdi.
+
 ---
 
 ## 5. Ulanish uzilishi

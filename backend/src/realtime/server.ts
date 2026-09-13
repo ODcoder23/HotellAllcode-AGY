@@ -22,12 +22,24 @@ import type { Server } from "node:http";
 import IORedis from "ioredis";
 import { config } from "../lib/config.js";
 import { now, type RealtimeMessage } from "./events.js";
+import { verifyToken, can } from "../services/auth.js";
+import { ADMIN_EVENTS } from "./events.js";
+import type { UserRole } from "@prisma/client";
 
 const CHANNEL = "pms:realtime";
 const SERVER_STARTED_AT = now();
 
-/** Ulangan klientlar */
-const clients = new Set<WebSocket>();
+/**
+ * Ulangan klientlar va ularning rollari.
+ *
+ * Rol saqlanadi, chunki event yuborishda RBAC qo'llanadi (09-fayl
+ * §4): `STAFF` texnik event'larni (`sync.failed`,
+ * `webhook.needs_attention`) olmaydi — ular unga tushunarsiz va
+ * ish jarayoniga aloqasi yo'q.
+ */
+type ClientInfo = { role: UserRole; email: string };
+
+const clients = new Map<WebSocket, ClientInfo>();
 
 let wss: WebSocketServer | null = null;
 let publisher: IORedis | null = null;
@@ -48,11 +60,16 @@ function sendLocal(message: RealtimeMessage): void {
   const json = JSON.stringify(message);
   let sent = 0;
 
-  for (const ws of clients) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(json);
-      sent++;
-    }
+  // Texnik event'lar faqat `synclog.read` huquqi borlarga
+  // (09-fayl §4, 10-fayl §3): ADMIN va MANAGER
+  const isTechnical = (ADMIN_EVENTS as readonly string[]).includes(message.type);
+
+  for (const [ws, info] of clients) {
+    if (ws.readyState !== WebSocket.OPEN) continue;
+    if (isTechnical && !can(info.role, "synclog.read")) continue;
+
+    ws.send(json);
+    sent++;
   }
 
   if (config.isDev && sent > 0) {
@@ -84,12 +101,44 @@ export function startRealtimeServer(httpServer: Server): void {
   wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
   wss.on("connection", (ws, req) => {
-    clients.add(ws);
-
-    // TZ 18-band: ulanish JWT bilan tasdiqlanadi (FAZA 12).
-    // Hozircha ochiq — dev muhitida.
     const ip = req.socket.remoteAddress;
-    if (config.isDev) console.log(`[ws] ulandi (${ip}), jami ${clients.size}`);
+
+    /**
+     * TZ 18-band, 09-fayl §4: ulanish mavjud JWT bilan tasdiqlanadi.
+     *
+     * Token ikki joydan olinadi:
+     *   1. `?token=...` — brauzer `WebSocket` API'si maxsus
+     *      sarlavha yubora olmaydi, shuning uchun asosiy yo'l
+     *   2. `Authorization: Bearer` — server-server ulanishlar uchun
+     *
+     * `AUTH_REQUIRED=false` (dev) bo'lsa ochiq qoladi va ADMIN
+     * huquqi beriladi — Shaxmatka hozircha login ekranisiz ishlaydi.
+     */
+    const url = new URL(req.url ?? "/ws", "http://localhost");
+    const header = req.headers.authorization;
+    const token =
+      url.searchParams.get("token") ??
+      (header?.startsWith("Bearer ") ? header.slice(7).trim() : null);
+
+    const payload = token ? verifyToken(token) : null;
+
+    if (config.authRequired && !payload) {
+      // 1008 = Policy Violation. Klient buni ko'rib login sahifasiga
+      // yo'naltiradi va qayta ulanishga urinmaydi.
+      ws.close(1008, "Autentifikatsiya talab qilinadi");
+      if (config.isDev) console.warn(`[ws] tokensiz ulanish rad etildi (${ip})`);
+      return;
+    }
+
+    const info: ClientInfo = payload
+      ? { role: payload.role, email: payload.email }
+      : { role: "ADMIN", email: "dev@local" };
+
+    clients.set(ws, info);
+
+    if (config.isDev) {
+      console.log(`[ws] ulandi ${info.email} (${info.role}, ${ip}), jami ${clients.size}`);
+    }
 
     // Klient uzilishdan keyin farqni bilishi uchun (09-fayl §5)
     ws.send(JSON.stringify({
@@ -157,7 +206,7 @@ export function startRealtimeServer(httpServer: Server): void {
 
   // O'lik ulanishlarni tozalash — har 30 soniyada
   const heartbeat = setInterval(() => {
-    for (const ws of clients) {
+    for (const [ws] of clients) {
       if (ws.readyState !== WebSocket.OPEN) clients.delete(ws);
       else ws.ping();
     }
@@ -170,7 +219,7 @@ export function startRealtimeServer(httpServer: Server): void {
 
 export async function stopRealtimeServer(): Promise<void> {
   pubSubReady = false;
-  for (const ws of clients) ws.close();
+  for (const [ws] of clients) ws.close();
   clients.clear();
 
   await new Promise<void>((r) => (wss ? wss.close(() => r()) : r()));

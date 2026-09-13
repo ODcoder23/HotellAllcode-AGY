@@ -193,6 +193,25 @@ function roomStatusForReservation(res) {
 
 const API_BASE = window.API_BASE || "http://localhost:3000";
 
+/**
+ * JWT token — auth yoqilganda kerak (TZ 18-band, 09-fayl §4).
+ *
+ * Brauzerning `WebSocket` API'si maxsus sarlavha yubora olmaydi,
+ * shuning uchun token URL parametri orqali beriladi.
+ *
+ * Hozircha `window.AUTH_TOKEN` dan olinadi — Shaxmatka login
+ * ekranisiz ishlaydi va dev muhitida `AUTH_REQUIRED=false`.
+ * Login qo'shilganda bu yer o'zgarmaydi: token o'sha o'zgaruvchiga
+ * yoziladi.
+ */
+function getAuthToken() {
+  try {
+    return window.AUTH_TOKEN || localStorage.getItem("pms_token") || "";
+  } catch {
+    return window.AUTH_TOKEN || "";
+  }
+}
+
 class ApiError extends Error {
   constructor(message, status, code) {
     super(message);
@@ -204,9 +223,15 @@ class ApiError extends Error {
 async function apiFetch(path, options = {}) {
   let res;
   try {
+    const token = getAuthToken();
     res = await fetch(`${API_BASE}${path}`, {
       ...options,
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      headers: {
+        "Content-Type": "application/json",
+        // Auth yoqilganda barcha /api/* so'rovlar token talab qiladi
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {}),
+      },
     });
   } catch (e) {
     throw new ApiError("Serverga ulanib bo'lmadi. Internetni tekshiring.", 0, "NETWORK");
@@ -282,6 +307,7 @@ const api = {
 
 const WS_URL = (window.WS_URL || API_BASE.replace(/^http/, "ws")) + "/ws";
 
+
 /**
  * Avtomatik qayta ulanadigan WebSocket.
  *
@@ -300,7 +326,8 @@ function createRealtimeClient({ onEvent, onStatus }) {
     if (closed) return;
 
     try {
-      ws = new WebSocket(WS_URL);
+      const token = getAuthToken();
+      ws = new WebSocket(token ? `${WS_URL}?token=${encodeURIComponent(token)}` : WS_URL);
     } catch {
       scheduleReconnect();
       return;

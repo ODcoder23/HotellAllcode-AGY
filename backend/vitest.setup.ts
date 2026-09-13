@@ -136,7 +136,7 @@ if (health?.security?.auth === true) {
   if (token) {
     const original = globalThis.fetch;
 
-    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+    globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
       // Faqat PMS'ga ketayotgan so'rovlar. Mock server (:4000) o'z

@@ -14,7 +14,7 @@
 
 import { prisma } from "../lib/prisma.js";
 import { NotFoundError, ValidationError, AppError } from "../lib/errors.js";
-import { beds24Adapter } from "./beds24/adapter.js";
+import { getRoomTypesCached } from "./channel/propertyCache.js";
 
 // --- O'qish -------------------------------------------------
 
@@ -273,7 +273,8 @@ export async function getMappingHealth(): Promise<MappingHealth> {
   let externalTypes: Array<{ id: string; name: string; qty: number }> = [];
   if (channel) {
     try {
-      const props = await beds24Adapter.getRoomTypes();
+      // 06-fayl §3: /properties keshlanadi — kredit tejash
+      const props = await getRoomTypesCached();
       externalTypes = props.flatMap((p) =>
         p.roomTypes.map((rt) => ({ id: rt.id, name: rt.name, qty: rt.qty }))
       );

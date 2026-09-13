@@ -32,6 +32,21 @@ tarzida to'xtaladi.
 
 **Mezon:** `docker compose up` ishlaydi, `/health` javob beradi.
 
+> **Audit natijasi.** `docker-compose.yml` da avval faqat `postgres`
+> va `redis` bor edi — `api` xizmati yo'q edi, ya'ni mezon to'liq
+> bajarilmagan. Qo'shildi: `backend/Dockerfile` (ikki bosqichli
+> qurilish, `node` foydalanuvchisi ostida) va `api` xizmati
+> (migratsiya avtomatik, healthcheck `/health` ga). Maxfiy
+> qiymatlar `.env` dan keladi, repoda saqlanmaydi (TZ 18-band).
+>
+> Ishlab chiqarish tasviriga testlar kirmaydi: `tsconfig.json`
+> ularni `exclude` qiladi. Tiplari `npm run typecheck` bilan
+> alohida tekshiriladi (`tsconfig.test.json`).
+>
+> Dev muhitida Docker mavjud emas edi, shuning uchun PostgreSQL
+> lokal (port 5433) va Redis scoop orqali ishlatildi — kod
+> farqni bilmaydi, faqat `.env` boshqacha.
+
 ---
 
 ## FAZA 0.5 — Mock Beds24 server (kod yoziladi)

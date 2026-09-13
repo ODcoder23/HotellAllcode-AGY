@@ -28,7 +28,7 @@ import { prisma } from "../lib/prisma.js";
 import { toDateKey, fromDateKey, toNumber } from "../lib/serialize.js";
 import { logPush, logSync } from "../lib/syncLog.js";
 import { findRoomTypeMapping } from "./mapping.js";
-import { beds24Adapter } from "./beds24/adapter.js";
+import { getChannel } from "./channel/registry.js";
 import { getRatesSoT } from "./settings.js";
 import { notifyRateSync } from "../realtime/notify.js";
 import { rateSyncQueue } from "../queues/index.js";
@@ -123,7 +123,7 @@ export async function pushRates(
   }
 
   // --- 4. Yuborish ---
-  const result = await beds24Adapter.pushRates({
+  const result = await getChannel().pushRates({
     externalRoomTypeId: mapping.externalRoomTypeId,
     days: pending.map((d) => ({ date: d.date, price: d.price, minStay: d.minStay })),
   });

@@ -18,7 +18,7 @@
 import { Prisma, type ReservationStatus, type ReservationSource } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { fromDateKey } from "../lib/serialize.js";
-import { beds24Adapter } from "./beds24/adapter.js";
+import { getChannel } from "./channel/registry.js";
 import { findByExternal } from "./mapping.js";
 import { recalcRoomStatus } from "./reservations.js";
 // Status mapping markaziy faylda (08-fayl §2, 12-fayl §6) — bu yerda
@@ -171,7 +171,7 @@ export async function processWebhookEvent(webhookEventId: string): Promise<Proce
     return { status: "skipped", detail: `Allaqachon ${event.status}` };
   }
 
-  const parsed = beds24Adapter.parseWebhook(event.rawPayload);
+  const parsed = getChannel().parseWebhook(event.rawPayload);
 
   // --- Echo loop himoyasi (04-fayl §6) ---
   // Bizning o'z yuborgan bronimiz qaytdi — hech narsa qilinmaydi

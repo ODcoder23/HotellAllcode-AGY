@@ -104,6 +104,13 @@ maydoni `nullable`.
 - Beds24 room type'lari ro'yxati `GET /properties` dan olinadi.
   Bu **yagona joy** — boshqa hech qayerda `/properties` chaqirilmaydi,
   natija cache qilinadi (kamdan-kam o'zgaradi, kredit tejaydi).
+  Kesh: `backend/src/services/channel/propertyCache.ts`, TTL 10
+  daqiqa. `?refresh=true` bilan chetlab o'tiladi (admin "Yangilash"
+  tugmasi). Audit paytida qo'shildi — avval ro'yxat uch joydan
+  keshsiz chaqirilardi va har biri ~5 kredit sarflardi (03-fayl §3).
+  Kanal sog'ligi tekshiruvi (`/api/admin/channel-health`) keshni
+  ATAYLAB ishlatmaydi: aks holda o'chgan kanal ham "ishlayapti"
+  bo'lib ko'rinardi.
 - Har o'zgarish `AuditLog` ga yoziladi (TZ 18-band): kim, qachon,
   qaysi mapping'ni nimaga o'zgartirdi.
 - Faqat `ADMIN` roli kira oladi (TZ 18-band RBAC).

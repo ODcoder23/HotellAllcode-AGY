@@ -15,5 +15,14 @@
     "sourceMap": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    // Testlar ishlab chiqarish tasviriga kirmaydi: ular
+    // `vitest` orqali to'g'ridan-to'g'ri TypeScript'dan ishlaydi,
+    // kompilyatsiya qilinishi shart emas. Aks holda `dist` ichida
+    // test kodi va mock ma'lumotlar qolib ketardi.
+    "src/**/*.test.ts",
+    "vitest.setup.ts"
+  ]
 }

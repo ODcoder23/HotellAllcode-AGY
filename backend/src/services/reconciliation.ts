@@ -19,7 +19,7 @@ import { prisma } from "../lib/prisma.js";
 import { config } from "../lib/config.js";
 import { toDateKey, fromDateKey } from "../lib/serialize.js";
 import { logSync } from "../lib/syncLog.js";
-import { beds24Adapter } from "./beds24/adapter.js";
+import { getChannel } from "./channel/registry.js";
 import { applyReservation } from "./webhookProcessor.js";
 import { findRoomTypeMapping } from "./mapping.js";
 import { recalcAvailability, readRange, enqueueAvailabilitySync } from "./availability.js";
@@ -102,7 +102,7 @@ export async function pollBookings(): Promise<PollResult> {
   const counts = { fetched: 0, created: 0, updated: 0, skipped: 0, needsAction: 0 };
 
   try {
-    const list = await beds24Adapter.pullReservations(from);
+    const list = await getChannel().pullReservations(from);
     counts.fetched = list.length;
 
     for (const ext of list) {
@@ -210,7 +210,7 @@ export async function checkDrift(daysAhead = 30): Promise<DriftResult> {
     // Beds24 tomoni
     let remote: Array<{ date: string; available: number }>;
     try {
-      remote = await beds24Adapter.getAvailability(mapping.externalRoomTypeId, fromKey, toKey);
+      remote = await getChannel().getAvailability(mapping.externalRoomTypeId, fromKey, toKey);
     } catch (e) {
       // Beds24 javob bermasa drift tekshirib bo'lmaydi — PMS
       // ishlashda davom etadi (TZ 17-band)
@@ -347,7 +347,9 @@ export async function checkChannelHealth(): Promise<{
   error?: string;
 }> {
   try {
-    const props = await beds24Adapter.getRoomTypes();
+    // Kanal javob beryaptimi — kesh chetlab o'tiladi, aks holda
+    // o'chgan kanal ham "ishlayapti" bo'lib ko'rinardi
+    const props = await getChannel().getRoomTypes();
     return { reachable: true, credits: props.length > 0 ? undefined : 0 };
   } catch (e) {
     return { reachable: false, error: String(e).slice(0, 200) };
