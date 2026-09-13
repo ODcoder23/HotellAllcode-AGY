@@ -118,7 +118,11 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
     });
     if (!conn) await setupConnection("mock-invite-code", "12345");
 
-    await prisma.channelMapping.deleteMany();
+    // Mapping O'CHIRILMAYDI, faqat yangilanadi: o'chirish va
+    // qayta yaratish orasidagi bo'shliqda oldingi test faylidan
+    // qolgan job ishga tushib "mapping topilmadi" bilan
+    // yiqilardi — keyingi test esa worker'ni kutib qolardi.
+    // `upsertMapping` idempotent, o'chirish shart emas.
     await mapAll();
   });
 

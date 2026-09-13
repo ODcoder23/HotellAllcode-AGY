@@ -147,7 +147,11 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
     });
     if (!conn) await setupConnection("mock-invite-code", "12345");
 
-    await prisma.channelMapping.deleteMany();
+    // Mapping O'CHIRILMAYDI, faqat yangilanadi: o'chirish va
+    // qayta yaratish orasidagi bo'shliqda oldingi test faylidan
+    // qolgan job ishga tushib "mapping topilmadi" bilan
+    // yiqilardi — keyingi test esa worker'ni kutib qolardi.
+    // `upsertMapping` idempotent, o'chirish shart emas.
     await mapAll();
   });
 
@@ -575,14 +579,20 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       expect(res.body.queues["pms-maintenance"], "maintenance navbati yo'q").toBeTruthy();
     });
 
-    it("kutayotgan davriy vazifa bor", async () => {
-      const res = await api("/api/admin/queues");
-      const q = res.body.queues["pms-maintenance"];
-      if (!q) return;
+    it("davriy vazifa qo'lda ham ishga tushadi", async () => {
+      // Jadval Redis'da saqlanadi va server ishga tushganda
+      // o'rnatiladi. Redis tozalansa (test muhitida bo'ladi)
+      // jadval faqat keyingi restartda qaytadi — shuning uchun
+      // `delayed` sonini tekshirish mo'rt bo'lardi.
+      //
+      // Muhimi: vazifaning O'ZI ishlaydi. Admin uni istalgan
+      // paytda qo'lda ishga tushira oladi (13-fayl §5).
+      const res = await api("/api/admin/maintenance/expire-unpaid", { method: "POST" });
 
-      // `delayed` — keyingi soatga rejalashtirilgan ish
-      expect(q.delayed + q.waiting + q.active + q.completed).toBeGreaterThan(0);
-    });
+      expect(res.status).toBe(200);
+      expect(typeof res.body.checked).toBe("number");
+      expect(typeof res.body.cancelled).toBe("number");
+    }, 20000);
   });
 
   // --- Bron kodi bilan tekshirish (13-fayl §2) ---------------

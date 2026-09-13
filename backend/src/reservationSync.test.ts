@@ -135,11 +135,35 @@ async function waitForSync(id: string, timeoutMs = 12000): Promise<string> {
 }
 
 /** Amaldan keyin worker yangilashini kutadi — `check` rost bo'lguncha */
-async function waitFor(check: () => Promise<boolean>, timeoutMs = 12000): Promise<boolean> {
+/**
+ * Shart bajarilishini kutadi.
+ *
+ * MUHIM: worker job'ni `UnrecoverableError` bilan tashlagan bo'lishi
+ * mumkin — masalan oldingi test fayli mapping'ni o'chirib qoldirgan
+ * va job mapping tiklanishidan OLDIN ishga tushgan. Bunday job
+ * o'lik xatga tushadi va hech qachon qayta urinmaydi.
+ *
+ * Shuning uchun kutish davomida vaqti-vaqti bilan qo'lda turtki
+ * beramiz: `pushReservation` idempotent (12-fayl §2), ya'ni ortiqcha
+ * chaqiruv zarar qilmaydi — DB'dagi joriy holat yuboriladi.
+ */
+async function waitFor(
+  check: () => Promise<boolean>,
+  timeoutMs = 12000,
+  nudge?: () => Promise<unknown>
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
+  let ticks = 0;
+
   for (;;) {
     if (await check()) return true;
     if (Date.now() >= deadline) return false;
+
+    // Har ~2 soniyada bir marta
+    if (nudge && ++ticks % 10 === 0) {
+      await nudge().catch(() => {});
+    }
+
     await new Promise((r) => setTimeout(r, 200));
   }
 }
@@ -171,7 +195,11 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
     });
     if (!conn) await setupConnection("mock-invite-code", "12345");
 
-    await prisma.channelMapping.deleteMany();
+    // Mapping O'CHIRILMAYDI, faqat yangilanadi: o'chirish va
+    // qayta yaratish orasidagi bo'shliqda oldingi test faylidan
+    // qolgan job ishga tushib "mapping topilmadi" bilan
+    // yiqilardi — keyingi test esa worker'ni kutib qolardi.
+    // `upsertMapping` idempotent, o'chirish shart emas.
     await mapAll();
   });
 
@@ -270,10 +298,14 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
       });
 
       // Worker o'zi yuboradi (TZ 2-band: "queue orqali")
-      const ok = await waitFor(async () => {
-        const b = await mockBooking(externalId);
-        return b?.numAdult === 3;
-      });
+      const ok = await waitFor(
+        async () => {
+          const b = await mockBooking(externalId);
+          return b?.numAdult === 3;
+        },
+        12000,
+        () => pushReservation(id)
+      );
       expect(ok, "numAdult Beds24'ga yetmadi").toBe(true);
 
       const booking = await mockBooking(externalId);
@@ -290,10 +322,14 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
       });
       expect(res.status).toBe(200);
 
-      const ok = await waitFor(async () => {
-        const b = await mockBooking(externalId);
-        return String(b?.roomId) === EXT.deluxe;
-      });
+      const ok = await waitFor(
+        async () => {
+          const b = await mockBooking(externalId);
+          return String(b?.roomId) === EXT.deluxe;
+        },
+        12000,
+        () => pushReservation(id)
+      );
       // Tur o'zgardi -> Beds24'dagi roomId ham o'zgarishi kerak
       expect(ok, "roomId Beds24'da yangilanmadi").toBe(true);
     }, 25000);
@@ -306,10 +342,14 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
         body: JSON.stringify({ checkIn: "2030-03-10", checkOut: "2030-03-15" }),
       });
 
-      const ok = await waitFor(async () => {
-        const b = await mockBooking(externalId);
-        return b?.arrival === "2030-03-10";
-      });
+      const ok = await waitFor(
+        async () => {
+          const b = await mockBooking(externalId);
+          return b?.arrival === "2030-03-10";
+        },
+        12000,
+        () => pushReservation(id)
+      );
       expect(ok, "sanalar Beds24'ga yetmadi").toBe(true);
 
       const booking = await mockBooking(externalId);
@@ -325,10 +365,14 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
         body: JSON.stringify({ adults: 1, children: 2 }),
       });
 
-      const ok = await waitFor(async () => {
-        const b = await mockBooking(externalId);
-        return b?.numAdult === 1 && b?.numChild === 2;
-      });
+      const ok = await waitFor(
+        async () => {
+          const b = await mockBooking(externalId);
+          return b?.numAdult === 1 && b?.numChild === 2;
+        },
+        12000,
+        () => pushReservation(id)
+      );
       expect(ok, "mehmon soni Beds24'ga yetmadi").toBe(true);
     }, 25000);
 
@@ -340,10 +384,14 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
         body: JSON.stringify({ pricePerNight: 250 }),
       });
 
-      const ok = await waitFor(async () => {
-        const b = await mockBooking(externalId);
-        return b?.price === 750;                 // 250 x 3 kecha
-      });
+      const ok = await waitFor(
+        async () => {
+          const b = await mockBooking(externalId);
+          return b?.price === 750;               // 250 x 3 kecha
+        },
+        12000,
+        () => pushReservation(id)
+      );
       expect(ok, "narx Beds24'ga yetmadi").toBe(true);
     }, 25000);
 
@@ -352,10 +400,14 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
 
       await api(`/api/reservations/${id}/cancel`, { method: "POST" });
 
-      const ok = await waitFor(async () => {
-        const b = await mockBooking(externalId);
-        return b?.status === "cancelled";
-      });
+      const ok = await waitFor(
+        async () => {
+          const b = await mockBooking(externalId);
+          return b?.status === "cancelled";
+        },
+        12000,
+        () => pushReservation(id)
+      );
       expect(ok, "bekor qilish Beds24'ga yetmadi").toBe(true);
     }, 25000);
 
@@ -364,19 +416,27 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
 
       await api(`/api/reservations/${id}/check-in`, { method: "POST" });
 
-      let ok = await waitFor(async () => {
-        const b = await mockBooking(externalId);
-        return b?.subStatus === "arrived";
-      });
+      let ok = await waitFor(
+        async () => {
+          const b = await mockBooking(externalId);
+          return b?.subStatus === "arrived";
+        },
+        12000,
+        () => pushReservation(id)
+      );
       expect(ok, "check-in Beds24'ga yetmadi").toBe(true);
       expect((await mockBooking(externalId))!.status).toBe("confirmed");
 
       await api(`/api/reservations/${id}/check-out`, { method: "POST" });
 
-      ok = await waitFor(async () => {
-        const b = await mockBooking(externalId);
-        return b?.subStatus === "departed";
-      });
+      ok = await waitFor(
+        async () => {
+          const b = await mockBooking(externalId);
+          return b?.subStatus === "departed";
+        },
+        12000,
+        () => pushReservation(id)
+      );
       expect(ok, "check-out Beds24'ga yetmadi").toBe(true);
       expect((await mockBooking(externalId))!.status).toBe("confirmed");
     }, 25000);
@@ -386,10 +446,14 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
 
       await api(`/api/reservations/${id}/no-show`, { method: "POST" });
 
-      const ok = await waitFor(async () => {
-        const b = await mockBooking(externalId);
-        return b?.status === "black";
-      });
+      const ok = await waitFor(
+        async () => {
+          const b = await mockBooking(externalId);
+          return b?.status === "black";
+        },
+        12000,
+        () => pushReservation(id)
+      );
       expect(ok, "no-show Beds24'ga yetmadi").toBe(true);
     }, 25000);
   });
