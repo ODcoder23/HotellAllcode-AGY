@@ -144,11 +144,78 @@ export async function getQueueCounts() {
 
 /** Redis ishlayaptimi — /health uchun */
 export async function isRedisHealthy(): Promise<boolean> {
+  // MUHIM: `redisConnection` da `maxRetriesPerRequest: null` — bu
+  // BullMQ uchun shart (ulanish uzilganda job yo'qolmasligi uchun),
+  // lekin `ping()` cheksiz kutadi degani. Redis o'chganda `/health`
+  // umuman javob bermay qolardi va TZ 17, 19-band buzilardi:
+  // "Beds24/Redis ishlamasa PMS ishlashda davom etishi kerak".
+  //
+  // Shuning uchun ping TIMEOUT bilan o'raladi. 1 soniya yetarli:
+  // lokal Redis millisekundlarda javob beradi, javob bermasa
+  // "o'chgan" deb hisoblash to'g'ri.
   try {
-    await redisConnection.ping();
+    const ping = redisConnection.ping();
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("redis ping timeout")), 1000)
+    );
+    await Promise.race([ping, timeout]);
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Navbatga qo'yishni TIMEOUT bilan o'raydi.
+ *
+ * MUAMMO: `redisConnection` da `maxRetriesPerRequest: null` — BullMQ
+ * uchun shart (ulanish uzilganda job yo'qolmasligi uchun). Lekin bu
+ * `queue.add()` Redis javobini CHEKSIZ kutadi degani: Redis o'chsa
+ * `try/catch` ham yordam bermaydi, chunki xato tashlanmaydi —
+ * so'rov shunchaki osilib qoladi.
+ *
+ * Natijada bron yaratish 15+ soniya kutardi va TZ 17, 19-band
+ * buzilardi: "PMSning ichki ishlashi Beds24ga (va Redis'ga)
+ * bog'lanib qolmasin."
+ *
+ * Endi 2 soniyada javob kelmasa navbatga qo'yish TASHLAB
+ * YUBORILADI. Bron DB'da saqlangan, sync esa `catch_up` davriy
+ * vazifasi orqali keyinroq yuboriladi (14-faza).
+ */
+/**
+ * Redis oxirgi marta qachon javob bermagani.
+ *
+ * Redis uzoq o'chgan bo'lsa har amal 2 soniya kutib turishi
+ * ma'nosiz: bron yaratish, check-in, bekor qilish — hammasi
+ * sekinlashadi. Bir marta javob bermasa, keyingi 30 soniya
+ * davomida umuman urinmaymiz.
+ *
+ * Redis qaytganda birinchi urinish o'tadi va bayroq tozalanadi.
+ */
+let redisDownUntil = 0;
+const DOWN_COOLDOWN_MS = 30_000;
+
+export async function enqueueWithTimeout<T>(
+  fn: () => Promise<T>,
+  label: string,
+  timeoutMs = 2000
+): Promise<T | null> {
+  if (Date.now() < redisDownUntil) {
+    // Redis yaqinda javob bermagan — kutmaymiz
+    return null;
+  }
+
+  try {
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label}: navbat javob bermadi`)), timeoutMs)
+    );
+    const result = await Promise.race([fn(), timeout]);
+    redisDownUntil = 0;      // javob keldi — bayroq tozalanadi
+    return result;
+  } catch (e) {
+    redisDownUntil = Date.now() + DOWN_COOLDOWN_MS;
+    console.warn(`[queue] ${label} qo'yilmadi: ${String(e).slice(0, 120)}`);
+    return null;
   }
 }
 

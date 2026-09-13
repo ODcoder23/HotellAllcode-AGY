@@ -91,6 +91,27 @@ Buning texnik kafolati:
 **Tekshirish usuli (FAZA 14):** `.env` da Beds24 o'chiriladi, butun
 PMS to'liq ishlashi tasdiqlanadi.
 
+### Yakuniy audit natijasi — Redis chidamliligi
+
+Beds24 o'chirilganda PMS to'liq ishlaydi (tasdiqlangan). Lekin
+yakuniy tekshiruvda REDIS o'chirilganda uch muammo topildi —
+hammasi tuzatildi:
+
+| Muammo | Sabab | Yechim |
+|---|---|---|
+| `/health` javob bermas edi (10s timeout) | `maxRetriesPerRequest: null` — `ping()` cheksiz kutadi | `isRedisHealthy()` 1s timeout bilan o'raldi |
+| Bron yaratish osilardi (15s) | `queue.add()` ham cheksiz kutadi; `try/catch` yordam bermaydi — xato tashlanmaydi | `enqueueWithTimeout()` 2s + 30s cooldown |
+| Redis qaytgach bronlar `PENDING` da qolardi | `resyncFailed` faqat `FAILED`/`NOT_APPLICABLE` ni qidirardi | Eskirgan (5 daq+) `PENDING` ham qo'shildi |
+
+`maxRetriesPerRequest: null` BullMQ uchun **shart** (ulanish
+uzilganda job yo'qolmasligi uchun), shuning uchun uni o'zgartirish
+mumkin emas edi — har chaqiruv joyida timeout qo'yildi.
+
+Natija: Redis o'chgan holatda birinchi amal 2 soniya (timeout),
+keyingilari 15–33 ms (cooldown). Bron, check-in, narx, bekor
+qilish — hammasi ishlaydi. Redis qaytganda `catch-up` qolib
+ketganlarni yuboradi.
+
 ---
 
 ## 3. Source-of-truth konfiguratsiyasi (TZ 7-band)

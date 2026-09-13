@@ -31,7 +31,7 @@ import { findRoomTypeMapping } from "./mapping.js";
 import { getChannel } from "./channel/registry.js";
 import { getRatesSoT } from "./settings.js";
 import { notifyRateSync } from "../realtime/notify.js";
-import { rateSyncQueue } from "../queues/index.js";
+import { rateSyncQueue, enqueueWithTimeout } from "../queues/index.js";
 
 /** Debounce oynasi — availability bilan bir xil sabab (07-fayl §4) */
 const DEBOUNCE_MS = 3000;
@@ -343,18 +343,17 @@ export async function enqueueRateSync(
   const window = Math.floor(Date.now() / DEBOUNCE_MS);
   const jobId = `rate_${types.join("-")}_${dateKey(fromKey)}_${dateKey(toKey)}_${window}`;
 
-  try {
-    await rateSyncQueue.add(
+  // Redis yo'q bo'lsa narx baribir DB'da saqlangan (TZ 17, 19-band)
+  const added = await enqueueWithTimeout(
+    () => rateSyncQueue.add(
       "sync",
       { roomTypeIds: types, from: fromKey, to: toKey },
       { jobId, delay: DEBOUNCE_MS }
-    );
-    return { queued: true, jobId };
-  } catch (e) {
-    // Redis yo'q bo'lsa narx baribir DB'da saqlangan (TZ 17, 19-band)
-    console.warn(`[rates] navbatga qo'yilmadi: ${String(e).slice(0, 100)}`);
-    return { queued: false };
-  }
+    ),
+    "rate-sync"
+  );
+
+  return added ? { queued: true, jobId } : { queued: false };
 }
 
 /**

@@ -99,6 +99,27 @@ export function errorHandler(
   res: Response,
   _next: NextFunction
 ) {
+  /**
+   * Buzilgan JSON — `express.json()` tashlaydi.
+   *
+   * Bu KLIENT xatosi, server nosozligi emas: 500 qaytarish
+   * monitoring signalini buzadi (haqiqiy nosozlik ko'rinmay qoladi)
+   * va klientga "qayta urinib ko'ring" degan noto'g'ri maslahat
+   * beradi.
+   */
+  if (
+    err instanceof SyntaxError &&
+    "status" in err &&
+    (err as { status?: number }).status === 400 &&
+    "body" in err
+  ) {
+    res.status(400).json({
+      error: "So'rov tanasi noto'g'ri (JSON kutilgan).",
+      code: "BAD_JSON",
+    });
+    return;
+  }
+
   const translated = err instanceof AppError ? err : translatePrismaError(err);
 
   if (translated) {

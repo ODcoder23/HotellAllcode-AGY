@@ -303,6 +303,14 @@ takrorlash bo'lardi va bittasi esdan chiqsa test sababsiz
 yiqilardi. Auth mantig'ining o'zi `security.test.ts` da token
 ataylab yubormasdan tekshiriladi.
 
+**Login ekrani qo'shildi** (yakuniy audit). Avval
+`AUTH_REQUIRED=true` qilinganda Shaxmatka "Kirish talab qilinadi"
+xatosini ko'rsatib to'xtab qolardi — token olish yo'li yo'q edi.
+Endi birinchi so'rov 401 bersa login ekrani chiqadi, token
+`localStorage` da saqlanadi va `apiFetch` hamda WebSocket unga
+tayanadi. Dev rejimida (`AUTH_REQUIRED=false`) ekran umuman
+ko'rinmaydi.
+
 **Seed uchala rolni yaratadi** (`admin@` / `manager@` / `staff@`,
 parol `admin12345`) — RBAC testlari uchun va dasturchi har rolni
 sinab ko'rishi uchun. Topshirishda birinchi qadam — parollarni

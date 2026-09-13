@@ -260,6 +260,10 @@ const api = {
   setRoomStatus: (id, status) =>
     apiFetch(`/api/rooms/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
 
+  login: (email, password) =>
+    apiFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  me: () => apiFetch("/api/auth/me"),
+
   reservations: () => apiFetch("/api/reservations"),
   createReservation: (data) =>
     apiFetch("/api/reservations", { method: "POST", body: JSON.stringify(data) }),
@@ -456,6 +460,95 @@ function ResStatusBadge({ status }) {
   return <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${m.chip}`}>{m.label}</span>;
 }
 
+/* ==========================================================================
+   LOGIN EKRANI — TZ 18-band
+
+   Manba: 10-SECURITY-VA-SYNCLOG.md §1 (3-talab: JWT authentication)
+
+   NEGA KERAK: `AUTH_REQUIRED=true` bo'lganda barcha `/api/*` so'rovlar
+   token talab qiladi. Usiz Shaxmatka "Kirish talab qilinadi" xatosini
+   ko'rsatib to'xtab qolardi va token olish yo'li bo'lmasdi.
+
+   Dev muhitida (`AUTH_REQUIRED=false`) bu ekran KO'RINMAYDI: birinchi
+   so'rov muvaffaqiyatli o'tadi va login talab qilinmaydi.
+
+   Token `localStorage` da saqlanadi — sahifa yangilanganda qayta
+   kirish shart emas. Muddati tugasa (12 soat) keyingi so'rov 401
+   beradi va ekran o'zi qaytadi.
+========================================================================== */
+
+function LoginScreen({ onSuccess }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e?.preventDefault();
+    if (!email || !password) return;
+
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.login(email, password);
+      try {
+        localStorage.setItem("pms_token", res.token);
+      } catch {
+        // Shaxsiy rejim yoki bloklangan saqlash — token faqat
+        // shu sessiyada ishlaydi
+        window.AUTH_TOKEN = res.token;
+      }
+      onSuccess(res.user);
+    } catch (err) {
+      // Server ataylab bir xil xabar beradi: qaysi email mavjudligi
+      // oshkor qilinmaydi (10-fayl §3)
+      setError(err.message || "Kirish amalga oshmadi");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="h-screen w-full flex items-center justify-center bg-gray-50">
+      <form onSubmit={submit} className="w-80 bg-white border border-gray-200 rounded-lg shadow-sm p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-md bg-blue-600 flex items-center justify-center text-white font-bold text-xs">SH</div>
+          <div>
+            <div className="text-sm font-semibold text-gray-800">Shaxmatka</div>
+            <div className="text-xs text-gray-500">Imron Hotel PMS</div>
+          </div>
+        </div>
+
+        <Field label="Email">
+          <TextInput
+            type="email" value={email} autoFocus
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="admin@imron.local"
+          />
+        </Field>
+
+        <Field label="Parol">
+          <TextInput
+            type="password" value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+          />
+        </Field>
+
+        {error && (
+          <div className="rounded-md bg-red-50 border border-red-200 px-2 py-1.5 text-xs text-red-700">
+            {error}
+          </div>
+        )}
+
+        <Btn variant="primary" className="w-full justify-center" type="submit" disabled={busy}>
+          {busy ? "Kirilmoqda…" : "Kirish"}
+        </Btn>
+      </form>
+    </div>
+  );
+}
+
 /* ============================== APP ============================== */
 
 function App() {
@@ -466,6 +559,14 @@ function App() {
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
+  /**
+   * Kirish talab qilinadimi (TZ 18-band).
+   *
+   * Birinchi so'rov 401 bersa `true` bo'ladi va login ekrani
+   * ko'rsatiladi. Dev muhitida (`AUTH_REQUIRED=false`) hech qachon
+   * yoqilmaydi.
+   */
+  const [needsLogin, setNeedsLogin] = useState(false);
 
   const [viewStart, setViewStart] = useState(addDays(today, -1));
   const [rangeLen, setRangeLen] = useState(14);
@@ -520,7 +621,13 @@ function App() {
 
       setLoadError(null);
     } catch (e) {
-      setLoadError(e.message);
+      if (e.status === 401) {
+        // Token yo'q yoki muddati tugagan — login ekrani
+        setNeedsLogin(true);
+        setLoadError(null);
+      } else {
+        setLoadError(e.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -886,6 +993,18 @@ function App() {
       <div className="h-screen w-full flex items-center justify-center bg-gray-50">
         <div className="text-sm text-gray-500">Yuklanmoqda...</div>
       </div>
+    );
+  }
+
+  if (needsLogin) {
+    return (
+      <LoginScreen
+        onSuccess={() => {
+          setNeedsLogin(false);
+          setLoading(true);
+          reload();
+        }}
+      />
     );
   }
 

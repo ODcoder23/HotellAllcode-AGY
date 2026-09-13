@@ -25,7 +25,7 @@ import { logPush } from "../lib/syncLog.js";
 import { findRoomTypeMapping } from "./mapping.js";
 import { getChannel } from "./channel/registry.js";
 import { notifyAvailability } from "../realtime/notify.js";
-import { availabilitySyncQueue } from "../queues/index.js";
+import { availabilitySyncQueue, enqueueWithTimeout } from "../queues/index.js";
 
 /**
  * Debounce oynasi (07-fayl §4, kredit tejash 3-daraja).
@@ -358,17 +358,16 @@ export async function enqueueAvailabilitySync(
   const window = Math.floor(Date.now() / DEBOUNCE_MS);
   const jobId = `avail_${types.join("-")}_${dateKey(fromKey)}_${dateKey(toKey)}_${window}`;
 
-  try {
-    await availabilitySyncQueue.add(
+  const added = await enqueueWithTimeout(
+    () => availabilitySyncQueue.add(
       "sync",
       { roomTypeIds: types, from: fromKey, to: toKey, reason },
       { jobId, delay: DEBOUNCE_MS }
-    );
-    return { queued: true, jobId };
-  } catch (e) {
-    console.warn(`[availability] navbatga qo'yilmadi (${reason}): ${String(e).slice(0, 100)}`);
-    return { queued: false };
-  }
+    ),
+    `availability-sync (${reason})`
+  );
+
+  return added ? { queued: true, jobId } : { queued: false };
 }
 
 // ============================================================

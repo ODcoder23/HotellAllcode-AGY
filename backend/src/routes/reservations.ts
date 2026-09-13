@@ -47,18 +47,26 @@ reservationsRouter.get("/:id", requireAuth, requirePermission("reservation.read"
 }));
 
 // --- POST /api/reservations ---------------------------------
+/**
+ * Matn maydonlari uzunligi cheklangan.
+ *
+ * NEGA: cheklovsiz 10 000 belgilik ism DB'ga tushib, Shaxmatka
+ * jadvalini buzadi va Beds24 so'rovini rad ettiradi (POST payload
+ * ~1MB chegarasi, 03-fayl §3). Yuzlab shunday bron esa DB'ni
+ * shishiradi. Bu hujum emas, lekin himoyasi arzon.
+ */
 const createSchema = z.object({
-  roomId: z.string().min(1),
-  guestName: z.string().min(1, "Mehmon ismi kerak"),
-  phone: z.string().optional(),
-  email: z.string().email().optional(),
+  roomId: z.string().min(1).max(50),
+  guestName: z.string().min(1, "Mehmon ismi kerak").max(200, "Ism juda uzun"),
+  phone: z.string().max(30).optional(),
+  email: z.string().email().max(200).optional(),
   checkIn: dateKey,
   checkOut: dateKey,
   adults: z.number().int().min(1).max(20).optional(),
   children: z.number().int().min(0).max(20).optional(),
-  source: z.string().optional(),
-  pricePerNight: z.number().min(0),
-  notes: z.string().optional(),
+  source: z.string().max(50).optional(),
+  pricePerNight: z.number().min(0).max(1_000_000),
+  notes: z.string().max(2000).optional(),
   withMeal: z.boolean().optional(),
   status: z.string().optional(),
   initialPayment: z.number().min(0).optional(),
@@ -73,12 +81,12 @@ reservationsRouter.post("/", requireAuth, requirePermission("reservation.write")
 
 // --- PATCH /api/reservations/:id ----------------------------
 const patchSchema = z.object({
-  guestName: z.string().min(1).optional(),
-  phone: z.string().optional(),
+  guestName: z.string().min(1).max(200).optional(),
+  phone: z.string().max(30).optional(),
   adults: z.number().int().min(1).max(20).optional(),
   children: z.number().int().min(0).max(20).optional(),
-  pricePerNight: z.number().min(0).optional(),
-  notes: z.string().optional(),
+  pricePerNight: z.number().min(0).max(1_000_000).optional(),
+  notes: z.string().max(2000).optional(),
   withMeal: z.boolean().optional(),
 });
 

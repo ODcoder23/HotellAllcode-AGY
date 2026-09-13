@@ -25,7 +25,7 @@ import { findRoomTypeMapping } from "./mapping.js";
 import { getChannel } from "./channel/registry.js";
 import { toBeds24Status } from "./beds24/statusMap.js";
 import { notifySyncFailed } from "../realtime/notify.js";
-import { reservationSyncQueue, type ReservationSyncJob } from "../queues/index.js";
+import { reservationSyncQueue, enqueueWithTimeout, type ReservationSyncJob } from "../queues/index.js";
 
 export type ChangeType = ReservationSyncJob["changeType"];
 
@@ -333,8 +333,8 @@ export async function enqueueReservationSync(
   const window = Math.floor(Date.now() / 2000);
   const jobId = `res_${reservationId}_${changeType}_${window}`;
 
-  try {
-    await reservationSyncQueue.add(
+  const added = await enqueueWithTimeout(
+    () => reservationSyncQueue.add(
       "sync",
       {
         reservationId,
@@ -344,14 +344,11 @@ export async function enqueueReservationSync(
         requestedAt: new Date().toISOString(),
       },
       { jobId },
-    );
-    return { queued: true, jobId };
-  } catch (e) {
-    console.warn(
-      `[reservation-sync] navbatga qo'yilmadi (${changeType}): ${String(e).slice(0, 100)}`
-    );
-    return { queued: false };
-  }
+    ),
+    `reservation-sync (${changeType})`
+  );
+
+  return added ? { queued: true, jobId } : { queued: false };
 }
 
 /**
@@ -391,10 +388,29 @@ export async function resyncFailed(limit = 50): Promise<{
   sent: number;
   failed: number;
 }> {
+  /**
+   * `PENDING` ham qo'shiladi, lekin FAQAT ESKILARI.
+   *
+   * NEGA: Redis o'chganda `enqueueWithTimeout` job qo'ya olmaydi va
+   * bron `PENDING` holatida qoladi. Redis qaytganda hech kim uni
+   * yubormaydi — abadiy shu holatda turib qoladi va Beds24 bronni
+   * bilmaydi (TZ 17-band buzilishi).
+   *
+   * NEGA "ESKILARI": hozirgina yaratilgan bron ham `PENDING` —
+   * uning job'i navbatda turibdi va bir necha soniyada bajariladi.
+   * Uni bu yerdan ham yuborish ikki marta yuborishga olib kelardi.
+   * 5 daqiqadan eski bo'lsa navbat allaqachon bajargan yoki
+   * umuman qo'yilmagan.
+   */
+  const staleAfter = new Date(Date.now() - 5 * 60_000);
+
   const pending = await prisma.reservation.findMany({
     where: {
-      syncStatus: { in: ["FAILED", "NOT_APPLICABLE"] },
       status: { notIn: ["CHECKED_OUT"] },
+      OR: [
+        { syncStatus: { in: ["FAILED", "NOT_APPLICABLE"] } },
+        { syncStatus: "PENDING", updatedAt: { lt: staleAfter } },
+      ],
     },
     orderBy: { updatedAt: "desc" },
     take: limit,

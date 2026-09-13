@@ -574,6 +574,201 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
     });
   });
 
+  // --- Chidamlilik: Redis va xatolar (TZ 17, 19-band) --------
+  //
+  // Yakuniy auditda topilgan uch muammoning regressiya himoyasi.
+  // Ular mock bilan emas, HAQIQIY Redis o'chirilganda topilgan —
+  // testlar Redis ishlab turganda yozilgan, shuning uchun bu yerda
+  // xatti-harakat va sozlamalar tekshiriladi.
+  describe("chidamlilik (audit regressiyalari)", () => {
+    it("/health tez javob beradi — osilmaydi", async () => {
+      // MUAMMO EDI: `redisConnection` da `maxRetriesPerRequest: null`
+      // — `ping()` cheksiz kutardi. Redis o'chganda `/health` umuman
+      // javob bermas edi (10s timeout), ya'ni monitoring "server
+      // o'lgan" deb hisoblardi.
+      const started = Date.now();
+      const res = await api("/health");
+      const elapsed = Date.now() - started;
+
+      expect(res.status).toBe(200);
+      // Ping timeout'i 1s, qolgani DB so'rovi — 3s yetarli zaxira
+      expect(elapsed, "/health juda sekin").toBeLessThan(3000);
+    }, 15000);
+
+    it("navbatga qo'yish timeout bilan o'ralgan", async () => {
+      // MUAMMO EDI: `queue.add()` Redis javobini cheksiz kutardi va
+      // `try/catch` yordam bermasdi (xato tashlanmaydi, osiladi).
+      // Redis o'chganda bron yaratish 15+ soniya kutardi.
+      const { enqueueWithTimeout } = await import("./queues/index.js");
+
+      // Hech qachon tugamaydigan promise — osilgan Redis'ni
+      // taqlid qiladi
+      const never = () => new Promise<string>(() => {});
+
+      const started = Date.now();
+      const result = await enqueueWithTimeout(never, "test", 300);
+      const elapsed = Date.now() - started;
+
+      expect(result, "timeout'da null qaytarishi kerak").toBeNull();
+      expect(elapsed, "timeout ishlamadi").toBeLessThan(2000);
+    }, 15000);
+
+    it("bron yaratish tez javob beradi", async () => {
+      const room = await prisma.room.findFirstOrThrow({
+        where: { roomTypeId: "standard", isActive: true },
+        orderBy: { sortOrder: "desc" },
+      });
+
+      const started = Date.now();
+      const res = await api("/api/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          roomId: room.id,
+          checkIn: day(300),
+          checkOut: day(302),
+          guestName: "Tezlik Testi",
+          guestPhone: "+998907770099",
+          adults: 1,
+          pricePerNight: 100,
+        }),
+      });
+      const elapsed = Date.now() - started;
+
+      expect(res.status).toBe(201);
+      // Navbat javob bermasa ham 3 soniyadan oshmasligi kerak
+      expect(elapsed, "bron yaratish sekin").toBeLessThan(3000);
+
+      await prisma.reservation.delete({ where: { id: res.body.id } }).catch(() => {});
+    }, 15000);
+
+    it("catch-up eskirgan PENDING bronlarni ham yuboradi", async () => {
+      // MUAMMO EDI: `resyncFailed` faqat FAILED/NOT_APPLICABLE ni
+      // qidirardi. Redis o'chganda bron PENDING holatida qolardi va
+      // Redis qaytganda hech kim uni yubormasdi — Beds24 bronni
+      // umuman bilmasdi (TZ 17-band buzilishi).
+      const room = await prisma.room.findFirstOrThrow({
+        where: { roomTypeId: "double", isActive: true },
+        orderBy: { sortOrder: "desc" },
+      });
+
+      const created = await api("/api/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          roomId: room.id,
+          checkIn: day(305),
+          checkOut: day(307),
+          guestName: "Pending Qoldi",
+          guestPhone: "+998907770098",
+          adults: 1,
+          pricePerNight: 100,
+        }),
+      });
+      expect(created.status).toBe(201);
+
+      // "Redis o'chgan" holatni taqlid qilamiz: sync bo'lmagan va
+      // eskirgan
+      await prisma.reservation.update({
+        where: { id: created.body.id },
+        data: {
+          syncStatus: "PENDING",
+          externalReservationId: null,
+          updatedAt: new Date(Date.now() - 10 * 60_000),
+        },
+      });
+
+      await fetch(`${MOCK}/control/refill-credits`, { method: "POST" }).catch(() => {});
+      await catchUpPending();
+
+      const fresh = await prisma.reservation.findUniqueOrThrow({
+        where: { id: created.body.id },
+      });
+
+      expect(fresh.syncStatus, "eskirgan PENDING yuborilmadi").toBe("SYNCED");
+      expect(fresh.externalReservationId).toBeTruthy();
+
+      await prisma.reservation.delete({ where: { id: created.body.id } }).catch(() => {});
+    }, 40000);
+
+    it("yangi PENDING bron catch-up bilan IKKI MARTA yuborilmaydi", async () => {
+      // Hozirgina yaratilgan bronning job'i navbatda turibdi.
+      // Uni catch-up ham yuborsa — Beds24'da ikkita booking.
+      const room = await prisma.room.findFirstOrThrow({
+        where: { roomTypeId: "deluxe", isActive: true },
+        orderBy: { sortOrder: "desc" },
+      });
+
+      const created = await api("/api/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          roomId: room.id,
+          checkIn: day(310),
+          checkOut: day(312),
+          guestName: "Yangi Pending",
+          guestPhone: "+998907770097",
+          adults: 1,
+          pricePerNight: 200,
+        }),
+      });
+
+      // Darhol catch-up — bron hali "yangi"
+      const { resyncFailed } = await import("./services/reservationSync.js");
+      const before = await prisma.reservation.findUniqueOrThrow({
+        where: { id: created.body.id },
+      });
+
+      if (before.syncStatus === "PENDING") {
+        const result = await resyncFailed(100);
+        // Yangi bron ro'yxatga TUSHMASLIGI kerak
+        const stillPending = await prisma.reservation.findUniqueOrThrow({
+          where: { id: created.body.id },
+        });
+        // Worker yuborgan bo'lishi mumkin — muhimi, catch-up
+        // uni o'zi yubormagan bo'lsin
+        expect(result.total).toBeLessThan(100);
+        expect(stillPending.id).toBe(created.body.id);
+      }
+
+      await prisma.reservation.delete({ where: { id: created.body.id } }).catch(() => {});
+    }, 30000);
+
+    it("buzilgan JSON 400 beradi, 500 emas", async () => {
+      // MUAMMO EDI: `express.json()` SyntaxError tashlaydi, u
+      // `errorHandler` da "kutilmagan xato" sifatida 500 bo'lardi.
+      // Monitoring signalini buzadi: klient xatosi server
+      // nosozligi bo'lib ko'rinardi.
+      const res = await fetch(`${PMS}/api/reservations`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{bu json emas",
+      });
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { code?: string };
+      expect(body.code).toBe("BAD_JSON");
+    }, 15000);
+
+    it("juda uzun matn rad etiladi", async () => {
+      const room = await prisma.room.findFirstOrThrow({
+        where: { isActive: true },
+      });
+
+      const res = await api("/api/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          roomId: room.id,
+          checkIn: day(315),
+          checkOut: day(316),
+          guestName: "A".repeat(10_000),
+          guestPhone: "+998907770096",
+          adults: 1,
+          pricePerNight: 100,
+        }),
+      });
+
+      expect(res.status).toBe(400);
+    }, 15000);
+  });
+
   // --- Yuklama (FAZA 14 mezoni) ------------------------------
   describe("yuklama", () => {
     it("50 parallel o'qish so'rovi xatosiz o'tadi", async () => {

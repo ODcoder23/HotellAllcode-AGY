@@ -409,7 +409,13 @@ credentials qo'yish va sozlash.
    URL: https://<domen>/api/webhooks/beds24/<token>
    (token .env dagi WEBHOOK_URL_TOKEN dan olinadi)
 
-5. Mapping (Admin panel → Beds24 mapping)
+5. Xavfsizlikni yoqish (TZ 18-band)
+   .env: AUTH_REQUIRED="true"  RATE_LIMIT_DISABLED="false"
+   Shaxmatka login ekranini ko'rsatadi — admin@imron.local
+   parolini O'ZGARTIRING (seed'dagi "admin12345" faqat dev uchun)
+   Tekshirish: GET /health -> security.auth: true
+
+6. 5. Mapping (Admin panel → Beds24 mapping)
    Har PMS xona turini Beds24 turiga bog'lash — 3 ta tanlov
    "Tekshirish" tugmasi → isComplete: true bo'lishi kerak
 
