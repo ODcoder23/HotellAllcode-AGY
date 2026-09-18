@@ -14,13 +14,17 @@
 import { Prisma, type ReservationStatus, type ReservationSource } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { NotFoundError, RoomUnavailableError, ValidationError } from "../lib/errors.js";
-import { fromDateKey, toDateKey } from "../lib/serialize.js";
+import { fromDateKey, toDateKey, serializeReservation } from "../lib/serialize.js";
 import { serializableTx } from "../lib/tx.js";
 import { onAvailabilityChanged } from "./availability.js";
 import { onReservationChanged } from "./reservationSync.js";
 import {
   notifyReservation, notifyPayment, notifyRoomStatus,
 } from "../realtime/notify.js";
+import {
+  getMealPrice, getFreeCancelHours, getCancelFeeNights,
+} from "./settings.js";
+import { createOnCheckout } from "./cleaning.js";
 
 /** Bron o'qishda har doim shu bog'liqliklar kerak (serializeReservation uchun) */
 export const reservationInclude = {
@@ -33,6 +37,51 @@ export const reservationInclude = {
 const ACTIVE_STATUSES: ReservationStatus[] = [
   "PENDING_PAYMENT", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT",
 ];
+
+/**
+ * Status o'tishlari (SAVOLLAR.md S3).
+ *
+ * NEGA KERAK: ilgari hech qanday qoida yo'q edi — bekor qilingan
+ * bronni check-in qilish, chiqib ketgan mehmonni yana kiritish
+ * mumkin edi. Overbooking constraint bazani himoya qilardi, lekin
+ * status ketma-ketligi ma'nosiz bo'lib qolardi.
+ *
+ * CHEGARA: bo'sh ro'yxat = yakuniy holat, undan chiqib bo'lmaydi.
+ */
+const ALLOWED_TRANSITIONS: Record<ReservationStatus, ReservationStatus[]> = {
+  PENDING_PAYMENT: ["CONFIRMED", "CANCELLED", "NO_SHOW"],
+  CONFIRMED:       ["CHECKED_IN", "CANCELLED", "NO_SHOW"],
+  CHECKED_IN:      ["CHECKED_OUT"],
+  CHECKED_OUT:     [],
+  CANCELLED:       [],
+  NO_SHOW:         [],
+};
+
+/** Statusning o'zbekcha nomi — xato xabarlari uchun */
+const STATUS_LABEL: Record<ReservationStatus, string> = {
+  PENDING_PAYMENT: "to'lov kutilmoqda",
+  CONFIRMED:       "tasdiqlangan",
+  CHECKED_IN:      "mehmon kirgan",
+  CHECKED_OUT:     "mehmon chiqqan",
+  CANCELLED:       "bekor qilingan",
+  NO_SHOW:         "kelmadi",
+};
+
+/**
+ * O'tish mumkinmi — mumkin bo'lmasa tushunarli xato tashlaydi.
+ *
+ * Bir xil statusga o'tish (CHECKED_IN -> CHECKED_IN) ham rad
+ * etiladi: bu odatda ikki marta bosilgan tugma, va checkedInAt
+ * vaqtini buzadi.
+ */
+function assertTransition(from: ReservationStatus, to: ReservationStatus): void {
+  if (ALLOWED_TRANSITIONS[from].includes(to)) return;
+
+  throw new ValidationError(
+    `Bron "${STATUS_LABEL[from]}" holatida — uni "${STATUS_LABEL[to]}" ` +
+    `qilib bo'lmaydi`
+  );
+}
 
 /**
  * Xona holatini bronga qarab aniqlaydi.
@@ -51,8 +100,27 @@ export function roomStatusFor(status: ReservationStatus) {
 }
 
 /**
- * Xona bo'shmi — sana oralig'i kesishuvini tekshiradi.
- * Shaxmatkadagi isRoomAvailable() bilan bir xil: ci < rco && co > rci
+ * Xona bo'shmi — IKKI shartni tekshiradi:
+ *
+ *   1. Sana oralig'i boshqa bron bilan kesishmasligi
+ *      (Shaxmatkadagi `isRoomAvailable()` bilan bir xil:
+ *       `ci < rco && co > rci`)
+ *
+ *   2. Oraliqdagi birorta kun ta'mir/xizmatdan chiqarilgan
+ *      bo'lmasligi (`RoomDayStatus.isBlocked`)
+ *
+ * IKKINCHI SHART 2026-09-16 DA QO'SHILDI. Undan oldin yopiq
+ * xonaga bron tushaverardi: admin Shaxmatkada ta'mirdagi xonani
+ * tanlay olardi, Beds24'dan kelgan bron ham o'sha xonaga
+ * biriktirilardi. Mehmon kelganda xona yopiq bo'lib chiqardi.
+ *
+ * YAGONA JOY: bu funksiya bron yaratish, xona almashtirish, sana
+ * o'zgartirish, bo'sh xona qidirish va webhook ishlovida
+ * chaqiriladi. Tekshiruv shu yerda bo'lgani uchun hammasi
+ * bir vaqtda himoyalanadi.
+ *
+ * Yopilgan kunlar oralig'i: bron `[checkIn, checkOut)` — chiqish
+ * kuni xona bo'sh, shuning uchun u tekshirilmaydi.
  */
 export async function isRoomFree(
   roomId: string,
@@ -71,7 +139,17 @@ export async function isRoomFree(
     },
     select: { id: true },
   });
-  return conflict === null;
+  if (conflict !== null) return false;
+
+  const blocked = await tx.roomDayStatus.findFirst({
+    where: {
+      roomId,
+      isBlocked: true,
+      date: { gte: checkIn, lt: checkOut },
+    },
+    select: { id: true },
+  });
+  return blocked === null;
 }
 
 /**
@@ -169,12 +247,104 @@ type CreateInput = {
   children?: number;
   source?: string;          // "direct" | "booking_com" | ...
   pricePerNight: number;
+  priceReason?: string;
   notes?: string;
   withMeal?: boolean;
   status?: string;
   initialPayment?: number;
   paymentMethod?: string;
+  /** To'lovni kim qabul qilgani (S13) — initialPayment uchun */
+  userId?: string;
 };
+
+/**
+ * Tarif narxi — kirish sanasidagi RatePlan (SAVOLLAR.md S4).
+ *
+ * Tarif topilmasa null: yangi xona turi yoki narx hali
+ * kiritilmagan bo'lishi mumkin, bu bronni to'sish uchun sabab emas.
+ */
+async function tariffPrice(
+  roomTypeId: string,
+  date: Date,
+  tx: Prisma.TransactionClient = prisma
+): Promise<number | null> {
+  const plan = await tx.ratePlan.findFirst({
+    where: { roomTypeId, date },
+    select: { price: true },
+  });
+  return plan ? Number(plan.price) : null;
+}
+
+/**
+ * Narx tarifga mosmi (SAVOLLAR.md S4).
+ *
+ * QOIDA: chegirma mumkin, lekin sababsiz emas. Tarifdan past narx
+ * `priceReason` talab qiladi — hisobotda "nega arzon sotilgan"
+ * ko'rinib tursin. Tarifdan yuqori narx erkin: bayram kuni yoki
+ * kelishuv narxi bo'lishi mumkin, u daromadni kamaytirmaydi.
+ *
+ * NEGA qat'iy taqiq emas: qabulxona kelishuv narxi bilan ishlaydi,
+ * har chegirma uchun menejer chaqirish ishni to'xtatib qo'yardi.
+ */
+function assertPriceOk(
+  price: number,
+  tariff: number | null,
+  reason: string | undefined
+): void {
+  if (tariff === null || price >= tariff) return;
+  if (reason && reason.trim().length >= 3) return;
+
+  throw new ValidationError(
+    `Narx tarifdan past (tarif ${som(tariff)}, kiritilgan ${som(price)}) — ` +
+    `chegirma sababini yozing`
+  );
+}
+
+/**
+ * Mehmonni topadi yoki yaratadi (SAVOLLAR.md S6, S7).
+ *
+ * TELEFON BOR: shu telefonli mehmon qidiriladi. Topilsa, ism
+ * FARQ QILSA yangilanadi — ilgari eski ism qolib ketardi va
+ * bron boshqa odam nomiga yozilgandek ko'rinardi.
+ *
+ * TELEFON YO'Q: har safar yangi yozuv. Bu ataylab — telefonsiz
+ * ikki "Anonim mehmon" ni bir odam deb hisoblash xato bo'lardi.
+ * Shuning uchun telefon qat'iy tavsiya etiladi (route'da
+ * ogohlantirish bor).
+ */
+async function findOrCreateGuest(
+  input: Pick<CreateInput, "guestName" | "phone" | "email">,
+  tx: Prisma.TransactionClient
+) {
+  if (!input.phone) {
+    return tx.guest.create({
+      data: { fullName: input.guestName, email: input.email },
+    });
+  }
+
+  const existing = await tx.guest.findFirst({ where: { phone: input.phone } });
+
+  if (!existing) {
+    return tx.guest.create({
+      data: { fullName: input.guestName, phone: input.phone, email: input.email },
+    });
+  }
+
+  // Ism yoki email o'zgargan bo'lsa yangilaymiz (S6)
+  const changed =
+    existing.fullName !== input.guestName ||
+    (input.email !== undefined && existing.email !== input.email);
+
+  if (!changed) return existing;
+
+  return tx.guest.update({
+    where: { id: existing.id },
+    data: {
+      fullName: input.guestName,
+      ...(input.email ? { email: input.email } : {}),
+    },
+  });
+}
 
 /** 1. Yangi bron (TZ 2-band) */
 export async function createReservation(input: CreateInput) {
@@ -184,6 +354,18 @@ export async function createReservation(input: CreateInput) {
   if (checkOut <= checkIn) {
     throw new ValidationError("Chiqish sanasi kirish sanasidan keyin bo'lishi kerak.");
   }
+
+  // Transaction ichida emas: mavjudlik tekshiruvi tashqarida
+  // bajarilsa transaction qulfini ushlab turmaydi
+  const payerId = await resolveUserId(input.userId);
+
+  /**
+   * Nonushta narxi bron yaratilganda KO'CHIRILADI (S10).
+   *
+   * NEGA: narx keyin ko'tarilsa, eski bronlarning summasi
+   * o'zgarib ketardi — mehmon kelishilgandan ko'p to'lardi.
+   */
+  const mealPrice = input.withMeal ? await getMealPrice() : 0;
 
   const result = await serializableTx(async (tx) => {
     const room = await tx.room.findUnique({ where: { id: input.roomId } });
@@ -195,15 +377,30 @@ export async function createReservation(input: CreateInput) {
       throw new RoomUnavailableError();
     }
 
-    // Mehmon: telefon bo'yicha qidiriladi, topilmasa yaratiladi
-    const guest = input.phone
-      ? (await tx.guest.findFirst({ where: { phone: input.phone } })) ??
-        (await tx.guest.create({
-          data: { fullName: input.guestName, phone: input.phone, email: input.email },
-        }))
-      : await tx.guest.create({
-          data: { fullName: input.guestName, email: input.email },
-        });
+    // Narx tarifdan past bo'lsa sabab talab qilinadi (S4)
+    assertPriceOk(
+      input.pricePerNight,
+      await tariffPrice(room.roomTypeId, checkIn, tx),
+      input.priceReason
+    );
+
+    // Boshlang'ich to'lov bron summasidan oshmasin (S1).
+    // Bu yerda alohida tekshiriladi, chunki bron hali yaratilmagan
+    // va currentBalance() uni topa olmaydi.
+    if (input.initialPayment && input.initialPayment > 0) {
+      const nights = Math.round((checkOut.getTime() - checkIn.getTime()) / 86_400_000);
+      const guests = (input.adults ?? 1) + (input.children ?? 0);
+      const total =
+        input.pricePerNight * nights + mealPrice * guests * nights;
+      if (input.initialPayment > total) {
+        throw new ValidationError(
+          `Boshlang'ich to'lov bron summasidan ko'p: ` +
+          `bron ${som(total)}, to'lov ${som(input.initialPayment)}`
+        );
+      }
+    }
+
+    const guest = await findOrCreateGuest(input, tx);
 
     const status = (input.status?.toUpperCase() ?? "CONFIRMED") as ReservationStatus;
 
@@ -217,8 +414,10 @@ export async function createReservation(input: CreateInput) {
         children: input.children ?? 0,
         source: (input.source?.toUpperCase() ?? "DIRECT") as ReservationSource,
         pricePerNight: new Prisma.Decimal(input.pricePerNight),
+        priceReason: input.priceReason?.trim() || null,
         notes: input.notes,
         withMeal: input.withMeal ?? false,
+        mealPricePerPerson: mealPrice > 0 ? new Prisma.Decimal(mealPrice) : null,
         status,
         syncStatus: "PENDING",
         ...(input.initialPayment && input.initialPayment > 0
@@ -229,6 +428,7 @@ export async function createReservation(input: CreateInput) {
                   method: input.paymentMethod ?? "Naqd",
                   paymentDate: new Date(),
                   note: "Boshlang'ich to'lov",
+                  userId: payerId,
                 },
               },
             }
@@ -411,11 +611,7 @@ export async function confirmReservation(id: string) {
     const res = await tx.reservation.findUnique({ where: { id } });
     if (!res) throw new NotFoundError("Bron");
 
-    if (res.status !== "PENDING_PAYMENT") {
-      throw new ValidationError(
-        `Faqat to'lov kutilayotgan bronni tasdiqlash mumkin (joriy holat: ${res.status.toLowerCase()})`
-      );
-    }
+    assertTransition(res.status, "CONFIRMED");
 
     const updated = await tx.reservation.update({
       where: { id },
@@ -438,8 +634,35 @@ export async function confirmReservation(id: string) {
 /** 5. Check-in (TZ 2-band, mijoz qarori Q7) */
 export async function checkIn(id: string) {
   const r = await prisma.$transaction(async (tx) => {
-    const res = await tx.reservation.findUnique({ where: { id } });
+    const res = await tx.reservation.findUnique({
+      where: { id },
+      include: { room: true },
+    });
     if (!res) throw new NotFoundError("Bron");
+    assertTransition(res.status, "CHECKED_IN");
+
+    /**
+     * Tozalanmagan xonaga mehmon kiritilmaydi (SAVOLLAR.md S12).
+     *
+     * NEGA check-in da, bron yaratishda emas: bron kelajakka
+     * qilinadi va xona o'shangacha tozalanadi. Faqat mehmon
+     * eshik oldida turganda xona haqiqatan tayyor bo'lishi kerak.
+     *
+     * Farrosh xonani tozalab, panelda "tayyor" belgilaydi ->
+     * status AVAILABLE bo'ladi -> check-in ochiladi.
+     */
+    if (res.room.status === "DIRTY") {
+      throw new ValidationError(
+        `Xona ${res.roomId} hali tozalanmagan — tozalangandan keyin ` +
+        `mehmonni kiriting`
+      );
+    }
+
+    if (res.room.status === "OUT_OF_ORDER" || res.room.status === "OUT_OF_SERVICE") {
+      throw new ValidationError(
+        `Xona ${res.roomId} ishlatishdan chiqarilgan — boshqa xona tanlang`
+      );
+    }
 
     const updated = await tx.reservation.update({
       where: { id },
@@ -464,6 +687,7 @@ export async function checkOut(id: string) {
   const r = await prisma.$transaction(async (tx) => {
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
     if (!res) throw new NotFoundError("Bron");
+    assertTransition(res.status, "CHECKED_OUT");
 
     const updated = await tx.reservation.update({
       where: { id },
@@ -477,6 +701,15 @@ export async function checkOut(id: string) {
 
   // Erta check-out — qolgan kunlar bo'shaydi (07-fayl §3)
   await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "checked_out");
+
+  /**
+   * Tozalash topshirig'i (TOZALIK-BOT.md §2A).
+   *
+   * Xona DIRTY bo'ldi — navbatdagi faroshga xabar ketadi.
+   * Xato tashlamaydi: topshiriq yaratilmagani uchun check-out
+   * bekor qilinmasligi kerak.
+   */
+  await createOnCheckout(r.updated.roomId);
   await notifyReservation("reservation.updated", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
 
@@ -485,15 +718,63 @@ export async function checkOut(id: string) {
   return r.updated;
 }
 
+/**
+ * Bekor qilish jarimasi (SAVOLLAR.md S11).
+ *
+ * QOIDA (2026-09-17 kelishuvi): kirish sanasiga `freeCancelHours`
+ * dan kam qolgan bo'lsa `cancelFeeNights` kecha narxi olinadi.
+ * Sozlamalardan o'zgartiriladi.
+ *
+ * NEGA JARIMA DAROMAD: xona band turgan va boshqa mehmonga
+ * sotilmagan. Hisobotda "bekor qilingan = 0 daromad" ko'rsatish
+ * haqiqatni buzardi.
+ *
+ * Beds24'dan kelgan bronlarga jarima QO'LLANMAYDI: OTA o'z
+ * siyosatini yuritadi va ikki marta jarima olish noto'g'ri.
+ */
+async function cancellationFeeFor(res: {
+  checkIn: Date;
+  pricePerNight: Prisma.Decimal;
+  channelId: string | null;
+}): Promise<number> {
+  if (res.channelId) return 0;   // OTA o'z siyosatini qo'llaydi
+
+  const [freeHours, feeNights] = await Promise.all([
+    getFreeCancelHours(),
+    getCancelFeeNights(),
+  ]);
+
+  const hoursLeft = (res.checkIn.getTime() - Date.now()) / 3_600_000;
+  if (hoursLeft >= freeHours) return 0;
+
+  return Math.round(Number(res.pricePerNight) * feeNights);
+}
+
 /** 7. Bekor qilish (TZ 2-band) */
 export async function cancelReservation(id: string) {
+  // Jarima transaction'dan TASHQARIDA hisoblanadi: sozlamalarni
+  // o'qish qulfni ushlab turmasin
+  const before = await prisma.reservation.findUnique({
+    where: { id },
+    select: { checkIn: true, pricePerNight: true, channelId: true, status: true },
+  });
+  if (!before) throw new NotFoundError("Bron");
+
+  const fee = await cancellationFeeFor(before);
+
   const r = await prisma.$transaction(async (tx) => {
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
     if (!res) throw new NotFoundError("Bron");
+    assertTransition(res.status, "CANCELLED");
 
     const updated = await tx.reservation.update({
       where: { id },
-      data: { status: "CANCELLED", cancelledAt: new Date(), syncStatus: "PENDING" },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+        syncStatus: "PENDING",
+        ...(fee > 0 ? { cancellationFee: new Prisma.Decimal(fee) } : {}),
+      },
       include: reservationInclude,
     });
 
@@ -512,11 +793,38 @@ export async function cancelReservation(id: string) {
   return r.updated;
 }
 
+/**
+ * Bekor qilishdan OLDIN jarimani ko'rsatadi.
+ *
+ * Frontend buni bekor qilish tugmasi bosilganda chaqiradi va
+ * xodimga "1 kecha narxi olinadi, davom etasizmi?" deb so'raydi.
+ * Jarima kutilmaganda paydo bo'lmasin.
+ */
+export async function previewCancellation(id: string): Promise<{
+  fee: number;
+  freeUntilHours: number;
+  isFree: boolean;
+}> {
+  const res = await prisma.reservation.findUnique({
+    where: { id },
+    select: { checkIn: true, pricePerNight: true, channelId: true },
+  });
+  if (!res) throw new NotFoundError("Bron");
+
+  const [fee, freeHours] = await Promise.all([
+    cancellationFeeFor(res),
+    getFreeCancelHours(),
+  ]);
+
+  return { fee, freeUntilHours: freeHours, isFree: fee === 0 };
+}
+
 /** No-show (08-fayl §4 — faqat qo'lda, avtomatik emas) */
 export async function markNoShow(id: string) {
   const r = await prisma.$transaction(async (tx) => {
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
     if (!res) throw new NotFoundError("Bron");
+    assertTransition(res.status, "NO_SHOW");
 
     const updated = await tx.reservation.update({
       where: { id },
@@ -540,14 +848,105 @@ export async function markNoShow(id: string) {
 
 // --- To'lov va xarajat (TZ 14-band) -------------------------
 
+/**
+ * Bronning hozirgi qarzi (SAVOLLAR.md S1).
+ *
+ * Formula serializeReservation() bilan bir xil bo'lishi SHART:
+ * xona narxi x kecha + qo'shimcha xizmatlar - to'langan.
+ */
+async function currentBalance(
+  reservationId: string
+): Promise<{ total: number; paid: number; due: number }> {
+  const res = await prisma.reservation.findUnique({
+    where: { id: reservationId },
+    include: reservationInclude,
+  });
+  if (!res) throw new NotFoundError("Bron");
+
+  /**
+   * Formula `serializeReservation()` dan olinadi — YAGONA MANBA.
+   *
+   * NEGA: ilgari formula ikki joyda yozilgan edi. Nonushta
+   * qo'shilganda biri yangilanib, ikkinchisi eski qolsa, xodim
+   * to'liq to'lay olmay qolardi ("qarz 0" deydi, lekin to'lovni
+   * rad etadi) — sababini hech kim topa olmasdi.
+   */
+  const view = serializeReservation(res);
+
+  return {
+    total: view.totalPrice,
+    paid: view.paidAmount,
+    due: view.totalPrice - view.paidAmount,
+  };
+}
+
+/** So'm formatlash — xato xabarlarida "450 000 so'm" ko'rinishi uchun */
+function som(n: number): string {
+  return Math.round(n).toLocaleString("ru-RU").replace(/\u00a0/g, " ") + " so'm";
+}
+
+/**
+ * Haqiqatan mavjud foydalanuvchi ID'sini qaytaradi, aks holda null.
+ *
+ * NEGA KERAK: dev rejimida `authMiddleware` soxta `id: "dev"`
+ * beradi (AUTH_REQUIRED=false), bunday User yo'q va to'lov yozish
+ * foreign key xatosi bilan yiqilardi. Beds24 webhook'idan kelgan
+ * to'lovda ham xodim yo'q.
+ *
+ * To'lovni yozish — asosiy amal, "kim qabul qildi" esa qo'shimcha
+ * ma'lumot. Noma'lum xodim tufayli mehmonning puli yozilmay
+ * qolishi mumkin emas.
+ */
+async function resolveUserId(userId?: string): Promise<string | null> {
+  if (!userId) return null;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true },
+  });
+  return user?.id ?? null;
+}
+
+/**
+ * To'lov qo'shish.
+ *
+ * IKKI CHEGARA (SAVOLLAR.md S1, S2):
+ *   1. Musbat to'lov qarzdan oshmasin — kassada ortiqcha pul
+ *      ko'rinib, hisobot daromadi haqiqatdan katta bo'lib qolardi
+ *   2. Manfiy to'lov (qaytarish) to'langandan oshmasin — aks holda
+ *      balans manfiyga tushib, mehmonxona mehmondan qarzdor
+ *      bo'lib qolardi
+ */
 export async function addPayment(
   reservationId: string,
   amount: number,
   method: string,
-  note?: string
+  note?: string,
+  userId?: string
 ) {
   const res = await prisma.reservation.findUnique({ where: { id: reservationId } });
   if (!res) throw new NotFoundError("Bron");
+
+  if (amount === 0) {
+    throw new ValidationError("To'lov summasi noldan farqli bo'lishi kerak");
+  }
+
+  const { paid, due } = await currentBalance(reservationId);
+
+  if (amount > 0 && amount > due) {
+    throw new ValidationError(
+      due <= 0
+        ? "Bron to'liq to'langan — qo'shimcha to'lov qabul qilinmaydi"
+        : `To'lov qarzdan oshib ketdi: qarz ${som(due)}, kiritilgan ${som(amount)}`
+    );
+  }
+
+  if (amount < 0 && -amount > paid) {
+    throw new ValidationError(
+      `Qaytarish summasi to'langandan ko'p: to'langan ${som(paid)}, ` +
+      `qaytarilmoqchi ${som(-amount)}`
+    );
+  }
 
   await prisma.payment.create({
     data: {
@@ -556,6 +955,7 @@ export async function addPayment(
       method,
       paymentDate: new Date(),
       note,
+      userId: await resolveUserId(userId),
     },
   });
 
@@ -568,18 +968,47 @@ export async function addPayment(
 }
 
 /** To'lovni qaytarish — manfiy summa sifatida (frontend mantiqi bilan bir xil) */
-export async function reversePayment(reservationId: string, paymentId: string) {
+/**
+ * To'lovni qaytarish — manfiy summa sifatida yoziladi.
+ *
+ * Asl to'lov o'chirilmaydi: audit uchun "qabul qilindi, keyin
+ * qaytarildi" ikkalasi ham ko'rinib tursin.
+ */
+export async function reversePayment(
+  reservationId: string,
+  paymentId: string,
+  userId?: string
+) {
   const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
   if (!payment) throw new NotFoundError("To'lov");
 
+  if (payment.reservationId !== reservationId) {
+    throw new ValidationError("To'lov bu bronga tegishli emas");
+  }
+
   const amount = Number(payment.amount.toString());
+
+  if (amount < 0) {
+    throw new ValidationError("Qaytarilgan to'lovni yana qaytarib bo'lmaydi");
+  }
+
+  // Balansni manfiyga tushirmaslik (S2): bir to'lov ikki marta
+  // qaytarilsa yoki qo'lda manfiy to'lov kiritilgan bo'lsa to'sadi
+  const { paid } = await currentBalance(reservationId);
+  if (amount > paid) {
+    throw new ValidationError(
+      `Bu to'lov allaqachon qaytarilgan (to'langan qoldiq ${som(paid)})`
+    );
+  }
+
   await prisma.payment.create({
     data: {
       reservationId,
       amount: new Prisma.Decimal(-amount),
       method: payment.method,
       paymentDate: new Date(),
-      note: `Reversal of $${Math.round(amount)} (${payment.method})`,
+      note: `Qaytarildi: ${som(amount)} (${payment.method})`,
+      userId: await resolveUserId(userId),
     },
   });
 
@@ -591,9 +1020,19 @@ export async function reversePayment(reservationId: string, paymentId: string) {
   return updated;
 }
 
+/**
+ * Qo'shimcha xizmat (kir yuvish, minibar, transfer).
+ *
+ * Musbat bo'lishi shart: chegirma xarajat orqali emas, narxni
+ * o'zgartirish orqali beriladi (SAVOLLAR.md S4).
+ */
 export async function addCharge(reservationId: string, label: string, amount: number) {
   const res = await prisma.reservation.findUnique({ where: { id: reservationId } });
   if (!res) throw new NotFoundError("Bron");
+
+  if (amount <= 0) {
+    throw new ValidationError("Xizmat summasi musbat bo'lishi kerak");
+  }
 
   await prisma.charge.create({
     data: { reservationId, label, amount: new Prisma.Decimal(amount) },

@@ -23,7 +23,7 @@ import { setupConnection, getAccessToken, invalidateToken, getConnectionStatus }
 import { encrypt, decrypt } from "./lib/encryption.js";
 import { prisma } from "./lib/prisma.js";
 
-const MOCK = "http://localhost:4000";
+const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
 
 const mockControl = (path: string, body?: unknown) =>
   fetch(`${MOCK}/control/${path}`, {

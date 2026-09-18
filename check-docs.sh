@@ -88,22 +88,43 @@ else
 fi
 
 # --- 4. Seed raqamlari -------------------------------------
+# 2026-09-16 dan: 18 xona / 9 tarif (avval 12 / 3 edi).
+# Haqiqat manbai — prisma/seed.ts. Bu yerda hujjatlar unga
+# zid kelmayotganini tekshiramiz.
 echo
-echo "[4/6] Seed raqamlari (standard 6 / double 4 / deluxe 2)..."
+echo "[4/6] Seed raqamlari (18 xona / 9 tarif)..."
 BAD=0
-if grep -rn "standard 5 ta\|standard: 5\|standard turida 5" ./*.md >/dev/null 2>&1; then
-  red "  ✗ Eski noto'g'ri raqam topildi:"
-  grep -rn "standard 5 ta\|standard: 5\|standard turida 5" ./*.md | sed 's/^/      /'
-  BAD=1
-  ERRORS=$((ERRORS+1))
+
+SEED="backend/prisma/seed.ts"
+if [ -f "$SEED" ]; then
+  # layout massividagi xona sonini sanaymiz: ["101", "comfort3", 1] ko'rinishi
+  ROOMS=$(grep -oE '\["[0-9]+[A-Za-z]?", *"[a-z0-9]+", *[0-9]+\]' "$SEED" | wc -l | tr -d ' ')
+  TYPES=$(grep -cE '^\s*\{ id: "[a-z0-9]+",' "$SEED" | tr -d ' ')
+
+  if [ "$ROOMS" != "18" ]; then
+    red "  ✗ seed.ts da $ROOMS xona (18 kutilgan)"
+    BAD=1; ERRORS=$((ERRORS+1))
+  fi
+  if [ "$TYPES" != "9" ]; then
+    red "  ✗ seed.ts da $TYPES tarif (9 kutilgan)"
+    BAD=1; ERRORS=$((ERRORS+1))
+  fi
+else
+  yellow "  ⚠ $SEED topilmadi — tekshiruv o'tkazib yuborildi"
+  WARNINGS=$((WARNINGS+1))
 fi
-if grep -rn "deluxe 3 ta\|deluxe: 3" ./*.md >/dev/null 2>&1; then
-  red "  ✗ Eski noto'g'ri raqam (deluxe 3):"
-  grep -rn "deluxe 3 ta\|deluxe: 3" ./*.md | sed 's/^/      /'
-  BAD=1
-  ERRORS=$((ERRORS+1))
+
+# Hujjatlarda eskirgan sonlar qolmaganini tekshiramiz.
+# Tarixiy eslatmalar ruxsat etiladi — ular ">" bilan boshlanadi
+# yoki "->" orqali yangi qiymatni ko'rsatadi ("12 -> 18").
+STALE=$(grep -rn "12 xona" ./*.md 2>/dev/null   | grep -v ":>"   | grep -v -- "->"   | grep -v "avval\|Avval\|edi\|YANGILANGAN")
+if [ -n "$STALE" ]; then
+  yellow "  ⚠ Hujjatlarda eskirgan '12 xona':"
+  echo "$STALE" | sed 's/^/      /'
+  WARNINGS=$((WARNINGS+1))
 fi
-[ "$BAD" -eq 0 ] && green "  ✓ Zid raqam topilmadi"
+
+[ "$BAD" -eq 0 ] && green "  ✓ Seed raqamlari mos"
 
 # --- 5. TZ bandlari qoplami --------------------------------
 echo

@@ -1,10 +1,17 @@
 # ASL TZ — IMRON HOTEL PMS × BEDS24 TO'LIQ INTEGRATSIYA
 
-> **BU FAYL — YAGONA USTUVOR MANBA.**
-> Agar boshqa har qanday hujjat (`00`–`12`) shu faylga zid kelsa,
-> **shu fayl g'olib**. Qolgan hujjatlar — shu TZ'ning texnik
-> yoyilmasi, uning o'rnini bosmaydi va uni kuchsizlantirmaydi.
-> Hujjat matni mijozdan kelgan holicha, o'zgartirilmasdan saqlangan.
+> **MIJOZNING ASL TOPSHIRIG'I — o'zgartirilmagan.**
+>
+> Bu hujjat biznes talabining manbasi. Tizim shu asosda
+> qurilgan, lekin **amaldagi holat undan farq qiladi**:
+> ish davomida yangi talablar qo'shilgan (FOUNDER roli,
+> tozalik tizimi, oshxona, nonushta tarifi).
+>
+> **Hozir nima ishlayotgani:** [`../PROJECT_LOGIC.md`](../PROJECT_LOGIC.md)
+>
+> Texnik yoyilma hujjatlari (`00`–`13`) 2026-09-18 da o'chirildi —
+> ular kod bilan zid bo'lib qolgan edi. Muhim qoidalar
+> `PROJECT_LOGIC.md` ga ko'chirilib, kod bilan tasdiqlangan.
 
 ---
 
@@ -472,15 +479,15 @@ TZ'dagi ochiq nuqtalar bo'yicha mijozdan olingan aniq javoblar.
 Bular TZ bilan bir xil kuchga ega va texnik hujjatlarda shu tarzda
 amalga oshirilgan.
 
-| № | Savol | Mijoz javobi | Qayerda amalga oshirilgan |
-|---|---|---|---|
-| Q1 | Xonalar Shaxmatkada qanday ko'rinadi | **Har xona alohida qator** bo'lib ko'rinadi. Beds24 o'z tomonida o'z tizimi bilan yuritadi — biz unga ma'lumot yuboramiz. | `06`, `07` |
-| Q2 | Xona identifikatori | **Har xonaning o'z ID raqami bor** (`"101"`, `"202"`). `Room.id` = xona raqami. | `02`, `12` |
-| Q3 | Beds24'dan kelgan bron qaysi xonaga tushadi | **Avtomatik** — PMS o'zi bo'sh xonani tanlaydi, admin aralashuvi kerak emas. Beds24 bronni allaqachon qabul qilgan, u Shaxmatkada darhol ko'rinishi shart. | `06` §5, `04` |
-| Q5 | `PENDING_PAYMENT` va `NO_SHOW` statuslari | **Shaxmatkaga qo'shiladi** (Variant B). TZ 8-bandi 6 ta statusni talab qiladi — hammasi to'liq qo'llab-quvvatlanadi. | `08` §2 |
-| Q6 | Xona almashtirilsa | **Beds24'da ham ko'rinishi kerak** — sync majburiy. | `07` §4, `12` |
-| Q7 | Check-in / check-out Beds24'ga | **Qo'llab-quvvatlanadi, muammo yo'q** — sync qilinadi. | `08` §5, `12` |
-| Q8 | Dinamik (avtomatik o'suvchi) narxlash | **Mexanizm olib tashlanadi** (`base + confirmedCount × increment`) — TZ'da bunday talab yo'q va formula xato (jami bronlar soniga qaraydi, sanadagi bandlikka emas). **Narxlar paneli UI sifatida qoladi**, endi `RatePlan` qiymatlarini ko'rsatadi va tahrirlashga imkon beradi. | [07 §8](07-AVAILABILITY-VA-RATES-SYNC.md) |
+| № | Savol | Mijoz javobi |
+|---|---|---|
+| Q1 | Xonalar Shaxmatkada qanday ko'rinadi | **Har xona alohida qator** bo'lib ko'rinadi. Beds24 o'z tomonida o'z tizimi bilan yuritadi — biz unga ma'lumot yuboramiz. |
+| Q2 | Xona identifikatori | **Har xonaning o'z ID raqami bor** (`"101"`, `"202"`). `Room.id` = xona raqami. |
+| Q3 | Beds24'dan kelgan bron qaysi xonaga tushadi | **Avtomatik** — PMS o'zi bo'sh xonani tanlaydi, admin aralashuvi kerak emas. Beds24 bronni allaqachon qabul qilgan, u Shaxmatkada darhol ko'rinishi shart. |
+| Q5 | `PENDING_PAYMENT` va `NO_SHOW` statuslari | **Shaxmatkaga qo'shiladi** (Variant B). TZ 8-bandi 6 ta statusni talab qiladi — hammasi to'liq qo'llab-quvvatlanadi. |
+| Q6 | Xona almashtirilsa | **Beds24'da ham ko'rinishi kerak** — sync majburiy. |
+| Q7 | Check-in / check-out Beds24'ga | **Qo'llab-quvvatlanadi, muammo yo'q** — sync qilinadi. |
+| Q8 | Dinamik (avtomatik o'suvchi) narxlash | **Mexanizm olib tashlanadi** (`base + confirmedCount × increment`) — TZ'da bunday talab yo'q va formula xato (jami bronlar soniga qaraydi, sanadagi bandlikka emas). **Narxlar paneli UI sifatida qoladi**, endi `RatePlan` qiymatlarini ko'rsatadi va tahrirlashga imkon beradi. |
 
 **Qolgan barcha savollarga javob TZ'ning o'zidan olinadi** — mijoz
 ko'rsatmasi: *"qolgan savolarga javobni shu TZ dan topasan"*. Ya'ni

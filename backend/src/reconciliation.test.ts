@@ -27,9 +27,10 @@ import {
 } from "./services/reconciliation.js";
 import { recalcAvailability, readRange } from "./services/availability.js";
 import { fromDateKey, toDateKey } from "./lib/serialize.js";
+import { TYPES, loadTypes, tariffFor } from "./testUtils.js";
 
-const PMS = "http://localhost:3000";
-const MOCK = "http://localhost:4000";
+const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
+const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
 
 const EXT = { standard: "101001", double: "101002", deluxe: "101003" } as const;
 
@@ -65,7 +66,16 @@ async function mockToken(): Promise<string> {
 }
 
 async function mapAll() {
-  for (const [pms, external] of Object.entries(EXT)) {
+  // EXT kalitlari tarixiy nomlar — ular faqat tashqi Beds24
+  // ID'sini topish uchun. PMS turi TYPES dan keladi (bazadagi
+  // haqiqiy turlar).
+  const pairs: Array<[string, string]> = [
+    [TYPES.a, EXT.standard],
+    [TYPES.b, EXT.double],
+    [TYPES.c, EXT.deluxe],
+  ];
+
+  for (const [pms, external] of pairs) {
     await upsertMapping({ roomTypeId: pms, externalRoomTypeId: external });
   }
 }
@@ -88,6 +98,9 @@ async function waitFor(check: () => Promise<boolean>, timeoutMs = 15000): Promis
 
 describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => {
   beforeAll(async () => {
+    // Tur ID'lari bazadan olinadi (testUtils.ts) — ilgari
+    // "standard"/"double"/"deluxe" qattiq yozilgan edi
+    await loadTypes();
     const health = await fetch(`${PMS}/health`).then((r) => r.json() as any);
     if (health.redis !== "connected") throw new Error("Redis ishlamayapti");
     const mock = await fetch(`${MOCK}/authentication/setup`, { headers: { code: "mock-invite-code" } });
@@ -255,15 +268,15 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
       // Avval PMS qiymatini Beds24'ga yuboramiz
       const from = fromDateKey(day(0));
       const to = fromDateKey(day(3));
-      await recalcAvailability(["deluxe"], from, to);
+      await recalcAvailability([TYPES.c], from, to);
 
       const { pushAvailability } = await import("./services/availability.js");
-      await pushAvailability("deluxe", from, to);
+      await pushAvailability(TYPES.c, from, to);
 
       const result = await checkDrift(3);
       // Boshqa turlarda ham farq bo'lishi mumkin, shuning uchun
       // faqat deluxe'ni tekshiramiz
-      const deluxeDrift = result.details.filter((d) => d.roomTypeId === "deluxe");
+      const deluxeDrift = result.details.filter((d) => d.roomTypeId === TYPES.c);
       expect(deluxeDrift).toHaveLength(0);
     }, 30000);
 
@@ -281,7 +294,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
 
       const result = await checkDrift(3);
 
-      const deluxeDrift = result.details.filter((d) => d.roomTypeId === "deluxe");
+      const deluxeDrift = result.details.filter((d) => d.roomTypeId === TYPES.c);
       expect(deluxeDrift.length, "drift topilmadi").toBeGreaterThan(0);
       expect(deluxeDrift[0]!.beds24).toBe(99);
       expect(deluxeDrift[0]!.pms).not.toBe(99);
@@ -310,7 +323,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
       // o'rniga TUZATISH SHARTI bajarilganini tekshiramiz:
       // `syncedCount` tozalangan, ya'ni keyingi push majburiy.
       const { readRange } = await import("./services/availability.js");
-      const days = await readRange("double", fromDateKey(day(0)), fromDateKey(day(2)));
+      const days = await readRange(TYPES.b, fromDateKey(day(0)), fromDateKey(day(2)));
       expect(days.every((d) => d.syncedCount === null), "syncedCount tozalanmadi").toBe(true);
 
       // Job ham navbatga tushgan bo'lishi kerak
@@ -355,7 +368,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
       await prisma.channelMapping.deleteMany();
 
       const room = await prisma.room.findFirstOrThrow({
-        where: { roomTypeId: "standard", isActive: true },
+        where: { roomTypeId: TYPES.a, isActive: true },
       });
       const created = await api("/api/reservations", {
         method: "POST",
@@ -364,9 +377,10 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
           checkIn: day(230),
           checkOut: day(232),
           guestName: "Catchup Testi",
+          phone: "+99899200001",
           guestPhone: "+998908880001",
           adults: 1,
-          pricePerNight: 100,
+          pricePerNight: await tariffFor(room.id),
         }),
       });
       expect(created.status).toBe(201);
@@ -394,9 +408,9 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
       const from = fromDateKey(day(240));
       const to = fromDateKey(day(243));
 
-      await recalcAvailability(["deluxe"], from, to);
+      await recalcAvailability([TYPES.c], from, to);
       // syncedCount null — hali yuborilmagan
-      const days = await readRange("deluxe", from, to);
+      const days = await readRange(TYPES.c, from, to);
       expect(days.every((d) => d.syncedCount === null)).toBe(true);
 
       const result = await catchUpPending();
@@ -422,7 +436,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
       await mockControl("drain-credits");
 
       const room = await prisma.room.findFirstOrThrow({
-        where: { roomTypeId: "standard", isActive: true },
+        where: { roomTypeId: TYPES.a, isActive: true },
         orderBy: { sortOrder: "desc" },
       });
 
@@ -433,9 +447,10 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
           checkIn: day(250),
           checkOut: day(252),
           guestName: "Kredit Tugadi",
+          phone: "+99899200002",
           guestPhone: "+998908880002",
           adults: 1,
-          pricePerNight: 100,
+          pricePerNight: await tariffFor(room.id),
         }),
       });
 
@@ -492,7 +507,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
       await prisma.channelMapping.deleteMany();
 
       const room = await prisma.room.findFirstOrThrow({
-        where: { roomTypeId: "standard", isActive: true },
+        where: { roomTypeId: TYPES.a, isActive: true },
         orderBy: { sortOrder: "desc" },
       });
 
@@ -503,9 +518,10 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
           checkIn: day(270),
           checkOut: day(272),
           guestName: "Olik Xat Testi",
+          phone: "+99899200003",
           guestPhone: "+998909990010",
           adults: 1,
-          pricePerNight: 100,
+          pricePerNight: await tariffFor(room.id),
         }),
       });
       expect(created.status).toBe(201);
@@ -533,7 +549,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
       await prisma.channelMapping.deleteMany();
 
       const room = await prisma.room.findFirstOrThrow({
-        where: { roomTypeId: "double", isActive: true },
+        where: { roomTypeId: TYPES.b, isActive: true },
         orderBy: { sortOrder: "desc" },
       });
 
@@ -544,9 +560,10 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
           checkIn: day(275),
           checkOut: day(277),
           guestName: "Qayta Yuborish",
+          phone: "+99899200004",
           guestPhone: "+998909990011",
           adults: 1,
-          pricePerNight: 100,
+          pricePerNight: await tariffFor(room.id),
         }),
       });
 
@@ -634,7 +651,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
 
     it("bron yaratish tez javob beradi", async () => {
       const room = await prisma.room.findFirstOrThrow({
-        where: { roomTypeId: "standard", isActive: true },
+        where: { roomTypeId: TYPES.a, isActive: true },
         orderBy: { sortOrder: "desc" },
       });
 
@@ -646,9 +663,10 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
           checkIn: day(300),
           checkOut: day(302),
           guestName: "Tezlik Testi",
+          phone: "+99899200005",
           guestPhone: "+998907770099",
           adults: 1,
-          pricePerNight: 100,
+          pricePerNight: await tariffFor(room.id),
         }),
       });
       const elapsed = Date.now() - started;
@@ -666,7 +684,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
       // Redis qaytganda hech kim uni yubormasdi — Beds24 bronni
       // umuman bilmasdi (TZ 17-band buzilishi).
       const room = await prisma.room.findFirstOrThrow({
-        where: { roomTypeId: "double", isActive: true },
+        where: { roomTypeId: TYPES.b, isActive: true },
         orderBy: { sortOrder: "desc" },
       });
 
@@ -677,9 +695,10 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
           checkIn: day(305),
           checkOut: day(307),
           guestName: "Pending Qoldi",
+          phone: "+99899200006",
           guestPhone: "+998907770098",
           adults: 1,
-          pricePerNight: 100,
+          pricePerNight: await tariffFor(room.id),
         }),
       });
       expect(created.status).toBe(201);
@@ -712,7 +731,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
       // Hozirgina yaratilgan bronning job'i navbatda turibdi.
       // Uni catch-up ham yuborsa — Beds24'da ikkita booking.
       const room = await prisma.room.findFirstOrThrow({
-        where: { roomTypeId: "deluxe", isActive: true },
+        where: { roomTypeId: TYPES.c, isActive: true },
         orderBy: { sortOrder: "desc" },
       });
 
@@ -723,6 +742,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
           checkIn: day(310),
           checkOut: day(312),
           guestName: "Yangi Pending",
+          phone: "+99899200007",
           guestPhone: "+998907770097",
           adults: 1,
           pricePerNight: 200,
@@ -778,9 +798,10 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
           checkIn: day(315),
           checkOut: day(316),
           guestName: "A".repeat(10_000),
+          phone: "+99899200008",
           guestPhone: "+998907770096",
           adults: 1,
-          pricePerNight: 100,
+          pricePerNight: await tariffFor(room.id),
         }),
       });
 
@@ -800,7 +821,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
 
     it("20 parallel bron — overbooking yo'q (TZ 3-band)", async () => {
       const rooms = await prisma.room.findMany({
-        where: { roomTypeId: "double", isActive: true },
+        where: { roomTypeId: TYPES.b, isActive: true },
         select: { id: true },
       });
       const roomId = rooms[0]!.id;
@@ -814,6 +835,7 @@ describe("FAZA 14 — fallback, drift, yuklama (TZ 10, 17, 19, 20-band)", () => 
             checkIn: day(260),
             checkOut: day(262),
             guestName: `Yuklama ${i}`,
+            phone: "+99899200009",
             guestPhone: `+99890999${String(i).padStart(4, "0")}`,
             adults: 1,
             pricePerNight: 100,

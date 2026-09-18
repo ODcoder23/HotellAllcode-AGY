@@ -25,6 +25,7 @@ import { ValidationError, RoomUnavailableError } from "../lib/errors.js";
 import { createReservation } from "./reservations.js";
 import { readRange } from "./availability.js";
 import { config } from "../lib/config.js";
+import { getMealPrice } from "./settings.js";
 
 // ============================================================
 //  1. Bron kodi
@@ -76,6 +77,13 @@ export type PublicRoomType = {
   label: string;
   availableCount: number;
   pricePerNight: number;
+  /** Xona narxi x kecha (nonushtasiz) */
+  roomTotal: number;
+  /** Nonushta: narx x kishi x kecha */
+  mealTotal: number;
+  /** Kishi boshiga nonushta narxi — saytda ko'rsatish uchun */
+  mealPricePerPerson: number;
+  /** roomTotal + mealTotal — mehmon shuni to'laydi */
   totalPrice: number;
   currency: string;
   maxAdults: number;
@@ -112,6 +120,73 @@ export function validateRange(fromKey: string, toKey: string): { from: Date; to:
 }
 
 /**
+ * Sayt "Xonalar" bo'limi uchun tarif ro'yxati.
+ *
+ * `searchAvailability` dan farqi: sana kerak emas. Sayt xonalarni
+ * mehmon sana tanlashidan OLDIN ham ko'rsatadi, shuning uchun bu
+ * yerda bandlik hisoblanmaydi — faqat tarif, narx va sig'im.
+ *
+ * Narx: bugundan boshlab birinchi topilgan `RatePlan` qiymati
+ * ("dan boshlab" narx). Narx belgilanmagan tur ham ko'rsatiladi,
+ * lekin `pricePerNight: 0` bilan — sayt uni "narx so'rang" deb
+ * chiqarishi mumkin. Bu `searchAvailability` dan ataylab farq
+ * qiladi: u yerda narxsiz turni sotib bo'lmaydi, bu yerda esa
+ * shunchaki vitrina.
+ */
+export async function listRoomTypes() {
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+
+  /**
+   * IKKI SO'ROV, tur soniga bog'liq emas.
+   *
+   * Ilgari halqa ichida har tur uchun alohida `ratePlan`
+   * so'rovi ketardi (N+1). 9 tur = 10 so'rov, tunnel orqali
+   * ~7 soniya. Endi hamma narx bir so'rovda olinadi.
+   */
+  const [types, plans] = await Promise.all([
+    prisma.roomType.findMany({
+      where: { showOnSite: true },
+      orderBy: { sortOrder: "asc" },
+      include: { _count: { select: { rooms: true } } },
+    }),
+
+    // Bugundan boshlab har tur uchun eng yaqin narx
+    prisma.ratePlan.findMany({
+      where: { date: { gte: today } },
+      orderBy: { date: "asc" },
+      select: { roomTypeId: true, price: true, date: true },
+    }),
+  ]);
+
+  // Har tur uchun eng birinchi (eng yaqin) narx
+  const priceOf = new Map<string, number>();
+  for (const p of plans) {
+    if (!priceOf.has(p.roomTypeId)) {
+      priceOf.set(p.roomTypeId, toNumber(p.price));
+    }
+  }
+
+  return types
+    // Faol xonasi yo'q tur saytda ko'rsatilmaydi
+    .filter((t) => t._count.rooms > 0)
+    .map((t) => ({
+      id: t.id,
+      label: t.label,
+      pricePerNight: priceOf.get(t.id) ?? 0,
+      currency: "UZS",
+      maxAdults: t.maxAdults,
+      roomCount: t._count.rooms,
+
+      // Sayt bu maydonlarni kutadi (index.html: loadRooms)
+      description: t.description ?? "",
+      image: t.imageUrl ?? null,
+      gallery: Array.isArray(t.gallery) ? t.gallery : [],
+      amenities: Array.isArray(t.amenities) ? t.amenities : [],
+    }));
+}
+
+/**
  * Oraliqdagi bo'sh xonalarni tur bo'yicha qaytaradi.
  *
  * `availableCount` — butun oraliq bo'yicha MINIMAL qiymat
@@ -122,8 +197,19 @@ export function validateRange(fromKey: string, toKey: string): { from: Date; to:
 export async function searchAvailability(q: AvailabilityQuery) {
   const { from, to, nights } = validateRange(q.from, q.to);
   const adults = q.adults ?? 1;
+  const children = q.children ?? 0;
 
   if (adults < 1 || adults > 20) throw new ValidationError("Kattalar soni 1–20 orasida");
+
+  /**
+   * Nonushta narxi (BOTLAR-REJA.md, 2026-09-17).
+   *
+   * Saytdan kelgan bron HAR DOIM ovqat tarifi bilan. Narx
+   * qidiruv paytida qo'shiladi — mehmon to'liq summani darhol
+   * ko'rsin, tasdiqlashda kutilmagan qo'shimcha chiqmasin.
+   */
+  const guests = adults + children;
+  const mealPrice = await getMealPrice();
 
   const types = await prisma.roomType.findMany({ orderBy: { sortOrder: "asc" } });
 
@@ -158,8 +244,15 @@ export async function searchAvailability(q: AvailabilityQuery) {
       label: type.label,
       availableCount: Math.max(0, availableCount),
       pricePerNight: price,
-      totalPrice: Math.round(price * nights * 100) / 100,
-      currency: "USD",
+      roomTotal: Math.round(price * nights),
+      mealTotal: Math.round(mealPrice * guests * nights),
+      mealPricePerPerson: mealPrice,
+      // Saytdan kelgan bron HAR DOIM ovqat tarifi bilan
+      // (BOTLAR-REJA.md, 2026-09-17) — narx darhol to'liq
+      // ko'rsatiladi, tasdiqlashda kutilmagan qo'shimcha
+      // chiqmasin.
+      totalPrice: Math.round(price * nights + mealPrice * guests * nights),
+      currency: "UZS",
       maxAdults: type.maxAdults,
     });
   }
@@ -187,6 +280,16 @@ async function countFreeRooms(roomTypeId: string, from: Date, to: Date): Promise
           AND res.status NOT IN ('CANCELLED', 'NO_SHOW')
           AND res."checkIn" < ${to}
           AND res."checkOut" > ${from}
+      )
+      -- Ta'mir/xizmatdan chiqarilgan kunlar (2026-09-16 qo'shildi).
+      -- Busiz yopiq xona saytda sotuvda qolardi: kesh yo'li buni
+      -- hisobga olardi, bu zaxira yo'l esa yo'q.
+      AND NOT EXISTS (
+        SELECT 1 FROM "RoomDayStatus" rds
+        WHERE rds."roomId" = r.id
+          AND rds."isBlocked" = true
+          AND rds.date >= ${from}
+          AND rds.date < ${to}
       )
   `;
   return rows[0]?.cnt ?? 0;
@@ -218,11 +321,20 @@ async function averagePrice(roomTypeId: string, from: Date, to: Date): Promise<n
  * 5 ta xonani 5 ta yarim-band xonaga aylantiradi. Shuning uchun
  * qo'shni band kunlari bor xonalar afzal — bu uzluksiz bo'shliqlarni
  * saqlaydi va uzoq bronlar uchun joy qoldiradi.
+ *
+ * `skip` — urinib ko'rilgan va band chiqqan xonalar (2026-09-17).
+ * Parallel so'rovlar bir vaqtda kelganda hammasi bir xil xonani
+ * tanlardi: eng yaxshi xona bittagina, `LIMIT 1` uni hammaga
+ * berardi. Birinchisi yozib ulgurgach qolganlari "band" xatosini
+ * olardi — garchi o'sha turda boshqa bo'sh xonalar turgan bo'lsa
+ * ham. `createPublicBooking` band chiqqan xonani `skip` ga qo'shib
+ * qayta chaqiradi, shunda navbatdagi eng yaxshi xona tanlanadi.
  */
 export async function pickRoom(
   roomTypeId: string,
   from: Date,
-  to: Date
+  to: Date,
+  skip: string[] = []
 ): Promise<string | null> {
   const rows = await prisma.$queryRaw<Array<{ id: string; neighbours: number }>>`
     SELECT
@@ -240,12 +352,23 @@ export async function pickRoom(
     WHERE r."roomTypeId" = ${roomTypeId}
       AND r."isActive" = true
       AND r.status NOT IN ('OUT_OF_ORDER', 'OUT_OF_SERVICE')
+      -- Parallel so'rovda band chiqqan xonalar (skip)
+      AND NOT (r.id = ANY(${skip}::text[]))
       AND NOT EXISTS (
         SELECT 1 FROM "Reservation" res
         WHERE res."roomId" = r.id
           AND res.status NOT IN ('CANCELLED', 'NO_SHOW')
           AND res."checkIn" < ${to}::date
           AND res."checkOut" > ${from}::date
+      )
+      -- Yopiq kunlar (2026-09-16 qo'shildi): tizim ta'mirdagi
+      -- xonani avtomatik tanlab qo'ymasligi uchun
+      AND NOT EXISTS (
+        SELECT 1 FROM "RoomDayStatus" rds
+        WHERE rds."roomId" = r.id
+          AND rds."isBlocked" = true
+          AND rds.date >= ${from}::date
+          AND rds.date < ${to}::date
       )
     ORDER BY neighbours DESC, r."sortOrder" ASC, r.id ASC
     LIMIT 1
@@ -264,6 +387,12 @@ export type PublicBookingInput = {
   checkOut: string;
   adults: number;
   children?: number;
+  /**
+   * E'TIBORGA OLINMAYDI (2026-09-17): saytdan kelgan bron
+   * har doim ovqat bilan. Maydon kontraktni buzmaslik uchun
+   * qoldirilgan — eski sayt versiyasi yuborsa xato bermaydi.
+   */
+  withMeal?: boolean;
   guest: { fullName: string; phone: string; email?: string };
   notes?: string;
 };
@@ -274,6 +403,15 @@ export type PublicBookingResult = {
   status: string;
   checkIn: string;
   checkOut: string;
+  adults: number;
+  children: number;
+  /** Nonushta — saytdan kelgan bronda har doim `true` */
+  withMeal: boolean;
+  /** Xona narxi x kecha */
+  roomTotal: number;
+  /** Nonushta: narx x kishi x kecha */
+  mealTotal: number;
+  /** roomTotal + mealTotal */
   totalPrice: number;
   currency: string;
 };
@@ -315,14 +453,6 @@ export async function createPublicBooking(
   // Bir telefon raqamiga 24 soatda 3 ta faol to'lanmagan bron
   await checkSpam(phone);
 
-  // --- Xona tanlash ---
-  const roomId = await pickRoom(input.roomTypeId, from, to);
-  if (!roomId) {
-    throw new RoomUnavailableError(
-      "Afsuski, tanlangan sanalarda bo'sh xona qolmadi. Boshqa sanalarni tanlang."
-    );
-  }
-
   const price = await averagePrice(input.roomTypeId, from, to);
   if (price <= 0) {
     // Narxsiz bron — keyinroq mijoz bilan tortishuv chiqadi
@@ -333,27 +463,122 @@ export async function createPublicBooking(
 
   const code = await uniqueCode();
 
-  // `createReservation` overbooking constraint'idan o'tadi —
-  // parallel so'rov bo'lsa ikkinchisi 409 oladi (TZ 3-band)
-  const reservation = await createReservation({
-    roomId,
-    guestName: fullName,
-    phone,
-    email: input.guest.email?.trim(),
-    checkIn: input.checkIn,
-    checkOut: input.checkOut,
-    adults: input.adults,
-    children: input.children ?? 0,
-    source: "website",
-    pricePerNight: price,
-    notes: input.notes?.slice(0, 500),
-    status: "pending_payment",
-  });
+  /**
+   * XONA TANLASH + BRON — qayta urinish bilan (2026-09-17).
+   *
+   * `pickRoom` tranzaksiyadan tashqarida ishlaydi, shuning uchun
+   * parallel so'rovlar bir xil xonani olishi mumkin. Ilgari
+   * birinchisidan keyingilari darhol "band" xatosini olardi:
+   * jonli sinovda 3 bo'sh xonaga 6 parallel so'rov yuborilganda
+   * faqat BITTASI o'tdi, 5 mijoz rad javobini oldi va 2 xona
+   * bo'sh qoldi. Bu overbooking emas, uning teskarisi —
+   * sotilmay qolgan xona.
+   *
+   * Endi band chiqqan xona `taken` ga qo'shiladi va navbatdagi
+   * eng yaxshi xona tanlanadi. Urinishlar soni turdagi xona
+   * sonidan oshmaydi, chunki har urinishda ro'yxat qisqaradi.
+   *
+   * Faqat "xona band" xatolari qayta urinishga sabab bo'ladi;
+   * boshqa xatolar (narx, validatsiya) darhol yuqoriga chiqadi.
+   */
+  const taken: string[] = [];
+  const MAX_ROOM_ATTEMPTS = 10;
+
+  let reservation: Awaited<ReturnType<typeof createReservation>> | null = null;
+  let roomId = "";
+
+  for (let attempt = 0; attempt < MAX_ROOM_ATTEMPTS; attempt++) {
+    const candidate = await pickRoom(input.roomTypeId, from, to, taken);
+    if (!candidate) break;          // boshqa bo'sh xona yo'q
+
+    try {
+      reservation = await createReservation({
+        roomId: candidate,
+        guestName: fullName,
+        phone,
+        email: input.guest.email?.trim(),
+        checkIn: input.checkIn,
+        checkOut: input.checkOut,
+        adults: input.adults,
+        children: input.children ?? 0,
+        /**
+         * SAYTDAN KELGAN BRON HAR DOIM OVQAT BILAN
+         * (BOTLAR-REJA.md, 2026-09-17).
+         *
+         * Ilgari `input.withMeal ?? false` edi va sayt bu
+         * maydonni yubormagani uchun bron OVQATSIZ yaratilardi.
+         * Natijada mehmon qidiruvda bir summa ko'rib, bron
+         * qilganda boshqasini olardi:
+         *
+         *   qidiruv:  1 050 000 (nonushta 150 000 bilan)
+         *   bron:       900 000 (nonushtasiz)
+         *
+         * Oshxona hisoboti ham bo'sh qolardi — `withMeal = true`
+         * bronlar umuman yo'q edi.
+         *
+         * Qabulxona (`/api/reservations`) va OTA boshqacha:
+         * u yerda tanlov bor, shuning uchun bu qoida faqat
+         * shu funksiyada.
+         *
+         * Nonushta narxi `createReservation` ichida sozlamadan
+         * olinadi va bronga ko'chiriladi (SAVOLLAR.md S10).
+         */
+        withMeal: true,
+        source: "website",
+        pricePerNight: price,
+        notes: input.notes?.slice(0, 500),
+        status: "pending_payment",
+      });
+      roomId = candidate;
+      break;
+    } catch (e) {
+      // Xona oradagi vaqtda band bo'lib qoldi — keyingisiga
+      // o'tamiz. Ikki ko'rinishi bor:
+      //   `RoomUnavailableError` — `isRoomFree` tekshiruvi (2-qatlam)
+      //   `23P01` — DB constraint'i (1-qatlam). Servis darajasida u
+      //             hali xom Prisma xatosi: `translatePrismaError`
+      //             faqat `errorHandler` ichida chaqiriladi.
+      // Qolgan xatolar chaqiruvchiga qaytadi.
+      // `String(e)` yetarli emas: `PrismaClientUnknownRequestError`
+      // ning `toString()` faqat sinf nomini beradi, constraint nomi
+      // esa `message` ichida qoladi. Ikkalasi ham qaraladi.
+      const raw = `${String(e)} ${e instanceof Error ? e.message : ""}`;
+      const busy =
+        e instanceof RoomUnavailableError ||
+        raw.includes("reservation_no_overlap") ||
+        raw.includes("23P01");
+
+      if (busy) {
+        taken.push(candidate);
+        continue;
+      }
+      throw e;
+    }
+  }
+
+  if (!reservation) {
+    throw new RoomUnavailableError(
+      "Afsuski, tanlangan sanalarda bo'sh xona qolmadi. Boshqa sanalarni tanlang."
+    );
+  }
 
   // Kodni yozamiz — `createReservation` uni bilmaydi
   await prisma.reservation.update({ where: { id: reservation.id }, data: { code } });
 
   const room = await prisma.room.findUniqueOrThrow({ where: { id: roomId } });
+
+  /**
+   * Nonushta jami summaga kiradi (BOTLAR-REJA.md).
+   *
+   * Narx BRONDAN olinadi — `createReservation` uni sozlamadan
+   * o'qib ko'chirgan. Qidiruv natijasi bilan bir xil bo'lishi
+   * shart, aks holda mehmon boshqa summa ko'rardi.
+   */
+  const guests = input.adults + (input.children ?? 0);
+  const mealPrice = reservation.mealPricePerPerson
+    ? toNumber(reservation.mealPricePerPerson)
+    : 0;
+  const mealTotal = reservation.withMeal ? mealPrice * guests * nights : 0;
 
   return {
     reservationCode: code,
@@ -361,8 +586,13 @@ export async function createPublicBooking(
     status: "pending_payment",
     checkIn: input.checkIn,
     checkOut: input.checkOut,
-    totalPrice: Math.round(price * nights * 100) / 100,
-    currency: "USD",
+    adults: input.adults,
+    children: input.children ?? 0,
+    withMeal: reservation.withMeal,
+    roomTotal: Math.round(price * nights),
+    mealTotal,
+    totalPrice: Math.round(price * nights + mealTotal),
+    currency: "UZS",
   };
 }
 
@@ -412,7 +642,20 @@ export async function findByCode(code: string) {
   const nights = Math.round(
     (reservation.checkOut.getTime() - reservation.checkIn.getTime()) / 86_400_000
   );
-  const total = toNumber(reservation.pricePerNight) * nights;
+  /**
+   * Nonushta jami summaga kiradi (SAVOLLAR.md S10).
+   *
+   * Narx BRONDAN olinadi — bron yaratilganda ko'chirilgan.
+   * Keyin sozlamada narx ko'tarilsa, mehmon kelishilgandan
+   * ko'p to'lamaydi.
+   */
+  const guests = reservation.adults + reservation.children;
+  const mealPrice = reservation.mealPricePerPerson
+    ? toNumber(reservation.mealPricePerPerson)
+    : 0;
+  const mealTotal = reservation.withMeal ? mealPrice * guests * nights : 0;
+
+  const total = toNumber(reservation.pricePerNight) * nights + mealTotal;
   const paid = reservation.payments.reduce((n, p) => n + toNumber(p.amount), 0);
 
   return {
@@ -426,6 +669,9 @@ export async function findByCode(code: string) {
     adults: reservation.adults,
     children: reservation.children,
     guestName: reservation.guest.fullName,
+    // Mehmon nima uchun to'laganini ko'rsin
+    withMeal: reservation.withMeal,
+    mealTotal,
     totalPrice: total,
     paidAmount: paid,
     remainingAmount: Math.max(total - paid, 0),

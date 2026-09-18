@@ -118,7 +118,11 @@ const PERMISSION_LABEL: Partial<Record<Permission, string>> = {
   "reservation.write": "Bron o'zgartirish",
   "reservation.cancel": "Bron bekor qilish",
   "rate.write": "Narx belgilash",
+  "room.block": "Xona yopish",
   "synclog.read": "Sinxronizatsiya jurnali",
   "checkin.write": "Kirish/chiqish",
   "payment.write": "To'lov",
+  "report.read": "Umumiy hisobot",
+  "employee.read": "Xodimlar",
+  "employee.write": "Xodim qo'shish",
 };

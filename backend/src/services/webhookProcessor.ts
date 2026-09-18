@@ -20,7 +20,7 @@ import { prisma } from "../lib/prisma.js";
 import { fromDateKey } from "../lib/serialize.js";
 import { getChannel } from "./channel/registry.js";
 import { findByExternal } from "./mapping.js";
-import { recalcRoomStatus } from "./reservations.js";
+import { recalcRoomStatus, isRoomFree } from "./reservations.js";
 // Status mapping markaziy faylda (08-fayl §2, 12-fayl §6) — bu yerda
 // faqat qayta eksport, chunki mavjud testlar shu yo'ldan import qiladi.
 import { toPmsStatus } from "./beds24/statusMap.js";
@@ -31,6 +31,7 @@ import type { ExternalReservation } from "./channel/types.js";
 import {
   notifyReservation, notifyPayment, notifyWebhookNeedsAttention,
 } from "../realtime/notify.js";
+import { channelBookingHasMeal } from "./kitchen.js";
 
 export type ProcessResult = {
   status: "processed" | "skipped" | "needs_manual_action" | "failed";
@@ -100,7 +101,7 @@ export async function assignRoom(
 
   // 1) Unit darajasidagi mapping — aniq xona ko'rsatilgan
   if (mapping.roomId) {
-    const free = await isRoomFreeFor(mapping.roomId, checkIn, checkOut, excludeReservationId);
+    const free = await isRoomFree(mapping.roomId, checkIn, checkOut, excludeReservationId);
     if (free) {
       const room = await prisma.room.findUniqueOrThrow({ where: { id: mapping.roomId } });
       return { ok: true, roomId: room.id, roomTypeId: room.roomTypeId, needsAttention: false };
@@ -124,7 +125,7 @@ export async function assignRoom(
   });
 
   for (const room of candidates) {
-    if (await isRoomFreeFor(room.id, checkIn, checkOut, excludeReservationId)) {
+    if (await isRoomFree(room.id, checkIn, checkOut, excludeReservationId)) {
       return { ok: true, roomId: room.id, roomTypeId, needsAttention: false };
     }
   }
@@ -137,25 +138,6 @@ export async function assignRoom(
       `${roomTypeId} turida ${ext.checkIn}..${ext.checkOut} uchun bo'sh xona yo'q. ` +
       `Beds24 bizda mavjud bo'lmagan xonani sotgan — admin qo'lda hal qilishi kerak.`,
   };
-}
-
-async function isRoomFreeFor(
-  roomId: string,
-  checkIn: Date,
-  checkOut: Date,
-  excludeId?: string
-): Promise<boolean> {
-  const conflict = await prisma.reservation.findFirst({
-    where: {
-      roomId,
-      status: { notIn: ["CANCELLED", "NO_SHOW"] },
-      checkIn: { lt: checkOut },
-      checkOut: { gt: checkIn },
-      ...(excludeId ? { id: { not: excludeId } } : {}),
-    },
-    select: { id: true },
-  });
-  return conflict === null;
 }
 
 // ============================================================
@@ -174,11 +156,41 @@ export async function processWebhookEvent(webhookEventId: string): Promise<Proce
   const parsed = getChannel().parseWebhook(event.rawPayload);
 
   // --- Echo loop himoyasi (04-fayl §6) ---
-  // Bizning o'z yuborgan bronimiz qaytdi — hech narsa qilinmaydi
-  if (parsed.isOwnEcho) {
-    await markProcessed(webhookEventId, "O'z aks-sadosi (referer=PMS) — e'tiborsiz qoldirildi");
-    await logSync("webhook_echo_skipped", "SKIPPED", null, "referer=PMS");
-    return { status: "skipped", detail: "O'z aks-sadosi" };
+  //
+  // Bizning o'z yuborgan bronimiz Beds24'dan qaytdi — qayta
+  // yozish shart emas, aks holda cheksiz halqa bo'ladi.
+  //
+  // IKKI SHART (2026-09-16 da ikkinchisi qo'shildi):
+  //
+  //   1. `referer === "PMS"` — biz yuborgan bron belgisi
+  //   2. Shu `externalId` bazada ALLAQACHON bor
+  //
+  // Nega ikkinchisi kerak: `referer` ni faqat biz emas, boshqa
+  // tomon ham yozishi mumkin (Beds24 sozlamasi, mehmonxona nomi,
+  // OTA maydoni). Faqat birinchi shartga tayanilganda OTA'dan
+  // kelgan yangi bron JIMGINA YO'QOLARDI — na xato, na log.
+  //
+  // Endi "biz bilmagan bron" hech qachon echo deb hisoblanmaydi:
+  // uni saqlaymiz, keyin `payloadHash` va `externalId` unique
+  // constraint dublikatdan himoya qiladi.
+  if (parsed.isOwnEcho && parsed.externalId) {
+    const known = await prisma.reservation.findFirst({
+      where: { externalReservationId: parsed.externalId },
+      select: { id: true },
+    });
+
+    if (known) {
+      await markProcessed(webhookEventId, "O'z aks-sadosi (referer=PMS) — e'tiborsiz qoldirildi");
+      await logSync("webhook_echo_skipped", "SKIPPED", known.id, "referer=PMS");
+      return { status: "skipped", detail: "O'z aks-sadosi" };
+    }
+
+    // referer="PMS", lekin bron bizda yo'q — demak bu echo emas.
+    // Ogohlantirish yozamiz: sozlama noto'g'ri bo'lishi mumkin.
+    console.warn(
+      `[webhook] referer=PMS, lekin ${parsed.externalId} bazada yo'q — ` +
+      `yangi bron sifatida qabul qilindi`
+    );
   }
 
   // --- Narx o'zgarishi (TZ 7-band, 07-fayl §7) ---
@@ -280,7 +292,7 @@ export async function applyReservation(
     // Sana o'zgargan bo'lsa xona bo'shligini qayta tekshirish kerak
     let roomId = existing.roomId;
     if (dateChanged && status !== "CANCELLED" && status !== "NO_SHOW") {
-      const free = await isRoomFreeFor(
+      const free = await isRoomFree(
         existing.roomId,
         fromDateKey(ext.checkIn),
         fromDateKey(ext.checkOut),
@@ -368,6 +380,21 @@ export async function applyReservation(
   // Mehmon: telefon yoki email bo'yicha qidiriladi
   const guest = await findOrCreateGuest(ext);
 
+  /**
+   * Ovqat tarifi (BOTLAR-REJA.md, 2026-09-17).
+   *
+   * Beds24 ovqat haqida standart maydon bermaydi — ular
+   * "nonushta bilan" va "nonushtasiz" alohida tariflar
+   * yaratadi. Mapping'da `includesMeal` belgilanadi.
+   *
+   * Belgilanmagan bo'lsa `false`: ortiqcha ovqat tayyorlagandan
+   * ko'ra, mehmon so'raganda qo'shib bergan yaxshiroq.
+   */
+  const withMeal = await channelBookingHasMeal(
+    channel.id,
+    ext.externalRoomTypeId
+  );
+
   let created;
   try {
     created = await prisma.reservation.create({
@@ -379,6 +406,7 @@ export async function applyReservation(
         adults: ext.adults,
         children: ext.children,
         source: toSource(ext.source),
+        withMeal,
         channelId: channel.id,
         externalReservationId: ext.externalId,
         pricePerNight: new Prisma.Decimal(pricePerNight.toFixed(2)),

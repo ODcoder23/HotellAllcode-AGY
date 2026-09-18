@@ -20,6 +20,10 @@ import { config } from "../lib/config.js";
 import { QUEUE, redisConnection, registerWorker, registerQueue } from "./index.js";
 import { expireUnpaidBookings } from "../services/publicBooking.js";
 import { pollBookings, checkDrift, catchUpPending } from "../services/reconciliation.js";
+import { pruneAuditLog } from "../services/auditLog.js";
+import { sendPendingTasks } from "../services/cleaning.js";
+import { remindStaleTasks } from "../bot/cleaning-bot.js";
+import { sendDailyKitchenReport } from "../bot/kitchen-bot.js";
 
 const connection = redisConnection as never;
 
@@ -28,7 +32,10 @@ export type MaintenanceJob =
   | { task: "expire_unpaid" }
   | { task: "poll_beds24" }
   | { task: "drift_check" }
-  | { task: "catch_up" };
+  | { task: "catch_up" }
+  | { task: "prune_audit" }
+  | { task: "cleaning_check" }
+  | { task: "kitchen_report"; offset: 0 | 1 };
 
 export const maintenanceQueue = new Queue<MaintenanceJob>(QUEUE.maintenance, {
   connection,
@@ -102,6 +109,37 @@ export const maintenanceWorker = new Worker<MaintenanceJob>(
         return result;
       }
 
+      case "cleaning_check": {
+        /**
+         * Tozalash tekshiruvi (TOZALIK-BOT.md).
+         *
+         * Ikki ish:
+         *   1. Tunda to'plangan topshiriqlarni yuborish
+         *      (ish vaqti boshlanganda)
+         *   2. Javob bermaganlar haqida egasiga eslatma
+         */
+        const [pending, reminded] = await Promise.all([
+          sendPendingTasks(),
+          remindStaleTasks(),
+        ]);
+
+        if (pending.sent > 0 || reminded.sent > 0) {
+          console.log(
+            `[maintenance] tozalash: ${pending.sent} yuborildi, ` +
+            `${reminded.sent} eslatma`
+          );
+        }
+        return { pending: pending.sent, reminded: reminded.sent };
+      }
+
+      case "kitchen_report": {
+        const res = await sendDailyKitchenReport(job.data.offset);
+        if (res.sent > 0) {
+          console.log(`[maintenance] oshxona: ${res.sent} chatga hisobot yuborildi`);
+        }
+        return res;
+      }
+
       default:
         return { ok: true, skipped: true };
     }
@@ -160,10 +198,34 @@ export async function scheduleMaintenance(): Promise<void> {
       { name: "drift_check", data: { task: "drift_check" } }
     );
 
+    // Tozalash tekshiruvi — har 10 daqiqada.
+    //
+    // Tez-tez: ish vaqti boshlanganda to'plangan topshiriqlar
+    // darhol ketishi kerak, va kechikkan ishni uzoq kutmaslik
+    // kerak. Yengil so'rov — indeksli, bir nechta qator.
+    await maintenanceQueue.upsertJobScheduler(
+      "cron_cleaning_check",
+      { every: 10 * 60_000 },
+      { name: "cleaning_check", data: { task: "cleaning_check" } }
+    );
+
+    // Oshxona hisoboti: ertalab 07:30 da bugungi nonushta,
+    // kechqurun 20:00 da ertangi kun uchun mahsulot tayyorlash
+    await maintenanceQueue.upsertJobScheduler(
+      "cron_kitchen_morning",
+      { pattern: "30 7 * * *" },
+      { name: "kitchen_morning", data: { task: "kitchen_report", offset: 0 } }
+    );
+    await maintenanceQueue.upsertJobScheduler(
+      "cron_kitchen_evening",
+      { pattern: "0 20 * * *" },
+      { name: "kitchen_evening", data: { task: "kitchen_report", offset: 1 } }
+    );
+
     if (config.isDev) {
       console.log(
         `  Davriy vazifalar: to'lanmagan bronlar (soatlik), ` +
-        `polling + catch-up (${config.pollIntervalMinutes} daq), drift (kunlik)`
+        `polling + catch-up (${config.pollIntervalMinutes} daq), drift (kunlik), oshxona (kuniga 2 mahal)`
       );
     }
   } catch (e) {
@@ -178,6 +240,8 @@ export async function scheduleMaintenance(): Promise<void> {
 // tekshirishi uchun. Jadval o'z vaqtida baribir ishlaydi.
 
 export const runExpireNow = () => expireUnpaidBookings();
+export const runPruneAuditNow = () => pruneAuditLog();
 export const runPollNow = () => pollBookings();
 export const runDriftCheckNow = (days?: number) => checkDrift(days ?? 30);
 export const runCatchUpNow = () => catchUpPending();
+export const runKitchenReportNow = (offset: 0 | 1 = 0) => sendDailyKitchenReport(offset);

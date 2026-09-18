@@ -16,9 +16,10 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { prisma } from "./lib/prisma.js";
 import { setupConnection } from "./services/beds24/auth.js";
 import * as mapping from "./services/mapping.js";
+import { TYPES, loadTypes } from "./testUtils.js";
 
-const PMS = "http://localhost:3000";
-const MOCK = "http://localhost:4000";
+const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
+const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
 
 const EXT = { standard: "101001", double: "101002", deluxe: "101003" } as const;
 
@@ -35,7 +36,16 @@ const api = async (path: string, init: RequestInit = {}) => {
 
 /** Uchala turni bog'laydi — ko'p testda kerak */
 async function mapAll() {
-  for (const [pms, ext] of Object.entries(EXT)) {
+  // EXT kalitlari tarixiy nomlar — ular faqat tashqi Beds24
+  // ID'sini topish uchun. PMS turi TYPES dan keladi (bazadagi
+  // haqiqiy turlar).
+  const pairs: Array<[string, string]> = [
+    [TYPES.a, EXT.standard],
+    [TYPES.b, EXT.double],
+    [TYPES.c, EXT.deluxe],
+  ];
+
+  for (const [pms, ext] of pairs) {
     await mapping.upsertMapping({ roomTypeId: pms, externalRoomTypeId: ext });
   }
 }
@@ -47,6 +57,9 @@ async function clearMappings() {
 
 describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
   beforeAll(async () => {
+    // Tur ID'lari bazadan olinadi (testUtils.ts) — ilgari
+    // "standard"/"double"/"deluxe" qattiq yozilgan edi
+    await loadTypes();
     const res = await fetch(`${MOCK}/authentication/setup`, { headers: { code: "mock-invite-code" } });
     if (!res.ok) throw new Error("Mock server ishlamayapti");
     await setupConnection("mock-invite-code", "12345");
@@ -119,18 +132,18 @@ describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
   // --- Validatsiya (06-fayl §6) ----------------------------
   describe("validatsiya qoidalari", () => {
     it("bitta Beds24 turi faqat bitta PMS turiga", async () => {
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: EXT.standard });
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.standard });
 
       await expect(
-        mapping.upsertMapping({ roomTypeId: "double", externalRoomTypeId: EXT.standard })
+        mapping.upsertMapping({ roomTypeId: TYPES.b, externalRoomTypeId: EXT.standard })
       ).rejects.toThrow(/allaqachon/);
     });
 
     it("bir xil turni qayta bog'lash — yangilanadi, xato emas", async () => {
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: EXT.standard });
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: EXT.double });
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.standard });
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.double });
 
-      const found = await mapping.findRoomTypeMapping("standard");
+      const found = await mapping.findRoomTypeMapping(TYPES.a);
       expect(found?.externalRoomTypeId).toBe(EXT.double);
 
       const all = await mapping.listMappings();
@@ -153,24 +166,24 @@ describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
   // --- O'chirish (06-fayl §6) ------------------------------
   describe("o'chirish", () => {
     it("faol bron bo'lsa ogohlantiradi", async () => {
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: EXT.standard });
-      const m = await mapping.findRoomTypeMapping("standard");
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.standard });
+      const m = await mapping.findRoomTypeMapping(TYPES.a);
 
       // Seed'da standard turida faol bron bor
       await expect(mapping.deleteMapping(m!.id)).rejects.toThrow(/faol bron/);
     });
 
     it("force bilan o'chiriladi", async () => {
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: EXT.standard });
-      const m = await mapping.findRoomTypeMapping("standard");
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.standard });
+      const m = await mapping.findRoomTypeMapping(TYPES.a);
 
       await mapping.deleteMapping(m!.id, { force: true });
-      expect(await mapping.findRoomTypeMapping("standard")).toBeNull();
+      expect(await mapping.findRoomTypeMapping(TYPES.a)).toBeNull();
     });
 
     it("soft delete — yozuv qoladi, isActive=false", async () => {
-      await mapping.upsertMapping({ roomTypeId: "deluxe", externalRoomTypeId: EXT.deluxe });
-      const m = await mapping.findRoomTypeMapping("deluxe");
+      await mapping.upsertMapping({ roomTypeId: TYPES.c, externalRoomTypeId: EXT.deluxe });
+      const m = await mapping.findRoomTypeMapping(TYPES.c);
 
       await mapping.deleteMapping(m!.id, { force: true });
 
@@ -185,7 +198,7 @@ describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
     it("room type darajasida topadi", async () => {
       await mapAll();
       const found = await mapping.findByExternal(EXT.deluxe);
-      expect(found?.roomTypeId).toBe("deluxe");
+      expect(found?.roomTypeId).toBe(TYPES.c);
     });
 
     it("mapping yo'q -> null (bron yaratilmaydi)", async () => {
@@ -208,7 +221,7 @@ describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
 
       // Unit berilmasa — room type darajasi
       const byType = await mapping.findByExternal(EXT.standard);
-      expect(byType?.roomTypeId).toBe("standard");
+      expect(byType?.roomTypeId).toBe(TYPES.a);
       expect(byType?.roomId).toBeNull();
     });
   });
@@ -216,7 +229,7 @@ describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
   // --- Orphan aniqlash (06-fayl §7) ------------------------
   describe("orphan mapping", () => {
     it("Beds24'da yo'q turga bog'lanish -> orphan", async () => {
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: "99999" });
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: "99999" });
 
       const h = await mapping.getMappingHealth();
       expect(h.orphanMappings).toHaveLength(1);
@@ -225,7 +238,7 @@ describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
     });
 
     it("bog'lanmagan Beds24 turlari ko'rsatiladi", async () => {
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: EXT.standard });
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.standard });
 
       const h = await mapping.getMappingHealth();
       const unusedIds = h.unusedExternal.map((e) => e.id);
@@ -240,8 +253,8 @@ describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
     it("mapping o'zgarishi yoziladi", async () => {
       await prisma.auditLog.deleteMany();
 
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: EXT.standard });
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: EXT.double });
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.standard });
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.double });
 
       const logs = await prisma.auditLog.findMany({ orderBy: { createdAt: "asc" } });
       expect(logs).toHaveLength(2);
@@ -272,18 +285,18 @@ describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
     it("PUT /api/admin/mapping", async () => {
       const { status, body } = await api("/api/admin/mapping", {
         method: "PUT",
-        body: JSON.stringify({ roomTypeId: "standard", externalRoomTypeId: EXT.standard }),
+        body: JSON.stringify({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.standard }),
       });
       expect(status).toBe(200);
       expect(body.ok).toBe(true);
     });
 
     it("PUT konflikt -> 409 MAPPING_CONFLICT", async () => {
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: EXT.standard });
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.standard });
 
       const { status, body } = await api("/api/admin/mapping", {
         method: "PUT",
-        body: JSON.stringify({ roomTypeId: "double", externalRoomTypeId: EXT.standard }),
+        body: JSON.stringify({ roomTypeId: TYPES.b, externalRoomTypeId: EXT.standard }),
       });
       expect(status).toBe(409);
       expect(body.code).toBe("MAPPING_CONFLICT");
@@ -292,14 +305,14 @@ describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
     it("PUT noto'g'ri payload -> 400", async () => {
       const { status } = await api("/api/admin/mapping", {
         method: "PUT",
-        body: JSON.stringify({ roomTypeId: "standard" }),
+        body: JSON.stringify({ roomTypeId: TYPES.a }),
       });
       expect(status).toBe(400);
     });
 
     it("DELETE faol bron bilan -> 409", async () => {
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: EXT.standard });
-      const m = await mapping.findRoomTypeMapping("standard");
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.standard });
+      const m = await mapping.findRoomTypeMapping(TYPES.a);
 
       const { status, body } = await api(`/api/admin/mapping/${m!.id}`, { method: "DELETE" });
       expect(status).toBe(409);
@@ -307,12 +320,12 @@ describe("FAZA 5 — xona mapping (TZ 5-band)", () => {
     });
 
     it("DELETE ?force=true -> o'chadi", async () => {
-      await mapping.upsertMapping({ roomTypeId: "standard", externalRoomTypeId: EXT.standard });
-      const m = await mapping.findRoomTypeMapping("standard");
+      await mapping.upsertMapping({ roomTypeId: TYPES.a, externalRoomTypeId: EXT.standard });
+      const m = await mapping.findRoomTypeMapping(TYPES.a);
 
       const { status } = await api(`/api/admin/mapping/${m!.id}?force=true`, { method: "DELETE" });
       expect(status).toBe(200);
-      expect(await mapping.findRoomTypeMapping("standard")).toBeNull();
+      expect(await mapping.findRoomTypeMapping(TYPES.a)).toBeNull();
     });
 
     it("GET /api/admin/connection — token OSHKOR QILINMAYDI (TZ 13-band)", async () => {

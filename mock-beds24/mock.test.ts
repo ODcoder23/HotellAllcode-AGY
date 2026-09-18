@@ -12,7 +12,21 @@
 
 import { describe, it, expect, beforeAll, beforeEach } from "vitest";
 
-const MOCK = "http://localhost:4000";
+/**
+ * Mock server manzili.
+ *
+ * `:4000` qattiq yozilgan edi va mock boshqa portda ishlaganda
+ * (tunnel orqali `:4100`) barcha 28 test `ECONNREFUSED` bilan
+ * skip bo'lardi — sabab kodda deb o'ylash oson edi. Backend
+ * testlari 2026-09-17 da `PMS_URL`/`MOCK_URL` ga o'tkazilgan,
+ * bu fayl qolib ketgan.
+ *
+ * `127.0.0.1`, `localhost` EMAS: Node 18+ da `localhost` avval
+ * IPv6 (`::1`) ga hal bo'ladi, SSH tunnel esa IPv4 da tinglaydi.
+ * Natijada `connect ECONNREFUSED ::1:4100` chiqadi va tunnel
+ * ochiq bo'lsa ham testlar yiqiladi.
+ */
+const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
 let token = "";
 
 const call = async (path: string, init: RequestInit = {}) => {
@@ -113,23 +127,45 @@ describe("FAZA 0.5 — mock Beds24 server", () => {
 
   // --- Properties (06-fayl §3 mapping ekrani manbai) --------
   describe("GET /properties", () => {
-    it("3 room type qaytaradi, qty 6/4/2", async () => {
+    // 2026-09-17: 3 tur / 12 xona -> 9 tur / 18 xona.
+    // PMS 2026-09-16 da 18 xonaga o'tgan edi, mock qoldirilgan
+    // va 6 tarifni umuman bog'lab bo'lmasdi.
+    it("9 room type qaytaradi, jami 18 xona", async () => {
       const { status, body } = await call("/properties");
       expect(status).toBe(200);
 
       const types = body.data[0].roomTypes;
-      expect(types).toHaveLength(3);
+      expect(types).toHaveLength(9);
 
-      const byName = Object.fromEntries(types.map((t: any) => [t.name, t.qty]));
-      expect(byName["Standard Room"]).toBe(6);
-      expect(byName["Double Room"]).toBe(4);
-      expect(byName["Deluxe Room"]).toBe(2);
+      const total = types.reduce((n: number, t: any) => n + t.qty, 0);
+      expect(total).toBe(18);
+    });
+
+    it("qty PMS'dagi xona soniga mos", async () => {
+      const { body } = await call("/properties");
+      const byName = Object.fromEntries(
+        body.data[0].roomTypes.map((t: any) => [t.name, t.qty])
+      );
+
+      // `prisma/seed.ts` dagi taqsimot bilan bir xil
+      expect(byName["Standart 3 kishilik"]).toBe(1);
+      expect(byName["Komfort 3 kishilik"]).toBe(3);
+      expect(byName["Oilaviy yarim lyuks"]).toBe(2);
+      expect(byName["Komfort 4 kishilik"]).toBe(2);
+      expect(byName["Premium 4 kishilik"]).toBe(4);
+      expect(byName["Delyuks 4 kishilik"]).toBe(3);
+      expect(byName["Oilaviy Delyuks"]).toBe(1);
+      expect(byName["Oilaviy lyuks balkonli 201"]).toBe(1);
+      expect(byName["Oilaviy lyuks balkonli 301"]).toBe(1);
     });
 
     it("room type id'lari mapping uchun barqaror", async () => {
       const { body } = await call("/properties");
       const ids = body.data[0].roomTypes.map((t: any) => t.id);
-      expect(ids).toEqual([101001, 101002, 101003]);
+      expect(ids).toEqual([
+        101001, 101002, 101003, 101004, 101005,
+        101006, 101007, 101008, 101009,
+      ]);
     });
   });
 

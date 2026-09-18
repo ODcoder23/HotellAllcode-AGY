@@ -30,14 +30,29 @@ import {
   enqueueAvailabilitySync,
 } from "./services/availability.js";
 import { fromDateKey } from "./lib/serialize.js";
+import { TYPES, loadTypes } from "./testUtils.js";
 
-const PMS = "http://localhost:3000";
-const MOCK = "http://localhost:4000";
+const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
+const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
 
 const EXT = { standard: "101001", double: "101002", deluxe: "101003" } as const;
 
 /** Seed'dagi haqiqiy sonlar (07-fayl §2) */
-const TOTAL = { standard: 6, double: 4, deluxe: 2 } as const;
+/**
+ * Tur bo'yicha xona soni — BAZADAN (`loadTotals()`).
+ *
+ * Ilgari `{ standard: 6, double: 4, deluxe: 2 }` qattiq yozilgan
+ * edi; loyiha 18 xonaga o'tganda bu sonlar noto'g'ri bo'lib qoldi.
+ */
+const TOTAL = { a: 0, b: 0, c: 0 };
+
+async function loadTotals() {
+  for (const [key, typeId] of [["a", TYPES.a], ["b", TYPES.b], ["c", TYPES.c]] as const) {
+    TOTAL[key] = await prisma.room.count({
+      where: { roomTypeId: typeId, isActive: true },
+    });
+  }
+}
 
 const api = async (path: string, init: RequestInit = {}) => {
   const res = await fetch(`${PMS}${path}`, {
@@ -101,7 +116,16 @@ async function pushedValues(externalRoomTypeId: string): Promise<Map<string, num
 }
 
 async function mapAll() {
-  for (const [pms, external] of Object.entries(EXT)) {
+  // EXT kalitlari tarixiy nomlar — ular faqat tashqi Beds24
+  // ID'sini topish uchun. PMS turi TYPES dan keladi (bazadagi
+  // haqiqiy turlar).
+  const pairs: Array<[string, string]> = [
+    [TYPES.a, EXT.standard],
+    [TYPES.b, EXT.double],
+    [TYPES.c, EXT.deluxe],
+  ];
+
+  for (const [pms, external] of pairs) {
     await upsertMapping({ roomTypeId: pms, externalRoomTypeId: external });
   }
 }
@@ -120,6 +144,10 @@ const D = (key: string) => fromDateKey(key);
 
 describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
   beforeAll(async () => {
+    // Tur ID'lari bazadan olinadi (testUtils.ts) — ilgari
+    // "standard"/"double"/"deluxe" qattiq yozilgan edi
+    await loadTypes();
+    await loadTotals();
     const health = await fetch(`${PMS}/health`).then((r) => r.json() as any);
     if (health.redis !== "connected") {
       throw new Error("Redis ishlamayapti — redis-server ishga tushiring");
@@ -177,18 +205,18 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
   // --- Agregatsiya formulasi (07-fayl §2) ---------------------
   describe("agregatsiya — PMS aniq xona, Beds24 son", () => {
     it("bron yo'q oraliqda availableCount = jami xonalar soni", async () => {
-      await recalcAvailability(["standard"], D("2028-03-01"), D("2028-03-05"));
-      const days = await readRange("standard", D("2028-03-01"), D("2028-03-05"));
+      await recalcAvailability([TYPES.a], D("2028-03-01"), D("2028-03-05"));
+      const days = await readRange(TYPES.a, D("2028-03-01"), D("2028-03-05"));
 
       expect(days).toHaveLength(4);          // 01,02,03,04 — 05 kirmaydi
       for (const d of days) {
-        expect(d.totalRooms).toBe(TOTAL.standard);
-        expect(d.availableCount).toBe(TOTAL.standard);
+        expect(d.totalRooms).toBe(TOTAL.a);
+        expect(d.availableCount).toBe(TOTAL.a);
       }
     });
 
     it("bitta bron -> faqat o'sha kunlar bittaga kamayadi", async () => {
-      const room = await findRoom("standard");
+      const room = await findRoom(TYPES.a);
       const created = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
@@ -196,6 +224,7 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
           checkIn: "2028-03-10",
           checkOut: "2028-03-12",
           guestName: "Agregatsiya Testi",
+          phone: "+99894400001",
           guestPhone: "+998900000010",
           adults: 1,
           pricePerNight: 100,
@@ -203,19 +232,19 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
       });
       expect(created.status).toBe(201);
 
-      await recalcAvailability(["standard"], D("2028-03-09"), D("2028-03-14"));
-      const days = await readRange("standard", D("2028-03-09"), D("2028-03-14"));
+      await recalcAvailability([TYPES.a], D("2028-03-09"), D("2028-03-14"));
+      const days = await readRange(TYPES.a, D("2028-03-09"), D("2028-03-14"));
       const byDate = new Map(days.map((d) => [d.date, d.availableCount]));
 
-      expect(byDate.get("2028-03-09")).toBe(TOTAL.standard);      // bron oldin
-      expect(byDate.get("2028-03-10")).toBe(TOTAL.standard - 1);  // checkIn KIRADI
-      expect(byDate.get("2028-03-11")).toBe(TOTAL.standard - 1);
-      expect(byDate.get("2028-03-12")).toBe(TOTAL.standard);      // checkOut KIRMAYDI
-      expect(byDate.get("2028-03-13")).toBe(TOTAL.standard);
+      expect(byDate.get("2028-03-09")).toBe(TOTAL.a);      // bron oldin
+      expect(byDate.get("2028-03-10")).toBe(TOTAL.a - 1);  // checkIn KIRADI
+      expect(byDate.get("2028-03-11")).toBe(TOTAL.a - 1);
+      expect(byDate.get("2028-03-12")).toBe(TOTAL.a);      // checkOut KIRMAYDI
+      expect(byDate.get("2028-03-13")).toBe(TOTAL.a);
     });
 
     it("bekor qilingan bron bandlikka kirmaydi (TZ 6-band)", async () => {
-      const room = await findRoom("double");
+      const room = await findRoom(TYPES.b);
       const created = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
@@ -223,27 +252,28 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
           checkIn: "2028-04-01",
           checkOut: "2028-04-03",
           guestName: "Bekor Testi",
+          phone: "+99894400002",
           guestPhone: "+998900000011",
           adults: 1,
           pricePerNight: 90,
         }),
       });
 
-      await recalcAvailability(["double"], D("2028-04-01"), D("2028-04-03"));
-      let days = await readRange("double", D("2028-04-01"), D("2028-04-03"));
-      expect(days[0]!.availableCount).toBe(TOTAL.double - 1);
+      await recalcAvailability([TYPES.b], D("2028-04-01"), D("2028-04-03"));
+      let days = await readRange(TYPES.b, D("2028-04-01"), D("2028-04-03"));
+      expect(days[0]!.availableCount).toBe(TOTAL.b - 1);
 
       await api(`/api/reservations/${created.body.id}/cancel`, { method: "POST" });
 
-      await recalcAvailability(["double"], D("2028-04-01"), D("2028-04-03"));
-      days = await readRange("double", D("2028-04-01"), D("2028-04-03"));
+      await recalcAvailability([TYPES.b], D("2028-04-01"), D("2028-04-03"));
+      days = await readRange(TYPES.b, D("2028-04-01"), D("2028-04-03"));
       // Qayta oshdi — TZ 6-band aynan shuni talab qiladi
-      expect(days[0]!.availableCount).toBe(TOTAL.double);
+      expect(days[0]!.availableCount).toBe(TOTAL.b);
     });
 
     it("availableCount hech qachon jami sondan oshmaydi (TZ 3-band)", async () => {
       await recalcAvailability(
-        ["standard", "double", "deluxe"],
+        [TYPES.a, TYPES.b, TYPES.c],
         D("2028-05-01"),
         D("2028-05-10")
       );
@@ -261,29 +291,29 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
   // --- FAZA 9 ASOSIY MEZONI ----------------------------------
   describe("FAZA 9 mezoni — mock server numAvail oladi", () => {
     it("POST /inventory/rooms/calendar mock'ga yetib keladi", async () => {
-      await recalcAvailability(["deluxe"], D("2028-06-01"), D("2028-06-04"));
-      const result = await pushAvailability("deluxe", D("2028-06-01"), D("2028-06-04"));
+      await recalcAvailability([TYPES.c], D("2028-06-01"), D("2028-06-04"));
+      const result = await pushAvailability(TYPES.c, D("2028-06-01"), D("2028-06-04"));
 
       expect(result.status).toBe("sent");
 
       const pushed = await pushedValues(EXT.deluxe);
-      expect(pushed.get("2028-06-01")).toBe(TOTAL.deluxe);
-      expect(pushed.get("2028-06-02")).toBe(TOTAL.deluxe);
-      expect(pushed.get("2028-06-03")).toBe(TOTAL.deluxe);
+      expect(pushed.get("2028-06-01")).toBe(TOTAL.c);
+      expect(pushed.get("2028-06-02")).toBe(TOTAL.c);
+      expect(pushed.get("2028-06-03")).toBe(TOTAL.c);
     });
 
     it("6 -> 5 -> 4: har bron numAvail'ni bittaga kamaytiradi", async () => {
       const from = D("2028-07-01");
       const to = D("2028-07-03");
       const rooms = await prisma.room.findMany({
-        where: { roomTypeId: "standard", isActive: true },
+        where: { roomTypeId: TYPES.a, isActive: true },
         orderBy: { number: "asc" },
         take: 2,
       });
 
       // Boshlang'ich: 6
-      await recalcAvailability(["standard"], from, to);
-      await pushAvailability("standard", from, to);
+      await recalcAvailability([TYPES.a], from, to);
+      await pushAvailability(TYPES.a, from, to);
       expect((await pushedValues(EXT.standard)).get("2028-07-01")).toBe(6);
 
       // 1-bron -> 5
@@ -294,13 +324,14 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
           checkIn: "2028-07-01",
           checkOut: "2028-07-03",
           guestName: "Birinchi",
+          phone: "+99894400003",
           guestPhone: "+998900000021",
           adults: 1,
           pricePerNight: 100,
         }),
       });
-      await recalcAvailability(["standard"], from, to);
-      await pushAvailability("standard", from, to);
+      await recalcAvailability([TYPES.a], from, to);
+      await pushAvailability(TYPES.a, from, to);
       expect((await pushedValues(EXT.standard)).get("2028-07-01")).toBe(5);
 
       // 2-bron -> 4
@@ -311,20 +342,21 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
           checkIn: "2028-07-01",
           checkOut: "2028-07-03",
           guestName: "Ikkinchi",
+          phone: "+99894400004",
           guestPhone: "+998900000022",
           adults: 1,
           pricePerNight: 100,
         }),
       });
-      await recalcAvailability(["standard"], from, to);
-      await pushAvailability("standard", from, to);
+      await recalcAvailability([TYPES.a], from, to);
+      await pushAvailability(TYPES.a, from, to);
       expect((await pushedValues(EXT.standard)).get("2028-07-01")).toBe(4);
     });
 
     it("bekor qilinganda numAvail qayta oshadi", async () => {
       const from = D("2028-08-01");
       const to = D("2028-08-03");
-      const room = await findRoom("deluxe");
+      const room = await findRoom(TYPES.c);
 
       const created = await api("/api/reservations", {
         method: "POST",
@@ -333,27 +365,28 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
           checkIn: "2028-08-01",
           checkOut: "2028-08-03",
           guestName: "Oshish Testi",
+          phone: "+99894400005",
           guestPhone: "+998900000023",
           adults: 1,
           pricePerNight: 200,
         }),
       });
 
-      await recalcAvailability(["deluxe"], from, to);
-      await pushAvailability("deluxe", from, to);
-      expect((await pushedValues(EXT.deluxe)).get("2028-08-01")).toBe(TOTAL.deluxe - 1);
+      await recalcAvailability([TYPES.c], from, to);
+      await pushAvailability(TYPES.c, from, to);
+      expect((await pushedValues(EXT.deluxe)).get("2028-08-01")).toBe(TOTAL.c - 1);
 
       await api(`/api/reservations/${created.body.id}/cancel`, { method: "POST" });
 
-      await recalcAvailability(["deluxe"], from, to);
-      await pushAvailability("deluxe", from, to);
-      expect((await pushedValues(EXT.deluxe)).get("2028-08-01")).toBe(TOTAL.deluxe);
+      await recalcAvailability([TYPES.c], from, to);
+      await pushAvailability(TYPES.c, from, to);
+      expect((await pushedValues(EXT.deluxe)).get("2028-08-01")).toBe(TOTAL.c);
     });
 
     it("mock'da saqlangan kalendar PMS hisobiga mos (TZ 20-band)", async () => {
       const from = D("2028-09-01");
       const to = D("2028-09-05");
-      const room = await findRoom("double");
+      const room = await findRoom(TYPES.b);
 
       await api("/api/reservations", {
         method: "POST",
@@ -362,14 +395,15 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
           checkIn: "2028-09-02",
           checkOut: "2028-09-04",
           guestName: "Inventory Testi",
+          phone: "+99894400006",
           guestPhone: "+998900000024",
           adults: 1,
           pricePerNight: 90,
         }),
       });
 
-      await recalcAvailability(["double"], from, to);
-      await pushAvailability("double", from, to);
+      await recalcAvailability([TYPES.b], from, to);
+      await pushAvailability(TYPES.b, from, to);
 
       // Mock'ning o'z GET javobi bilan solishtiramiz — Beds24
       // tomonda ham bir xil son turishi kerak
@@ -383,7 +417,7 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
         (entry?.calendar ?? []).map((c: any) => [c.from ?? c.date, c.numAvail])
       );
 
-      const pmsDays = await readRange("double", from, to);
+      const pmsDays = await readRange(TYPES.b, from, to);
       for (const d of pmsDays) {
         if (mockByDate.has(d.date)) {
           expect(mockByDate.get(d.date)).toBe(d.availableCount);
@@ -398,11 +432,11 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
       const from = D("2028-10-01");
       const to = D("2028-10-06");
 
-      await recalcAvailability(["deluxe"], from, to);
-      const first = await pushAvailability("deluxe", from, to);
+      await recalcAvailability([TYPES.c], from, to);
+      const first = await pushAvailability(TYPES.c, from, to);
       expect(first.status).toBe("sent");
 
-      const second = await pushAvailability("deluxe", from, to);
+      const second = await pushAvailability(TYPES.c, from, to);
       expect(second.status).toBe("skipped");
       if (second.status === "skipped") {
         expect(second.reason).toBe("o'zgarish yo'q");
@@ -413,8 +447,8 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
       const from = D("2028-11-01");
       const to = D("2028-11-11");        // 10 kun
 
-      await recalcAvailability(["deluxe"], from, to);
-      await pushAvailability("deluxe", from, to);
+      await recalcAvailability([TYPES.c], from, to);
+      await pushAvailability(TYPES.c, from, to);
 
       const { calendarPushes } = await mockState();
       const push = calendarPushes.find((p) => p.roomId === Number(EXT.deluxe));
@@ -429,11 +463,11 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
     it("faqat o'zgargan kun yuboriladi, butun oraliq emas", async () => {
       const from = D("2029-01-01");
       const to = D("2029-01-11");
-      const room = await findRoom("deluxe");
+      const room = await findRoom(TYPES.c);
 
       // 1) Butun oraliq yuborildi
-      await recalcAvailability(["deluxe"], from, to);
-      await pushAvailability("deluxe", from, to);
+      await recalcAvailability([TYPES.c], from, to);
+      await pushAvailability(TYPES.c, from, to);
       await mockControl("reset");
       await mapAll();     // reset mapping'ga tegmaydi, lekin ulanish tiklanadi
 
@@ -445,14 +479,15 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
           checkIn: "2029-01-05",
           checkOut: "2029-01-07",
           guestName: "Qisman Testi",
+          phone: "+99894400007",
           guestPhone: "+998900000025",
           adults: 1,
           pricePerNight: 200,
         }),
       });
 
-      await recalcAvailability(["deluxe"], from, to);
-      const result = await pushAvailability("deluxe", from, to);
+      await recalcAvailability([TYPES.c], from, to);
+      const result = await pushAvailability(TYPES.c, from, to);
 
       expect(result.status).toBe("sent");
       if (result.status === "sent") {
@@ -461,8 +496,8 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
       }
 
       const pushed = await pushedValues(EXT.deluxe);
-      expect(pushed.get("2029-01-05")).toBe(TOTAL.deluxe - 1);
-      expect(pushed.get("2029-01-06")).toBe(TOTAL.deluxe - 1);
+      expect(pushed.get("2029-01-05")).toBe(TOTAL.c - 1);
+      expect(pushed.get("2029-01-06")).toBe(TOTAL.c - 1);
       expect(pushed.has("2029-01-01")).toBe(false);   // o'zgarmagan — yuborilmadi
     });
 
@@ -470,13 +505,13 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
       const from = D("2029-02-01");
       const to = D("2029-02-04");
 
-      await recalcAvailability(["double"], from, to);
-      let days = await readRange("double", from, to);
+      await recalcAvailability([TYPES.b], from, to);
+      let days = await readRange(TYPES.b, from, to);
       expect(days.every((d) => d.syncedCount === null)).toBe(true);
 
-      await pushAvailability("double", from, to);
+      await pushAvailability(TYPES.b, from, to);
 
-      days = await readRange("double", from, to);
+      days = await readRange(TYPES.b, from, to);
       for (const d of days) {
         expect(d.syncedCount).toBe(d.availableCount);
       }
@@ -488,8 +523,8 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
     it("yuborilmaydi va FAILED log yoziladi", async () => {
       await prisma.channelMapping.deleteMany();
 
-      await recalcAvailability(["standard"], D("2029-03-01"), D("2029-03-03"));
-      const result = await pushAvailability("standard", D("2029-03-01"), D("2029-03-03"));
+      await recalcAvailability([TYPES.a], D("2029-03-01"), D("2029-03-03"));
+      const result = await pushAvailability(TYPES.a, D("2029-03-01"), D("2029-03-03"));
 
       expect(result.status).toBe("failed");
       if (result.status === "failed") {
@@ -512,8 +547,8 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
   // --- SyncLog (TZ 16-band) ----------------------------------
   describe("SyncLog", () => {
     it("muvaffaqiyatli yuborish SUCCESS sifatida yoziladi", async () => {
-      await recalcAvailability(["deluxe"], D("2029-04-01"), D("2029-04-03"));
-      await pushAvailability("deluxe", D("2029-04-01"), D("2029-04-03"));
+      await recalcAvailability([TYPES.c], D("2029-04-01"), D("2029-04-03"));
+      await pushAvailability(TYPES.c, D("2029-04-01"), D("2029-04-03"));
 
       const log = await prisma.syncLog.findFirst({
         where: { action: "push_availability", status: "SUCCESS" },
@@ -525,9 +560,9 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
     });
 
     it("o'zgarish yo'q bo'lsa SKIPPED yoziladi", async () => {
-      await recalcAvailability(["deluxe"], D("2029-05-01"), D("2029-05-03"));
-      await pushAvailability("deluxe", D("2029-05-01"), D("2029-05-03"));
-      await pushAvailability("deluxe", D("2029-05-01"), D("2029-05-03"));
+      await recalcAvailability([TYPES.c], D("2029-05-01"), D("2029-05-03"));
+      await pushAvailability(TYPES.c, D("2029-05-01"), D("2029-05-03"));
+      await pushAvailability(TYPES.c, D("2029-05-01"), D("2029-05-03"));
 
       const log = await prisma.syncLog.findFirst({
         where: { action: "push_availability", status: "SKIPPED" },
@@ -541,7 +576,7 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
   describe("syncAvailabilityRange", () => {
     it("uchala turni birga yuboradi", async () => {
       const result = await syncAvailabilityRange(
-        ["standard", "double", "deluxe"],
+        [TYPES.a, TYPES.b, TYPES.c],
         "2029-06-01",
         "2029-06-04",
         { recalc: true }
@@ -550,17 +585,17 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
       expect(result.sent).toBe(3);
       expect(result.failed).toBe(0);
 
-      expect((await pushedValues(EXT.standard)).get("2029-06-01")).toBe(TOTAL.standard);
-      expect((await pushedValues(EXT.double)).get("2029-06-01")).toBe(TOTAL.double);
-      expect((await pushedValues(EXT.deluxe)).get("2029-06-01")).toBe(TOTAL.deluxe);
+      expect((await pushedValues(EXT.standard)).get("2029-06-01")).toBe(TOTAL.a);
+      expect((await pushedValues(EXT.double)).get("2029-06-01")).toBe(TOTAL.b);
+      expect((await pushedValues(EXT.deluxe)).get("2029-06-01")).toBe(TOTAL.c);
     });
 
     it("bir tur yiqilsa qolganlari baribir yuboriladi (TZ 17-band)", async () => {
       // Faqat standard'ning mapping'ini olib tashlaymiz
-      await prisma.channelMapping.deleteMany({ where: { roomTypeId: "standard" } });
+      await prisma.channelMapping.deleteMany({ where: { roomTypeId: TYPES.a } });
 
       const result = await syncAvailabilityRange(
-        ["standard", "deluxe"],
+        [TYPES.a, TYPES.c],
         "2029-07-01",
         "2029-07-04",
         { recalc: true }
@@ -569,14 +604,14 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
       expect(result.failed).toBe(1);
       expect(result.sent).toBe(1);
       // Deluxe yetib bordi — qisman muvaffaqiyat
-      expect((await pushedValues(EXT.deluxe)).get("2029-07-01")).toBe(TOTAL.deluxe);
+      expect((await pushedValues(EXT.deluxe)).get("2029-07-01")).toBe(TOTAL.c);
     });
   });
 
   // --- Navbat (TZ 6-band: "queue orqali yuborilsin") ---------
   describe("navbat va debounce", () => {
     it("bron yaratilganda job navbatga tushadi", async () => {
-      const room = await findRoom("standard");
+      const room = await findRoom(TYPES.a);
 
       const created = await api("/api/reservations", {
         method: "POST",
@@ -585,6 +620,7 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
           checkIn: "2029-08-01",
           checkOut: "2029-08-03",
           guestName: "Navbat Testi",
+          phone: "+99894400008",
           guestPhone: "+998900000030",
           adults: 1,
           pricePerNight: 100,
@@ -600,7 +636,7 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
         pushed = await pushedValues(EXT.standard);
       }
 
-      expect(pushed.get("2029-08-01")).toBe(TOTAL.standard - 1);
+      expect(pushed.get("2029-08-01")).toBe(TOTAL.a - 1);
     }, 20000);
 
     it("bir xil oraliq uchun takroriy job qo'shilmaydi (debounce)", async () => {
@@ -611,12 +647,12 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
       // kerak. Oyna chegarasiga tushib qolmaslik uchun uch marta
       // urinamiz: 3 soniyalik oynada ketma-ket ikki chaqiruvning
       // ajralib qolishi juda kam ehtimol, lekin mumkin.
-      let a = await enqueueAvailabilitySync(["deluxe"], from, to, "test_1");
-      let b = await enqueueAvailabilitySync(["deluxe"], from, to, "test_2");
+      let a = await enqueueAvailabilitySync([TYPES.c], from, to, "test_1");
+      let b = await enqueueAvailabilitySync([TYPES.c], from, to, "test_2");
 
       for (let i = 0; i < 3 && a.jobId !== b.jobId; i++) {
-        a = await enqueueAvailabilitySync(["deluxe"], from, to, "test_1");
-        b = await enqueueAvailabilitySync(["deluxe"], from, to, "test_2");
+        a = await enqueueAvailabilitySync([TYPES.c], from, to, "test_1");
+        b = await enqueueAvailabilitySync([TYPES.c], from, to, "test_2");
       }
 
       expect(a.queued).toBe(true);
@@ -634,19 +670,19 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
       const from = D("2029-11-01");
       const to = D("2029-11-04");
 
-      const first = await enqueueAvailabilitySync(["deluxe"], from, to, "birinchi");
+      const first = await enqueueAvailabilitySync([TYPES.c], from, to, "birinchi");
       expect(first.queued).toBe(true);
 
       // Oyna 3 soniya — keyingisiga o'tamiz
       await new Promise((r) => setTimeout(r, 3100));
 
-      const second = await enqueueAvailabilitySync(["deluxe"], from, to, "ikkinchi");
+      const second = await enqueueAvailabilitySync([TYPES.c], from, to, "ikkinchi");
       expect(second.queued).toBe(true);
       expect(second.jobId).not.toBe(first.jobId);
     }, 15000);
 
     it("bekor qilingandan keyin yangi qiymat Beds24'ga yetadi", async () => {
-      const room = await findRoom("deluxe");
+      const room = await findRoom(TYPES.c);
 
       const created = await api("/api/reservations", {
         method: "POST",
@@ -655,6 +691,7 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
           checkIn: "2029-12-01",
           checkOut: "2029-12-03",
           guestName: "Bekor Zanjiri",
+          phone: "+99894400009",
           guestPhone: "+998900000031",
           adults: 1,
           pricePerNight: 200,
@@ -664,20 +701,20 @@ describe("FAZA 9 — availability sync PMS -> Beds24 (TZ 6, 20-band)", () => {
 
       // 1) Band bo'lgani yetib bordi
       let pushed = new Map<string, number>();
-      for (let i = 0; i < 30 && pushed.get("2029-12-01") !== TOTAL.deluxe - 1; i++) {
+      for (let i = 0; i < 30 && pushed.get("2029-12-01") !== TOTAL.c - 1; i++) {
         await new Promise((r) => setTimeout(r, 300));
         pushed = await pushedValues(EXT.deluxe);
       }
-      expect(pushed.get("2029-12-01")).toBe(TOTAL.deluxe - 1);
+      expect(pushed.get("2029-12-01")).toBe(TOTAL.c - 1);
 
       // 2) Bekor qilamiz — qiymat qayta oshishi kerak (TZ 6-band)
       await api(`/api/reservations/${created.body.id}/cancel`, { method: "POST" });
 
-      for (let i = 0; i < 40 && pushed.get("2029-12-01") !== TOTAL.deluxe; i++) {
+      for (let i = 0; i < 40 && pushed.get("2029-12-01") !== TOTAL.c; i++) {
         await new Promise((r) => setTimeout(r, 300));
         pushed = await pushedValues(EXT.deluxe);
       }
-      expect(pushed.get("2029-12-01")).toBe(TOTAL.deluxe);
+      expect(pushed.get("2029-12-01")).toBe(TOTAL.c);
     }, 30000);
 
     it("Redis yo'q bo'lsa ham bron yaratish yiqilmaydi (TZ 17, 19-band)", async () => {

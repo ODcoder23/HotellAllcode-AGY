@@ -10,14 +10,17 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
+import { day, realRooms, someRooms, someType, tariffFor, typeOf } from "./testUtils.js";
 
-const BASE = "http://localhost:3000";
+const BASE = process.env.PMS_URL ?? "http://127.0.0.1:3000";
 
-const day = (n: number): string => {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-};
+/**
+ * Test ishlatadigan xonalar — bazadan olinadi.
+ *
+ * Ilgari "107", "111", "112" qattiq yozilgan edi; loyiha 12
+ * xonadan 18 xonaga o'tganda bu testlar 404 qaytarardi.
+ */
+let R: string[] = [];
 
 const api = async (path: string, init?: RequestInit) => {
   const res = await fetch(`${BASE}${path}`, {
@@ -32,28 +35,40 @@ describe("FAZA 2A — ichki REST API", () => {
   beforeAll(async () => {
     const { status } = await api("/health");
     if (status !== 200) throw new Error("Server ishlamayapti — `npm run dev` ishga tushiring");
+
+    R = await someRooms(8);
+    await Promise.all(R.map((id) => tariffFor(id)));
   });
 
   // --- Format (02-fayl §3) ----------------------------------
   describe("javob formati — Shaxmatka moslik jadvali", () => {
     it("rooms: id = xona raqami, type kichik harf", async () => {
       const { body } = await api("/api/rooms");
-      expect(body).toHaveLength(12);
 
-      const r101 = body.find((r: any) => r.id === "101");
-      expect(r101).toBeDefined();
-      expect(r101.number).toBe("101");          // Q2
-      expect(r101.type).toBe("standard");        // kichik harf
-      expect(typeof r101.floor).toBe("number");
-      expect(r101.status).toMatch(/^[a-z_]+$/);  // "occupied", "available"
+      // Xona SONI tekshirilmaydi: u seed ma'lumotiga bog'liq va
+      // o'zgarishi mumkin. Tekshiriladigan narsa — javob SHAKLI,
+      // chunki Shaxmatka aynan shu shaklni kutadi.
+      expect(body.length).toBeGreaterThan(0);
+
+      const first = body[0];
+      expect(first.number).toBe(first.id);        // Q2: id = raqam
+      expect(typeof first.type).toBe("string");
+      expect(first.type).toMatch(/^[a-z0-9_]+$/); // kichik harf
+      expect(typeof first.floor).toBe("number");
+      expect(first.status).toMatch(/^[a-z_]+$/);  // "occupied", "available"
     });
 
-    it("rooms: turlar bo'yicha 6/4/2 (02-fayl §4)", async () => {
+    it("rooms: har xona turi mavjud turlar ro'yxatidan", async () => {
       const { body } = await api("/api/rooms");
-      const count = (t: string) => body.filter((r: any) => r.type === t).length;
-      expect(count("standard")).toBe(6);
-      expect(count("double")).toBe(4);
-      expect(count("deluxe")).toBe(2);
+      const { body: types } = await api("/api/rooms/types");
+
+      const known = new Set(types.map((t: any) => t.id));
+
+      // Har xonaning turi haqiqatan mavjud bo'lishi kerak —
+      // aks holda Shaxmatka `ROOM_TYPES[type].label` da yiqiladi
+      for (const room of body) {
+        expect(known.has(room.type), `${room.id}: noma'lum tur ${room.type}`).toBe(true);
+      }
     });
 
     it("reservations: guest flatten, Decimal → number, sana string", async () => {
@@ -123,36 +138,48 @@ describe("FAZA 2A — ichki REST API", () => {
     let id: string;
 
     it("1. bron yaratish", async () => {
+      // Narx va to'lov BAZADAN kelgan tarifdan hisoblanadi:
+      // qattiq yozilgan "35" USD davridan qolgan edi
+      const price = await tariffFor(R[5]);
+      const nights = 3;
+      const prepay = Math.round(price / 2);
+
       const { status, body } = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomId: "111",
+          roomId: R[5],
           guestName: "Vitest Mehmon",
           phone: "+998900000001",
           checkIn: day(40),
           checkOut: day(43),
           adults: 2,
           source: "direct",
-          pricePerNight: 35,
-          initialPayment: 50,
+          pricePerNight: price,
+          initialPayment: prepay,
         }),
       });
       expect(status).toBe(201);
       expect(body.status).toBe("confirmed");
-      expect(body.totalPrice).toBe(105);      // 35 × 3
-      expect(body.paidAmount).toBe(50);
-      expect(body.remainingAmount).toBe(55);
+
+      // TZ 14-band formulasi: narx x kecha
+      expect(body.totalPrice).toBe(price * nights);
+      expect(body.paidAmount).toBe(prepay);
+      expect(body.remainingAmount).toBe(price * nights - prepay);
       id = body.id;
     });
 
     it("2. bronni o'zgartirish (mehmon soni, narx)", async () => {
+      // Tarifdan YUQORI narx — chegirma sababi talab qilinmaydi
+      // (SAVOLLAR.md S4)
+      const newPrice = (await tariffFor(R[5])) + 50_000;
+
       const { body } = await api(`/api/reservations/${id}`, {
         method: "PATCH",
-        body: JSON.stringify({ adults: 3, pricePerNight: 40 }),
+        body: JSON.stringify({ adults: 3, pricePerNight: newPrice }),
       });
       expect(body.adults).toBe(3);
-      expect(body.pricePerNight).toBe(40);
-      expect(body.totalPrice).toBe(120);      // 40 × 3
+      expect(body.pricePerNight).toBe(newPrice);
+      expect(body.totalPrice).toBe(newPrice * 3);
     });
 
     it("3. sana o'zgartirish", async () => {
@@ -161,35 +188,47 @@ describe("FAZA 2A — ichki REST API", () => {
         body: JSON.stringify({ checkIn: day(40), checkOut: day(45) }),
       });
       expect(body.checkOut).toBe(day(45));
-      expect(body.totalPrice).toBe(200);      // 40 × 5
+
+      // 5 kecha: jami narx kechalar soniga ko'payadi
+      expect(body.totalPrice).toBe(body.pricePerNight * 5);
     });
 
     it("4. xona almashtirish (tur o'zgaradi)", async () => {
       const { body } = await api(`/api/reservations/${id}/change-room`, {
         method: "POST",
-        body: JSON.stringify({ roomId: "104" }),   // double — bugun bo'sh
+        body: JSON.stringify({ roomId: R[1] }),   // double — bugun bo'sh
       });
-      expect(body.roomId).toBe("104");
+      expect(body.roomId).toBe(R[1]);
       expect(body.syncStatus).toBe("pending");     // Beds24'ga yuborilishi kerak
     });
 
     it("5. to'lov qo'shish", async () => {
+      // Qarzning bir qismini to'laymiz: to'liq summa qarzdan
+      // oshib ketsa backend rad etadi (SAVOLLAR.md S1)
+      const { body: before } = await api(`/api/reservations/${id}`);
+      const amount = Math.round(before.remainingAmount / 2);
+
       const { status, body } = await api(`/api/reservations/${id}/payments`, {
         method: "POST",
-        body: JSON.stringify({ amount: 100, method: "Karta" }),
+        body: JSON.stringify({ amount, method: "Karta" }),
       });
       expect(status).toBe(201);
-      expect(body.paidAmount).toBe(150);
-      expect(body.payments).toHaveLength(2);
+      expect(body.paidAmount).toBe(before.paidAmount + amount);
+      expect(body.payments).toHaveLength(before.payments.length + 1);
     });
 
     it("6. xarajat qo'shish", async () => {
+      const { body: before } = await api(`/api/reservations/${id}`);
+      const extra = 20_000;
+
       const { body } = await api(`/api/reservations/${id}/charges`, {
         method: "POST",
-        body: JSON.stringify({ label: "Minibar", amount: 20 }),
+        body: JSON.stringify({ label: "Minibar", amount: extra }),
       });
-      expect(body.totalPrice).toBe(220);       // 200 + 20
-      expect(body.remainingAmount).toBe(70);
+
+      // Qo'shimcha xizmat jami summaga ham, qarzga ham qo'shiladi
+      expect(body.totalPrice).toBe(before.totalPrice + extra);
+      expect(body.remainingAmount).toBe(before.remainingAmount + extra);
     });
 
     it("7. check-in — status va vaqt yoziladi", async () => {
@@ -204,8 +243,36 @@ describe("FAZA 2A — ichki REST API", () => {
       expect(body.checkedOutAt).toBeTruthy();
     });
 
-    it("bekor qilish — xona bo'shaydi", async () => {
-      const { body } = await api(`/api/reservations/${id}/cancel`, { method: "POST" });
+    it("chiqib ketgan bronni bekor qilib bo'lmaydi", async () => {
+      // Yuqoridagi 8-test check-out qildi. CHECKED_OUT — yakuniy
+      // holat, undan chiqib bo'lmaydi (SAVOLLAR.md S3).
+      //
+      // Ilgari bu test bekor qilishni kutardi va o'tardi, chunki
+      // status mashinasi yo'q edi: chiqib ketgan mehmonning broni
+      // bekor qilinib, hisobotdan yo'qolishi mumkin edi.
+      const { status, body } = await api(`/api/reservations/${id}/cancel`, {
+        method: "POST",
+      });
+      expect(status).toBe(400);
+      expect(body.error).toContain("mehmon chiqqan");
+    });
+
+    it("bekor qilish — tasdiqlangan bron bo'shaydi", async () => {
+      const { body: fresh } = await api("/api/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          roomId: R[2],
+          guestName: "Bekor Qilinadigan",
+          phone: "+998900000001",
+          checkIn: day(60),
+          checkOut: day(62),
+          pricePerNight: await tariffFor(R[2]),
+        }),
+      });
+
+      const { body } = await api(`/api/reservations/${fresh.id}/cancel`, {
+        method: "POST",
+      });
       expect(body.status).toBe("cancelled");
     });
   });
@@ -214,21 +281,22 @@ describe("FAZA 2A — ichki REST API", () => {
   describe("Room.status — joriy jismoniy holat", () => {
     it("kelajakdagi bron xona holatini o'zgartirmaydi", async () => {
       const { body: before } = await api("/api/rooms");
-      const was = before.find((r: any) => r.id === "107").status;
+      const was = before.find((r: any) => r.id === R[3]).status;
 
       const { body: r } = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomId: "107",
+          roomId: R[3],
           guestName: "Kelajak mehmoni",
+          phone: "+998900000002",
           checkIn: day(120),
           checkOut: day(123),
-          pricePerNight: 35,
+          pricePerNight: await tariffFor(R[3]),
         }),
       });
 
       const { body: after } = await api("/api/rooms");
-      expect(after.find((x: any) => x.id === "107").status).toBe(was);
+      expect(after.find((x: any) => x.id === R[3]).status).toBe(was);
 
       await api(`/api/reservations/${r.id}/cancel`, { method: "POST" });
     });
@@ -237,21 +305,22 @@ describe("FAZA 2A — ichki REST API", () => {
       const { body: r } = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomId: "109",
+          roomId: R[4],
           guestName: "Bugungi mehmon",
+          phone: "+998900000003",
           checkIn: day(0),
           checkOut: day(2),
-          pricePerNight: 35,
+          pricePerNight: await tariffFor(R[4]),
         }),
       });
 
       await api(`/api/reservations/${r.id}/check-in`, { method: "POST" });
       const { body: a } = await api("/api/rooms");
-      expect(a.find((x: any) => x.id === "109").status).toBe("occupied");
+      expect(a.find((x: any) => x.id === R[4]).status).toBe("occupied");
 
       await api(`/api/reservations/${r.id}/check-out`, { method: "POST" });
       const { body: b } = await api("/api/rooms");
-      expect(b.find((x: any) => x.id === "109").status).toBe("dirty");
+      expect(b.find((x: any) => x.id === R[4]).status).toBe("dirty");
 
       await api(`/api/reservations/${r.id}/cancel`, { method: "POST" });
     });
@@ -265,11 +334,12 @@ describe("FAZA 2A — ichki REST API", () => {
       const { status, body } = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomId: "112",
+          roomId: R[6],
           guestName: "Birinchi",
+          phone: "+998900000004",
           checkIn: day(60),
           checkOut: day(63),
-          pricePerNight: 40,
+          pricePerNight: await tariffFor(R[6]),
         }),
       });
       expect(status).toBe(201);
@@ -280,11 +350,12 @@ describe("FAZA 2A — ichki REST API", () => {
       const { status, body } = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomId: "112",
+          roomId: R[6],
           guestName: "Ikkinchi",
+          phone: "+998900000005",
           checkIn: day(61),      // kesishadi
           checkOut: day(65),
-          pricePerNight: 40,
+          pricePerNight: await tariffFor(R[6]),
         }),
       });
       expect(status).toBe(409);
@@ -295,11 +366,12 @@ describe("FAZA 2A — ichki REST API", () => {
       const { status } = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomId: "112",
+          roomId: R[6],
           guestName: "Uchinchi",
+          phone: "+998900000006",
           checkIn: day(63),      // birinchisi shu kuni chiqadi
           checkOut: day(66),
-          pricePerNight: 40,
+          pricePerNight: await tariffFor(R[6]),
         }),
       });
       expect(status).toBe(201);
@@ -310,11 +382,12 @@ describe("FAZA 2A — ichki REST API", () => {
       const { status } = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomId: "112",
+          roomId: R[6],
           guestName: "To'rtinchi",
+          phone: "+998900000007",
           checkIn: day(60),
           checkOut: day(62),
-          pricePerNight: 40,
+          pricePerNight: await tariffFor(R[6]),
         }),
       });
       expect(status).toBe(201);
@@ -327,11 +400,12 @@ describe("FAZA 2A — ichki REST API", () => {
       const { status } = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomId: "101",
+          roomId: R[0],
           guestName: "X",
+          phone: "+998900000008",
           checkIn: day(10),
           checkOut: day(10),
-          pricePerNight: 35,
+          pricePerNight: await tariffFor(R[0]),
         }),
       });
       expect(status).toBe(400);
@@ -341,11 +415,12 @@ describe("FAZA 2A — ichki REST API", () => {
       const { status } = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomId: "101",
+          roomId: R[0],
           guestName: "X",
+          phone: "+998900000009",
           checkIn: "12.09.2026",
           checkOut: day(12),
-          pricePerNight: 35,
+          pricePerNight: await tariffFor(R[0]),
         }),
       });
       expect(status).toBe(400);
@@ -357,9 +432,10 @@ describe("FAZA 2A — ichki REST API", () => {
         body: JSON.stringify({
           roomId: "999",
           guestName: "X",
+          phone: "+998900000010",
           checkIn: day(10),
           checkOut: day(12),
-          pricePerNight: 35,
+          pricePerNight: await tariffFor("999"),
         }),
       });
       expect(status).toBe(404);
@@ -370,22 +446,27 @@ describe("FAZA 2A — ichki REST API", () => {
   describe("bo'sh xonalarni qidirish", () => {
     it("band xona ro'yxatda yo'q", async () => {
       const { body } = await api(`/api/rooms/available?from=${day(80)}&to=${day(83)}`);
-      expect(body.length).toBe(12);   // hech kim band qilmagan
+      // Xona soni seed ma'lumotiga bog'liq — faqat "hammasi bo'sh"
+      // ekanini tekshiramiz
+      expect(body.length).toBe((await realRooms()).length);
 
       await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomId: "105",
+          roomId: R[2],
           guestName: "Band qiluvchi",
+          phone: "+998900000011",
           checkIn: day(80),
           checkOut: day(83),
-          pricePerNight: 35,
+          pricePerNight: await tariffFor(R[2]),
         }),
       });
 
       const { body: after } = await api(`/api/rooms/available?from=${day(80)}&to=${day(83)}`);
-      expect(after.length).toBe(11);
-      expect(after.find((r: any) => r.id === "105")).toBeUndefined();
+
+      // Bitta xona band bo'ldi — ro'yxat bittaga qisqaradi
+      expect(after.length).toBe(body.length - 1);
+      expect(after.find((r: any) => r.id === R[2])).toBeUndefined();
     });
   });
 
@@ -399,20 +480,27 @@ describe("FAZA 2A — ichki REST API", () => {
     });
 
     it("narx belgilanadi va sync kutadi", async () => {
+      // Tur ID'lari BAZADAN: "standard"/"deluxe" eski 12 xonali
+      // tuzilishdan qolgan nomlar edi
+      const typeA = await someType(0);
+      const typeB = await someType(1);
+      const priceA = 450_000;
+      const priceB = 650_000;
+
       const { body } = await api("/api/rate-plans", {
         method: "PUT",
         body: JSON.stringify({
           from: day(100),
           to: day(102),
-          prices: { standard: 45, deluxe: 65 },
+          prices: { [typeA]: priceA, [typeB]: priceB },
         }),
       });
       expect(body.updated).toBe(6);          // 3 kun × 2 tur
       expect(body.syncStatus).toBe("pending");
 
       const { body: check } = await api(`/api/rate-plans?from=${day(100)}&to=${day(100)}`);
-      const std = check.find((p: any) => p.roomTypeId === "standard");
-      expect(std.price).toBe(45);
+      const std = check.find((p: any) => p.roomTypeId === typeA);
+      expect(std.price).toBe(priceA);
       expect(std.syncStatus).toBe("pending");
     });
   });

@@ -16,14 +16,9 @@
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
+import { day, someRooms, tariffFor, typeOf } from "./testUtils.js";
 
-const BASE = "http://localhost:3000";
-
-const day = (n: number): string => {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
-};
+const BASE = process.env.PMS_URL ?? "http://127.0.0.1:3000";
 
 const api = async (path: string, init?: RequestInit) => {
   const res = await fetch(`${BASE}${path}`, {
@@ -33,17 +28,32 @@ const api = async (path: string, init?: RequestInit) => {
   return { status: res.status, body: (await res.json()) as any };
 };
 
-const book = (roomId: string, from: number, to: number, name: string) =>
+/**
+ * Bron yaratadi.
+ *
+ * Narx BAZADAN olinadi: tarifdan past narx chegirma sababini
+ * talab qiladi (SAVOLLAR.md S4), va test uni berishi shart emas.
+ */
+const book = async (roomId: string, from: number, to: number, name: string) =>
   api("/api/reservations", {
     method: "POST",
     body: JSON.stringify({
       roomId,
       guestName: name,
+      phone: "+99898500001",
       checkIn: day(from),
       checkOut: day(to),
-      pricePerNight: 35,
+      pricePerNight: await tariffFor(roomId),
     }),
   });
+
+/**
+ * Test ishlatadigan xonalar — bazadagi haqiqiy ID'lar.
+ *
+ * Ilgari "107", "112" kabi qattiq yozilgan edi; loyiha 12 xonadan
+ * 18 xonaga o'tganda hammasi yiqildi.
+ */
+let R: string[] = [];
 
 /** DB'dan haqiqiy holatni o'qiydi — API javobiga ishonmaydi */
 const activeBookings = async (roomId: string, from: number, to: number) => {
@@ -57,12 +67,22 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
   beforeAll(async () => {
     const { status } = await api("/health");
     if (status !== 200) throw new Error("Server ishlamayapti — `npm run dev`");
+
+    // Kamida 8 ta xona kerak: parallel testlar bir-biriga
+    // xalaqit bermasin
+    R = await someRooms(8);
+
+    // Tarif keshini oldindan to'ldiramiz. Aks holda 20 parallel
+    // `book()` chaqiruvining har biri narx so'rovini yuborib,
+    // bronlar bir vaqtda ketmay qolardi — parallel test o'z
+    // ma'nosini yo'qotardi.
+    await Promise.all(R.map((id) => tariffFor(id)));
   });
 
   // --- Asosiy sinov: 20 parallel so'rov ---------------------
   describe("parallel so'rovlar", () => {
     it("20 ta bir vaqtdagi so'rov — faqat BITTASI o'tadi", async () => {
-      const ROOM = "101";
+      const ROOM = R[0];
       const FROM = 200;
       const TO = 203;
 
@@ -92,7 +112,7 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
     }, 30_000);
 
     it("50 parallel so'rov — hali ham bitta", async () => {
-      const ROOM = "102";
+      const ROOM = R[1];
       const FROM = 210;
       const TO = 213;
 
@@ -108,7 +128,7 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
     }, 60_000);
 
     it("qisman kesishuvchi sanalar — faqat bittasi o'tadi", async () => {
-      const ROOM = "103";
+      const ROOM = R[2];
 
       // Hammasi 222-kunni QOPLAYDI, shuning uchun faqat bittasi o'tishi
       // kerak. Diqqat: '[)' qoidasida 218-221 va 221-225 KESISHMAYDI
@@ -130,7 +150,7 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
     }, 30_000);
 
     it("chegara qoidasi: 218-221 va 221-225 KESISHMAYDI", async () => {
-      const ROOM = "112";
+      const ROOM = R[3];
 
       // Bu ikkisi parallel yuborilsa ham ikkalasi ham o'tishi kerak —
       // '[)' qoidasi: checkOut kirmaydi. Agar bittasi rad etilsa,
@@ -148,7 +168,7 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
   // --- Kesishmaydiganlar hammasi o'tishi kerak --------------
   describe("kesishmaydigan bronlar", () => {
     it("ketma-ket oraliqlar — hammasi o'tadi", async () => {
-      const ROOM = "104";
+      const ROOM = R[4];
 
       const results = await Promise.all([
         book(ROOM, 240, 243, "1-mehmon"),   // 240-243
@@ -165,7 +185,7 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
     }, 30_000);
 
     it("turli xonalar — parallel bo'lsa ham hammasi o'tadi", async () => {
-      const rooms = ["105", "107", "109", "111"];
+      const rooms = [R[0], R[1], R[2], R[3]];
 
       const results = await Promise.all(
         rooms.map((r, i) => book(r, 260, 263, `Xona-${r}`))
@@ -179,17 +199,17 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
   describe("xona/sana o'zgartirish ham himoyalangan", () => {
     it("parallel change-room — faqat bittasi o'tadi", async () => {
       // Ikki bron turli xonalarda, ikkalasi ham 3-xonaga ko'chmoqchi
-      const { body: a } = await book("106", 270, 273, "Ko'chuvchi-A");
-      const { body: b } = await book("108", 270, 273, "Ko'chuvchi-B");
+      const { body: a } = await book(R[5], 270, 273, "Ko'chuvchi-A");
+      const { body: b } = await book(R[6], 270, 273, "Ko'chuvchi-B");
 
       const results = await Promise.all([
         api(`/api/reservations/${a.id}/change-room`, {
           method: "POST",
-          body: JSON.stringify({ roomId: "110" }),
+          body: JSON.stringify({ roomId: R[7] }),
         }),
         api(`/api/reservations/${b.id}/change-room`, {
           method: "POST",
-          body: JSON.stringify({ roomId: "110" }),
+          body: JSON.stringify({ roomId: R[7] }),
         }),
       ]);
 
@@ -197,11 +217,11 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
       console.log(`\n  2 parallel change-room: ${ok.length} o'tdi`);
 
       expect(ok).toHaveLength(1);
-      expect(await activeBookings("110", 265, 275)).toHaveLength(1);
+      expect(await activeBookings(R[7], 265, 275)).toHaveLength(1);
     }, 30_000);
 
     it("parallel change-dates — kesishuvga olib kelmaydi", async () => {
-      const ROOM = "112";
+      const ROOM = R[3];
       const { body: first } = await book(ROOM, 280, 283, "Sana-A");
       const { body: second } = await book(ROOM, 290, 293, "Sana-B");
 
@@ -232,14 +252,17 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
       const { body: freeBefore } = await api(
         `/api/rooms/available?from=${day(FROM)}&to=${day(FROM + 2)}`
       );
-      const standardBefore = freeBefore.filter((r: any) => r.type === "standard").length;
+      // Tur BAZADAN olinadi: "standard" eski 12 xonali
+      // tuzilishdan qolgan nom edi
+      const TYPE = await typeOf(R[0]);
+      const standardBefore = freeBefore.filter((r: any) => r.type === TYPE).length;
 
-      const { body: r } = await book("101", FROM, FROM + 2, "Agregatsiya testi");
+      const { body: r } = await book(R[0], FROM, FROM + 2, "Agregatsiya testi");
 
       const { body: freeAfter } = await api(
         `/api/rooms/available?from=${day(FROM)}&to=${day(FROM + 2)}`
       );
-      const standardAfter = freeAfter.filter((x: any) => x.type === "standard").length;
+      const standardAfter = freeAfter.filter((x: any) => x.type === TYPE).length;
 
       expect(standardAfter).toBe(standardBefore - 1);
 
@@ -248,7 +271,7 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
       const { body: freeCancelled } = await api(
         `/api/rooms/available?from=${day(FROM)}&to=${day(FROM + 2)}`
       );
-      const standardCancelled = freeCancelled.filter((x: any) => x.type === "standard").length;
+      const standardCancelled = freeCancelled.filter((x: any) => x.type === TYPE).length;
 
       expect(standardCancelled).toBe(standardBefore);
     }, 30_000);

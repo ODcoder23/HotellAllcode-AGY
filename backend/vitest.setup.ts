@@ -34,6 +34,40 @@ if (loaded === 0) {
 }
 
 /**
+ * Server manzillari — BIR JOYDA.
+ *
+ * NEGA: ilgari "http://localhost:3000" va ":4000" bu faylda ham,
+ * har test faylida ham qattiq yozilgan edi. Backend boshqa portga
+ * ko'chganda (masalan 3000 ni boshqa loyiha egallasa) seed, token
+ * olish va mock tiklash jimgina ishlamay qolardi — testlar esa
+ * tushunarsiz "fetch failed" berardi.
+ *
+ * Tartib: PMS_URL -> .env dagi PORT -> 3000.
+ *
+ * `127.0.0.1`, `localhost` EMAS (2026-09-17): Node 18+ da
+ * `localhost` avval IPv6 (`::1`) ga hal bo'ladi, SSH tunnel esa
+ * IPv4 da tinglaydi. Natijada tunnel ochiq bo'lsa ham
+ * `connect ECONNREFUSED ::1:4100` chiqadi va butun test fayli
+ * jimgina skip bo'ladi. Bir marta kuzatilgan: 28 test birdan.
+ *
+ * `BEDS24_BASE_URL` `.env` dan kelganda `localhost` bo'lishi
+ * mumkin — shuning uchun almashtiriladi.
+ */
+const ipv4 = (url: string) => url.replace("//localhost:", "//127.0.0.1:");
+
+const PMS_ORIGIN = ipv4(
+  process.env.PMS_URL ?? `http://127.0.0.1:${process.env.PORT ?? 3000}`
+);
+
+const MOCK_ORIGIN = ipv4(
+  process.env.MOCK_URL ?? process.env.BEDS24_BASE_URL ?? "http://127.0.0.1:4000"
+);
+
+// Test fayllari ham shu manzilni ko'rsin
+process.env.PMS_URL ??= PMS_ORIGIN;
+process.env.MOCK_URL ??= MOCK_ORIGIN;
+
+/**
  * Test muhitini tozalash — har test fayli uchun.
  *
  * Ikki sabab:
@@ -46,12 +80,41 @@ import { execSync } from "node:child_process";
 
 // Mock kreditini tiklash
 try {
-  await fetch("http://localhost:4000/control/reset", { method: "POST" });
+  await fetch(`${MOCK_ORIGIN}/control/reset`, { method: "POST" });
 } catch {
   // Mock ishlamasa — beds24 testlari o'zi aytadi
 }
 
-// DB'ni toza seed holatiga qaytarish
+/**
+ * DB'ni toza seed holatiga qaytarish.
+ *
+ * DIQQAT: bu `.env` dagi `DATABASE_URL` ni ishlatadi — ya'ni
+ * ishlab turgan bazani. Test har fayldan oldin BARCHA bronlarni,
+ * narxlarni, mappingni va Beds24 ulanishini o'chiradi.
+ *
+ * 2026-09-17 auditida shu sodir bo'ldi: test fonda ishlayotganda
+ * sayt bo'sh ro'yxat qaytardi va Shaxmatka xonalarni ko'rsatmadi.
+ * Sabab kodda deb o'ylash oson edi.
+ *
+ * `ALLOW_TEST_DB_WIPE=true` bo'lmasa, baza mahalliy emasligiga
+ * shubha bo'lganda to'xtaymiz. Bu to'liq himoya emas (mahalliy
+ * baza ham ishlatilayotgan bo'lishi mumkin), lekin eng og'ir
+ * xatoni — ishlab chiqarish bazasini tozalashni — to'sadi.
+ *
+ * Seed'dan keyin Beds24 mappingni tiklash: `npm run beds24:mock`
+ */
+const dbUrl = process.env.DATABASE_URL ?? "";
+const looksLocal = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(dbUrl);
+
+if (!looksLocal && process.env.ALLOW_TEST_DB_WIPE !== "true") {
+  throw new Error(
+    `Testlar bazani TOZALAYDI, lekin DATABASE_URL mahalliy emas:\n` +
+    `  ${dbUrl.replace(/:[^:@]*@/, ":***@")}\n\n` +
+    `Bu ishlab chiqarish bazasi bo'lsa barcha bronlar yo'qoladi.\n` +
+    `Ataylab shunday bo'lsa: ALLOW_TEST_DB_WIPE=true`
+  );
+}
+
 try {
   execSync("npx tsx prisma/seed.ts", { stdio: "pipe" });
 } catch (e) {
@@ -117,8 +180,6 @@ await new Promise((r) => setTimeout(r, 1500));
  * yiqiladi. Auth mantig'ining o'zi `security.test.ts` da aniq
  * tekshiriladi — u yerda token ataylab yuborilmaydi.
  */
-const PMS_ORIGIN = "http://localhost:3000";
-
 const healthRes = await fetch(`${PMS_ORIGIN}/health`).catch(() => null);
 const health = healthRes?.ok ? ((await healthRes.json()) as { security?: { auth?: boolean } }) : null;
 
@@ -139,7 +200,7 @@ if (health?.security?.auth === true) {
     globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-      // Faqat PMS'ga ketayotgan so'rovlar. Mock server (:4000) o'z
+      // Faqat PMS'ga ketayotgan so'rovlar. Mock server o'z
       // autentifikatsiyasini ishlatadi, unga tegmaymiz.
       if (url.startsWith(PMS_ORIGIN)) {
         const headers = new Headers(init?.headers ?? (typeof input === "object" && "headers" in input ? input.headers : undefined));
@@ -170,4 +231,4 @@ if (health?.security?.auth === true) {
  * (`/control/drain-credits`), shuning uchun uni bu yerda tiklash
  * qopqoqni yopmaydi.
  */
-await fetch("http://localhost:4000/control/refill-credits", { method: "POST" }).catch(() => {});
+await fetch(`${MOCK_ORIGIN}/control/refill-credits`, { method: "POST" }).catch(() => {});

@@ -6,8 +6,11 @@ services:
       POSTGRES_USER: imron
       POSTGRES_PASSWORD: imron
       POSTGRES_DB: imron_pms
+    # Tashqi port 5433: bu kompyuterda mahalliy PostgreSQL 16 xizmati
+    # allaqachon 5432 ni egallagan. Konteyner ichida port o'zgarmaydi,
+    # shuning uchun `api` xizmati uchun hech narsa o'zgarmaydi.
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:

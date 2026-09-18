@@ -22,9 +22,10 @@ import { upsertMapping } from "./services/mapping.js";
 import { readRates, pushRates, applyExternalRate, syncRatesRange } from "./services/rates.js";
 import { getRatesSoT, setSetting, SETTING_KEYS } from "./services/settings.js";
 import { fromDateKey } from "./lib/serialize.js";
+import { TYPES, loadTypes } from "./testUtils.js";
 
-const PMS = "http://localhost:3000";
-const MOCK = "http://localhost:4000";
+const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
+const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
 
 const EXT = { standard: "101001", double: "101002", deluxe: "101003" } as const;
 
@@ -73,8 +74,21 @@ async function pushedPrices(externalRoomTypeId: string): Promise<Map<string, num
   return out;
 }
 
+/**
+ * PMS turlarini Beds24 tashqi ID'lariga bog'laydi.
+ *
+ * EXT kalitlari ("standard", "double", "deluxe") tarixiy nomlar —
+ * ular faqat tashqi ID'ni topish uchun, PMS tur ID'si emas.
+ * PMS tomoni TYPES dan keladi (bazadagi haqiqiy turlar).
+ */
 async function mapAll() {
-  for (const [pms, external] of Object.entries(EXT)) {
+  const pairs: Array<[string, string]> = [
+    [TYPES.a, EXT.standard],
+    [TYPES.b, EXT.double],
+    [TYPES.c, EXT.deluxe],
+  ];
+
+  for (const [pms, external] of pairs) {
     await upsertMapping({ roomTypeId: pms, externalRoomTypeId: external });
   }
 }
@@ -93,6 +107,9 @@ async function waitFor(check: () => Promise<boolean>, timeoutMs = 12000): Promis
 
 describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
   beforeAll(async () => {
+    // Tur ID'lari bazadan olinadi (testUtils.ts) — ilgari
+    // "standard"/"double"/"deluxe" qattiq yozilgan edi
+    await loadTypes();
     const health = await fetch(`${PMS}/health`).then((r) => r.json() as any);
     if (health.redis !== "connected") throw new Error("Redis ishlamayapti");
     const mock = await fetch(`${MOCK}/authentication/setup`, { headers: { code: "mock-invite-code" } });
@@ -138,13 +155,13 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
         body: JSON.stringify({
           from: "2031-03-01",
           to: "2031-03-03",
-          prices: { standard: 45 },
+          prices: { [TYPES.a]: 45 },
         }),
       });
       expect(res.status).toBe(200);
       expect(res.body.updated).toBe(3);       // 01, 02, 03
 
-      const days = await readRates("standard", D("2031-03-01"), D("2031-03-03"));
+      const days = await readRates(TYPES.a, D("2031-03-01"), D("2031-03-03"));
       expect(days).toHaveLength(3);
       expect(days.every((d) => d.price === 45)).toBe(true);
       expect(days.every((d) => d.source === "pms")).toBe(true);
@@ -153,20 +170,20 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
     it("narx o'zgarganda syncedAt tozalanadi — qayta yuboriladi", async () => {
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-03-10", to: "2031-03-11", prices: { deluxe: 80 } }),
+        body: JSON.stringify({ from: "2031-03-10", to: "2031-03-11", prices: { [TYPES.c]: 80 } }),
       });
-      await pushRates("deluxe", D("2031-03-10"), D("2031-03-11"));
+      await pushRates(TYPES.c, D("2031-03-10"), D("2031-03-11"));
 
-      let days = await readRates("deluxe", D("2031-03-10"), D("2031-03-11"));
+      let days = await readRates(TYPES.c, D("2031-03-10"), D("2031-03-11"));
       expect(days.every((d) => d.syncedAt !== null)).toBe(true);
 
       // Narx o'zgardi -> qayta yuborilishi kerak
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-03-10", to: "2031-03-11", prices: { deluxe: 95 } }),
+        body: JSON.stringify({ from: "2031-03-10", to: "2031-03-11", prices: { [TYPES.c]: 95 } }),
       });
 
-      days = await readRates("deluxe", D("2031-03-10"), D("2031-03-11"));
+      days = await readRates(TYPES.c, D("2031-03-10"), D("2031-03-11"));
       expect(days.every((d) => d.syncedAt === null)).toBe(true);
       expect(days.every((d) => d.price === 95)).toBe(true);
     });
@@ -174,11 +191,11 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
     it("GET narx bilan birga sync holatini qaytaradi (07-fayl §8)", async () => {
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-03-20", to: "2031-03-20", prices: { double: 60 } }),
+        body: JSON.stringify({ from: "2031-03-20", to: "2031-03-20", prices: { [TYPES.b]: 60 } }),
       });
 
       const res = await api("/api/rate-plans?from=2031-03-20&to=2031-03-20");
-      const row = res.body.find((r: any) => r.roomTypeId === "double");
+      const row = res.body.find((r: any) => r.roomTypeId === TYPES.b);
       expect(row).toBeTruthy();
       expect(row.price).toBe(60);
       // ● yuborildi / ○ kutmoqda / ⚠ xato
@@ -191,10 +208,10 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
     it("narx mock server'ga price1 sifatida yetib keladi", async () => {
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-04-01", to: "2031-04-03", prices: { standard: 55 } }),
+        body: JSON.stringify({ from: "2031-04-01", to: "2031-04-03", prices: { [TYPES.a]: 55 } }),
       });
 
-      const result = await pushRates("standard", D("2031-04-01"), D("2031-04-03"));
+      const result = await pushRates(TYPES.a, D("2031-04-01"), D("2031-04-03"));
       expect(result.status).toBe("sent");
 
       const prices = await pushedPrices(EXT.standard);
@@ -206,15 +223,15 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
     it("yuborilgandan keyin syncedAt yoziladi", async () => {
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-04-10", to: "2031-04-11", prices: { deluxe: 120 } }),
+        body: JSON.stringify({ from: "2031-04-10", to: "2031-04-11", prices: { [TYPES.c]: 120 } }),
       });
 
-      let days = await readRates("deluxe", D("2031-04-10"), D("2031-04-11"));
+      let days = await readRates(TYPES.c, D("2031-04-10"), D("2031-04-11"));
       expect(days.every((d) => d.syncedAt === null)).toBe(true);
 
-      await pushRates("deluxe", D("2031-04-10"), D("2031-04-11"));
+      await pushRates(TYPES.c, D("2031-04-10"), D("2031-04-11"));
 
-      days = await readRates("deluxe", D("2031-04-10"), D("2031-04-11"));
+      days = await readRates(TYPES.c, D("2031-04-10"), D("2031-04-11"));
       expect(days.every((d) => d.syncedAt !== null)).toBe(true);
       expect(days.every((d) => d.syncError === null)).toBe(true);
     });
@@ -222,13 +239,13 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
     it("o'zgarmagan narx ikkinchi marta yuborilmaydi (kredit tejash)", async () => {
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-04-20", to: "2031-04-22", prices: { double: 70 } }),
+        body: JSON.stringify({ from: "2031-04-20", to: "2031-04-22", prices: { [TYPES.b]: 70 } }),
       });
 
-      const first = await pushRates("double", D("2031-04-20"), D("2031-04-22"));
+      const first = await pushRates(TYPES.b, D("2031-04-20"), D("2031-04-22"));
       expect(first.status).toBe("sent");
 
-      const second = await pushRates("double", D("2031-04-20"), D("2031-04-22"));
+      const second = await pushRates(TYPES.b, D("2031-04-20"), D("2031-04-22"));
       expect(second.status).toBe("skipped");
     });
 
@@ -237,13 +254,13 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
 
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-05-01", to: "2031-05-02", prices: { standard: 50 } }),
+        body: JSON.stringify({ from: "2031-05-01", to: "2031-05-02", prices: { [TYPES.a]: 50 } }),
       });
 
-      const result = await pushRates("standard", D("2031-05-01"), D("2031-05-02"));
+      const result = await pushRates(TYPES.a, D("2031-05-01"), D("2031-05-02"));
       expect(result.status).toBe("failed");
 
-      const days = await readRates("standard", D("2031-05-01"), D("2031-05-02"));
+      const days = await readRates(TYPES.a, D("2031-05-01"), D("2031-05-02"));
       expect(days.every((d) => d.syncError?.includes("mapping"))).toBe(true);
 
       // Taxminiy mapping ishlatilmadi
@@ -254,7 +271,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
     it("navbat orqali avtomatik yuboriladi", async () => {
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-06-01", to: "2031-06-02", prices: { deluxe: 200 } }),
+        body: JSON.stringify({ from: "2031-06-01", to: "2031-06-02", prices: { [TYPES.c]: 200 } }),
       });
 
       // Worker o'zi bajaradi (3s debounce)
@@ -280,7 +297,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
 
       expect(outcome.status).toBe("applied");
 
-      const days = await readRates("standard", D("2031-07-01"), D("2031-07-01"));
+      const days = await readRates(TYPES.a, D("2031-07-01"), D("2031-07-01"));
       expect(days[0]!.price).toBe(88);
       expect(days[0]!.source).toBe("beds24");
       // Beds24'dan kelgan narx allaqachon sinxron — qayta
@@ -302,7 +319,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
         expect(outcome.reason).toContain("pms is source of truth");
       }
 
-      const days = await readRates("standard", D("2031-07-10"), D("2031-07-10"));
+      const days = await readRates(TYPES.a, D("2031-07-10"), D("2031-07-10"));
       expect(days).toHaveLength(0);       // yozilmadi
 
       const log = await prisma.syncLog.findFirst({
@@ -321,7 +338,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
         price: 150,
       });
 
-      const before = await readRates("deluxe", D("2031-07-20"), D("2031-07-20"));
+      const before = await readRates(TYPES.c, D("2031-07-20"), D("2031-07-20"));
 
       const second = await applyExternalRate({
         externalRoomTypeId: EXT.deluxe,
@@ -334,7 +351,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
         expect(second.reason).toContain("o'zgarmagan");
       }
 
-      const after = await readRates("deluxe", D("2031-07-20"), D("2031-07-20"));
+      const after = await readRates(TYPES.c, D("2031-07-20"), D("2031-07-20"));
       expect(after[0]!.syncedAt?.getTime()).toBe(before[0]!.syncedAt?.getTime());
     });
 
@@ -363,12 +380,12 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
       });
 
       const ok = await waitFor(async () => {
-        const days = await readRates("double", D("2031-08-01"), D("2031-08-02"));
+        const days = await readRates(TYPES.b, D("2031-08-01"), D("2031-08-02"));
         return days.length === 2 && days.every((d) => d.price === 77);
       });
       expect(ok, "webhook narxi qo'llanmadi").toBe(true);
 
-      const days = await readRates("double", D("2031-08-01"), D("2031-08-02"));
+      const days = await readRates(TYPES.b, D("2031-08-01"), D("2031-08-02"));
       expect(days.every((d) => d.source === "beds24")).toBe(true);
     }, 20000);
   });
@@ -382,9 +399,9 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
 
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-09-01", to: "2031-09-02", prices: { standard: 40 } }),
+        body: JSON.stringify({ from: "2031-09-01", to: "2031-09-02", prices: { [TYPES.a]: 40 } }),
       });
-      await pushRates("standard", D("2031-09-01"), D("2031-09-02"));
+      await pushRates(TYPES.a, D("2031-09-01"), D("2031-09-02"));
       await mockControl("reset");
       await mapAll();
 
@@ -396,7 +413,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
       await new Promise((r) => setTimeout(r, 3000));
 
       // PMS narxi o'zgarmadi
-      const days = await readRates("standard", D("2031-09-01"), D("2031-09-01"));
+      const days = await readRates(TYPES.a, D("2031-09-01"), D("2031-09-01"));
       expect(days[0]!.price).toBe(40);
 
       // VA eng muhimi: PMS javoban hech narsa yubormadi
@@ -409,10 +426,10 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
 
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-09-10", to: "2031-09-11", prices: { deluxe: 300 } }),
+        body: JSON.stringify({ from: "2031-09-10", to: "2031-09-11", prices: { [TYPES.c]: 300 } }),
       });
 
-      const result = await pushRates("deluxe", D("2031-09-10"), D("2031-09-11"));
+      const result = await pushRates(TYPES.c, D("2031-09-10"), D("2031-09-11"));
       expect(result.status).toBe("skipped");
       if (result.status === "skipped") {
         expect(result.reason).toContain("source of truth");
@@ -427,17 +444,17 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
       await setSetting(SETTING_KEYS.ratesSoT, "pms");
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-10-01", to: "2031-10-01", prices: { double: 65 } }),
+        body: JSON.stringify({ from: "2031-10-01", to: "2031-10-01", prices: { [TYPES.b]: 65 } }),
       });
-      expect((await pushRates("double", D("2031-10-01"), D("2031-10-01"))).status).toBe("sent");
+      expect((await pushRates(TYPES.b, D("2031-10-01"), D("2031-10-01"))).status).toBe("sent");
 
       // beds24 -> yuborilmaydi
       await setSetting(SETTING_KEYS.ratesSoT, "beds24");
       await api("/api/rate-plans", {
         method: "PUT",
-        body: JSON.stringify({ from: "2031-10-02", to: "2031-10-02", prices: { double: 66 } }),
+        body: JSON.stringify({ from: "2031-10-02", to: "2031-10-02", prices: { [TYPES.b]: 66 } }),
       });
-      expect((await pushRates("double", D("2031-10-02"), D("2031-10-02"))).status).toBe("skipped");
+      expect((await pushRates(TYPES.b, D("2031-10-02"), D("2031-10-02"))).status).toBe("skipped");
     });
   });
 
@@ -480,12 +497,12 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
         body: JSON.stringify({
           from: "2031-11-01",
           to: "2031-11-02",
-          prices: { standard: 40, double: 55, deluxe: 90 },
+          prices: { [TYPES.a]: 40, [TYPES.b]: 55, [TYPES.c]: 90 },
         }),
       });
 
       const result = await syncRatesRange(
-        ["standard", "double", "deluxe"],
+        [TYPES.a, TYPES.b, TYPES.c],
         "2031-11-01",
         "2031-11-02"
       );
@@ -498,18 +515,18 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
     });
 
     it("bir tur yiqilsa qolganlari yuboriladi (TZ 17-band)", async () => {
-      await prisma.channelMapping.deleteMany({ where: { roomTypeId: "standard" } });
+      await prisma.channelMapping.deleteMany({ where: { roomTypeId: TYPES.a } });
 
       await api("/api/rate-plans", {
         method: "PUT",
         body: JSON.stringify({
           from: "2031-11-10",
           to: "2031-11-10",
-          prices: { standard: 40, deluxe: 90 },
+          prices: { [TYPES.a]: 40, [TYPES.c]: 90 },
         }),
       });
 
-      const result = await syncRatesRange(["standard", "deluxe"], "2031-11-10", "2031-11-10");
+      const result = await syncRatesRange([TYPES.a, TYPES.c], "2031-11-10", "2031-11-10");
       expect(result.failed).toBe(1);
       expect(result.sent).toBe(1);
       expect((await pushedPrices(EXT.deluxe)).get("2031-11-10")).toBe(90);
@@ -520,7 +537,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
   describe("to'lov hisob-kitobi (TZ 14-band)", () => {
     const findRoom = async () => {
       const room = await prisma.room.findFirst({
-        where: { roomTypeId: "standard", isActive: true },
+        where: { roomTypeId: TYPES.a, isActive: true },
         orderBy: { number: "asc" },
       });
       if (!room) throw new Error("xona yo'q");
@@ -536,6 +553,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
           checkIn: "2031-12-01",
           checkOut: "2031-12-03",
           guestName: "Qarz Testi",
+          phone: "+99892700001",
           guestPhone: "+998900000070",
           adults: 1,
           pricePerNight: 100,
@@ -559,6 +577,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
           checkIn: "2031-12-10",
           checkOut: "2031-12-12",
           guestName: "Qisman Testi",
+          phone: "+99892700002",
           guestPhone: "+998900000071",
           adults: 1,
           pricePerNight: 100,
@@ -586,6 +605,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
           checkIn: "2031-12-20",
           checkOut: "2031-12-22",
           guestName: "Toliq Testi",
+          phone: "+99892700003",
           guestPhone: "+998900000072",
           adults: 1,
           pricePerNight: 100,
@@ -613,6 +633,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
           checkIn: "2031-12-25",
           checkOut: "2031-12-26",
           guestName: "Xarajat Testi",
+          phone: "+99892700004",
           guestPhone: "+998900000073",
           adults: 1,
           pricePerNight: 100,
@@ -640,6 +661,7 @@ describe("FAZA 11 — narxlar va to'lov (TZ 7, 14-band)", () => {
           checkIn: "2031-12-28",
           checkOut: "2031-12-29",
           guestName: "Qaytarish Testi",
+          phone: "+99892700005",
           guestPhone: "+998900000074",
           adults: 1,
           pricePerNight: 100,

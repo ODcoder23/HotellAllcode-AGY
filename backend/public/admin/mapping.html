@@ -46,11 +46,12 @@
           <th>PMS xona turi</th>
           <th>Xonalar</th>
           <th>Beds24 room type</th>
+          <th>Ovqat</th>
           <th></th>
         </tr>
       </thead>
       <tbody id="rows">
-        <tr><td colspan="4" class="empty">Yuklanmoqda...</td></tr>
+        <tr><td colspan="5" class="empty">Yuklanmoqda...</td></tr>
       </tbody>
     </table>
   </div>
@@ -123,7 +124,7 @@ function renderRows(h) {
   const tbody = document.getElementById("rows");
 
   if (!h.roomTypes.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty">Xona turi yo\'q</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Xona turi yo\'q</td></tr>';
     return;
   }
 
@@ -142,6 +143,19 @@ function renderRows(h) {
       ? '<span class="badge b-ok">✓</span>'
       : '<span class="badge b-err">yo\'q</span>';
 
+    /* Ovqat belgisi (BOTLAR-REJA.md).
+
+       Beds24 ovqat haqida standart maydon bermaydi — ular
+       "nonushta bilan" va "nonushtasiz" alohida tariflar
+       yaratadi. Qaysi biri ovqatli ekanini biz belgilaymiz. */
+    const meal = rt.mapped
+      ? `<label style="cursor:pointer;display:flex;align-items:center;gap:6px;">
+           <input type="checkbox" onchange="saveMeal('${rt.mappingId}', this.checked)"
+                  ${rt.includesMeal ? 'checked' : ''}>
+           <span>${rt.includesMeal ? 'bilan' : 'siz'}</span>
+         </label>`
+      : '<span class="note">—</span>';
+
     return `
       <tr>
         <td><strong>${rt.label}</strong> <code>${rt.id}</code>${warn}</td>
@@ -149,6 +163,7 @@ function renderRows(h) {
         <td>
           <select id="sel-${rt.id}" onchange="save('${rt.id}')"${disabled}>${opts}</select>
         </td>
+        <td>${meal}</td>
         <td>${status}</td>
       </tr>
     `;
@@ -168,6 +183,34 @@ function renderUnused(h) {
   box.innerHTML = h.unusedExternal
     .map(e => `<code>${e.id}</code> ${e.name} (qty ${e.qty})`)
     .join("<br>");
+}
+
+/**
+ * Ovqat belgisini saqlaydi (BOTLAR-REJA.md).
+ *
+ * Oshxona boti shu belgiga qarab porsiya sanaydi: Beds24'dan
+ * kelgan bron ovqatli bo'lsa hisobga olinadi.
+ */
+async function saveMeal(mappingId, includesMeal) {
+  try {
+    const res = await fetch(`/api/admin/mappings/${mappingId}/meal`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ includesMeal }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(data.error || "Saqlanmadi");
+      load();
+      return;
+    }
+
+    load();
+  } catch (e) {
+    alert("Serverga ulanib bo'lmadi");
+    load();
+  }
 }
 
 async function save(roomTypeId) {

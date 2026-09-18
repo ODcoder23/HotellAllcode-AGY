@@ -248,10 +248,12 @@ app.listen(PORT, () => {
   Mock Beds24 API v2
   http://localhost:${PORT}
 
-  Room type ID'lar:
-    standard -> ${ROOM_TYPE_IDS.standard}
-    double   -> ${ROOM_TYPE_IDS.double}
-    deluxe   -> ${ROOM_TYPE_IDS.deluxe}
+  Room type ID'lar (9 tur, jami 18 xona):
+    standard3 -> ${ROOM_TYPE_IDS.standard3}   comfort3  -> ${ROOM_TYPE_IDS.comfort3}
+    semilux   -> ${ROOM_TYPE_IDS.semilux}   comfort4  -> ${ROOM_TYPE_IDS.comfort4}
+    premium4  -> ${ROOM_TYPE_IDS.premium4}   deluxe4   -> ${ROOM_TYPE_IDS.deluxe4}
+    famdeluxe -> ${ROOM_TYPE_IDS.famdeluxe}   famlux201 -> ${ROOM_TYPE_IDS.famlux201}
+    famlux301 -> ${ROOM_TYPE_IDS.famlux301}
 
   Invite code: mock-invite-code
   Kredit: ${state.credits.limit} / 5 daqiqa

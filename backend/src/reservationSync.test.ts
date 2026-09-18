@@ -28,9 +28,10 @@ import {
 } from "./services/reservationSync.js";
 import { toBeds24Status, toPmsStatus, roundTripsCleanly } from "./services/beds24/statusMap.js";
 import type { ReservationStatus } from "@prisma/client";
+import { TYPES, loadTypes } from "./testUtils.js";
 
-const PMS = "http://localhost:3000";
-const MOCK = "http://localhost:4000";
+const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
+const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
 
 const EXT = { standard: "101001", double: "101002", deluxe: "101003" } as const;
 
@@ -68,7 +69,16 @@ async function mockBooking(externalId: string | null | undefined) {
 }
 
 async function mapAll() {
-  for (const [pms, external] of Object.entries(EXT)) {
+  // EXT kalitlari tarixiy nomlar — ular faqat tashqi Beds24
+  // ID'sini topish uchun. PMS turi TYPES dan keladi (bazadagi
+  // haqiqiy turlar).
+  const pairs: Array<[string, string]> = [
+    [TYPES.a, EXT.standard],
+    [TYPES.b, EXT.double],
+    [TYPES.c, EXT.deluxe],
+  ];
+
+  for (const [pms, external] of pairs) {
     await upsertMapping({ roomTypeId: pms, externalRoomTypeId: external });
   }
 }
@@ -93,7 +103,7 @@ async function findRoom(roomTypeId: string, skip = 0) {
  * ikkinchi booking paydo bo'lishi mumkin. Worker tugashini kutamiz.
  */
 async function createSynced(over: Record<string, unknown> = {}) {
-  const room = await findRoom("standard");
+  const room = await findRoom(TYPES.a);
   const created = await api("/api/reservations", {
     method: "POST",
     body: JSON.stringify({
@@ -101,6 +111,7 @@ async function createSynced(over: Record<string, unknown> = {}) {
       checkIn: "2030-03-01",
       checkOut: "2030-03-04",
       guestName: "Sync Testi",
+      phone: "+99895600001",
       guestPhone: "+998900000050",
       adults: 2,
       pricePerNight: 100,
@@ -170,6 +181,9 @@ async function waitFor(
 
 describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
   beforeAll(async () => {
+    // Tur ID'lari bazadan olinadi (testUtils.ts) — ilgari
+    // "standard"/"double"/"deluxe" qattiq yozilgan edi
+    await loadTypes();
     const health = await fetch(`${PMS}/health`).then((r) => r.json() as any);
     if (health.redis !== "connected") throw new Error("Redis ishlamayapti");
     const mock = await fetch(`${MOCK}/authentication/setup`, { headers: { code: "mock-invite-code" } });
@@ -329,7 +343,7 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
 
     it("3. Xonani almashtirish -> Beds24'da ham ko'rinadi (Q6)", async () => {
       const { id, externalId } = await createSynced();
-      const deluxe = await findRoom("deluxe");
+      const deluxe = await findRoom(TYPES.c);
 
       const res = await api(`/api/reservations/${id}/change-room`, {
         method: "POST",
@@ -561,7 +575,7 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
       // ham `externalReservationId` bo'sh deb ko'radi va Beds24'da
       // IKKITA booking yaratadi — mehmon ikki marta band qilingan
       // bo'lib chiqadi, bu esa real overbooking.
-      const room = await findRoom("deluxe");
+      const room = await findRoom(TYPES.c);
       const created = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
@@ -569,6 +583,7 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
           checkIn: "2030-04-10",
           checkOut: "2030-04-12",
           guestName: "Poyga Testi",
+          phone: "+99895600002",
           guestPhone: "+998900000060",
           adults: 1,
           pricePerNight: 200,
@@ -632,7 +647,7 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
     it("yuborilmaydi, syncStatus NOT_APPLICABLE bo'ladi", async () => {
       await prisma.channelMapping.deleteMany();
 
-      const room = await findRoom("standard");
+      const room = await findRoom(TYPES.a);
       const created = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
@@ -640,6 +655,7 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
           checkIn: "2030-05-01",
           checkOut: "2030-05-03",
           guestName: "Mapping Yoq",
+          phone: "+99895600003",
           guestPhone: "+998900000051",
           adults: 1,
           pricePerNight: 100,
@@ -667,7 +683,7 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
     it("mapping tuzatilgach resyncFailed qayta yuboradi", async () => {
       await prisma.channelMapping.deleteMany();
 
-      const room = await findRoom("standard");
+      const room = await findRoom(TYPES.a);
       const created = await api("/api/reservations", {
         method: "POST",
         body: JSON.stringify({
@@ -675,6 +691,7 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
           checkIn: "2030-06-01",
           checkOut: "2030-06-03",
           guestName: "Resync Testi",
+          phone: "+99895600004",
           guestPhone: "+998900000052",
           adults: 1,
           pricePerNight: 100,
@@ -722,7 +739,7 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
   // --- Navbat orqali (TZ 2-band: "queue orqali") -------------
   describe("navbat orqali avtomatik yuborish", () => {
     it("bron yaratilganda worker o'zi Beds24'ga yuboradi", async () => {
-      const room = await findRoom("double");
+      const room = await findRoom(TYPES.b);
 
       const created = await api("/api/reservations", {
         method: "POST",
@@ -731,6 +748,7 @@ describe("FAZA 10 — reservation sync PMS -> Beds24 (TZ 2, 8-band)", () => {
           checkIn: "2030-07-01",
           checkOut: "2030-07-03",
           guestName: "Navbat Broni",
+          phone: "+99895600005",
           guestPhone: "+998900000053",
           adults: 2,
           pricePerNight: 120,

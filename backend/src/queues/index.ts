@@ -142,6 +142,21 @@ export async function getQueueCounts() {
   return out;
 }
 
+/** Eski yiqilgan va tugagan job'larni tozalaydi */
+export async function cleanQueueHistory(): Promise<Record<string, { failed: number; completed: number }>> {
+  const result: Record<string, { failed: number; completed: number }> = {};
+  for (const q of allQueues) {
+    const failedCleaned = await q.clean(0, 10000, "failed");
+    const completedCleaned = await q.clean(0, 10000, "completed");
+    result[q.name] = {
+      failed: failedCleaned.length,
+      completed: completedCleaned.length,
+    };
+  }
+  return result;
+}
+
+
 /** Redis ishlayaptimi — /health uchun */
 export async function isRedisHealthy(): Promise<boolean> {
   // MUHIM: `redisConnection` da `maxRetriesPerRequest: null` — bu

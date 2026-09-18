@@ -241,6 +241,10 @@ export type MappingHealth = {
     externalRoomTypeId?: string;
     externalName?: string;
     externalQty?: number;
+    /** Mapping yozuvi id — ovqat belgisini o'zgartirish uchun */
+    mappingId?: string;
+    /** Bu tarif ovqat bilan keladimi (BOTLAR-REJA.md) */
+    includesMeal?: boolean;
     warning?: string;
   }>;
   unmappedRoomCount: number;
@@ -315,6 +319,8 @@ export async function getMappingHealth(): Promise<MappingHealth> {
       externalRoomTypeId: mapping.externalRoomTypeId,
       externalName: ext?.name,
       externalQty: ext?.qty,
+      mappingId: mapping.id,
+      includesMeal: mapping.includesMeal,
     };
 
     // Xona sonlari mos kelmasa — availability noto'g'ri bo'ladi (07-fayl §2)

@@ -3,9 +3,10 @@
  *
  * Manba: 10-SECURITY-VA-SYNCLOG.md §1 (3, 4-talab), §3
  *
- * UCH ROL (10-fayl §3):
- *   ADMIN   — hamma narsa: ulanish, mapping, sozlamalar, foydalanuvchilar
- *   MANAGER — bron, narx, hisobot. Beds24 sozlamalariga KIROLMAYDI
+ * TO'RT ROL (10-fayl §3, FOUNDER 2026-09-16 da qo'shildi):
+ *   FOUNDER — egasi: hamma narsa + umumiy hisobot bo'limi
+ *   ADMIN   — texnik: ulanish, mapping, sozlamalar, foydalanuvchilar
+ *   MANAGER — bron, narx. Beds24 sozlamalariga KIROLMAYDI
  *   STAFF   — check-in/out, to'lov, xona holati. Narxga tegmaydi
  *
  * ISH CHEGARASI (10-fayl §3): mavjud Admin Panel kodiga kirish yo'q,
@@ -27,17 +28,29 @@ import { config } from "../lib/config.js";
  * esdan chiqsa xavfsizlik teshigi ochiladi.
  */
 export const PERMISSIONS = {
-  "channel.connect":    ["ADMIN"],
-  "mapping.write":      ["ADMIN"],
-  "settings.write":     ["ADMIN"],
-  "user.manage":        ["ADMIN"],
-  "reservation.write":  ["ADMIN", "MANAGER"],
-  "reservation.cancel": ["ADMIN", "MANAGER"],
-  "rate.write":         ["ADMIN", "MANAGER"],
-  "synclog.read":       ["ADMIN", "MANAGER"],
-  "checkin.write":      ["ADMIN", "MANAGER", "STAFF"],
-  "payment.write":      ["ADMIN", "MANAGER", "STAFF"],
-  "reservation.read":   ["ADMIN", "MANAGER", "STAFF"],
+  // Umumiy hisobot va moliya ko'rinishi — FAQAT egasi (FOUNDER)
+  "report.read":        ["FOUNDER"],
+  // Xodimlar kadrlar hisobi — maosh ma'lumoti bor
+  "employee.read":      ["FOUNDER", "ADMIN"],
+  "employee.write":     ["FOUNDER", "ADMIN"],
+
+  "channel.connect":    ["FOUNDER", "ADMIN"],
+  "mapping.write":      ["FOUNDER", "ADMIN"],
+  "settings.write":     ["FOUNDER", "ADMIN"],
+  // Foydalanuvchi boshqaruvi — FAQAT egasi (2026-09-16 qarori).
+  // "Founder adminlarni nazorat qiladi" talabi: admin boshqa
+  // adminlarni ko'rmasligi ham, o'zgartirmasligi ham kerak.
+  "user.manage":        ["FOUNDER"],
+  "reservation.write":  ["FOUNDER", "ADMIN", "MANAGER"],
+  "reservation.cancel": ["FOUNDER", "ADMIN", "MANAGER"],
+  "rate.write":         ["FOUNDER", "ADMIN", "MANAGER"],
+  // Xona/qavat yopish inventarni kamaytiradi va Beds24 orqali barcha
+  // OTA kanallariga tarqaladi — qabulxona xodimi uchun emas.
+  "room.block":         ["FOUNDER", "ADMIN", "MANAGER"],
+  "synclog.read":       ["FOUNDER", "ADMIN", "MANAGER"],
+  "checkin.write":      ["FOUNDER", "ADMIN", "MANAGER", "STAFF"],
+  "payment.write":      ["FOUNDER", "ADMIN", "MANAGER", "STAFF"],
+  "reservation.read":   ["FOUNDER", "ADMIN", "MANAGER", "STAFF"],
 } as const satisfies Record<string, readonly UserRole[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

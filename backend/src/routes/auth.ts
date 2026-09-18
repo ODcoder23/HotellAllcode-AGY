@@ -16,6 +16,7 @@ import {
 } from "../lib/authMiddleware.js";
 import { login, createUser, PERMISSIONS, can, type Permission } from "../services/auth.js";
 import { audit } from "../services/auditLog.js";
+import type { UserRole } from "@prisma/client";
 
 export const authRouter = Router();
 
@@ -81,8 +82,25 @@ const createSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8, "Parol kamida 8 belgi"),
   fullName: z.string().min(1),
-  role: z.enum(["ADMIN", "MANAGER", "STAFF"]),
+  role: z.enum(["FOUNDER", "ADMIN", "MANAGER", "STAFF"]),
 });
+
+/**
+ * Kim kimni boshqara oladi.
+ *
+ * Hozir `user.manage` faqat FOUNDER'da (2026-09-16 qarori), ya'ni
+ * bu yergacha boshqa rol yetib kelmaydi. Funksiya baribir qoldi:
+ * ruxsat kengaytirilsa (masalan ADMIN'ga menejer qo'shish huquqi
+ * berilsa) ierarxiya shu yerda, bitta joyda boshqariladi.
+ *
+ * QOIDA: hech kim o'ziga teng yoki yuqori rol bera olmaydi —
+ * aks holda har qanday admin o'zini founder qilib qo'yardi.
+ */
+function canManageRole(actor: UserRole, target: UserRole): boolean {
+  if (actor === "FOUNDER") return true;
+  if (actor === "ADMIN") return target === "MANAGER" || target === "STAFF";
+  return false;
+}
 
 authRouter.post(
   "/users",
@@ -93,6 +111,15 @@ authRouter.post(
     if (!parsed.success) {
       throw new ValidationError(
         parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
+      );
+    }
+
+    // Rol ierarxiyasi: ADMIN o'ziga teng yoki yuqori rol
+    // yarata olmaydi
+    const actorRole = req.user?.role;
+    if (!actorRole || !canManageRole(actorRole, parsed.data.role)) {
+      throw new ValidationError(
+        `Sizda '${parsed.data.role}' rolidagi foydalanuvchi yaratish huquqi yo'q`
       );
     }
 
@@ -133,7 +160,7 @@ authRouter.get(
 
 // --- PATCH /api/auth/users/:id — rol o'zgartirish -----------
 const roleSchema = z.object({
-  role: z.enum(["ADMIN", "MANAGER", "STAFF"]).optional(),
+  role: z.enum(["FOUNDER", "ADMIN", "MANAGER", "STAFF"]).optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -148,16 +175,74 @@ authRouter.patch(
     const id = String(req.params.id);
     const before = await prisma.user.findUnique({
       where: { id },
-      select: { role: true, isActive: true },
+      select: { role: true, isActive: true, email: true },
     });
     if (!before) throw new ValidationError("Foydalanuvchi topilmadi");
 
-    // O'zining ADMIN huquqini olib tashlash — oxirgi admin qolib
-    // ketmasligi uchun tekshiramiz
-    if (parsed.data.role && parsed.data.role !== "ADMIN" && before.role === "ADMIN") {
-      const admins = await prisma.user.count({ where: { role: "ADMIN", isActive: true } });
+    const actorRole = req.user?.role;
+    if (!actorRole) throw new ValidationError("Kirish talab qilinadi");
+
+    // --- 1. O'zini o'chirib bo'lmaydi ---
+    //
+    // Aks holda founder o'zini nofaol qilib, tizimga kira
+    // olmay qolardi.
+    if (id === req.user?.id && parsed.data.isActive === false) {
+      throw new ValidationError("O'zingizni o'chirib bo'lmaydi");
+    }
+
+    // --- 2. O'z rolini pasaytirib bo'lmaydi ---
+    if (id === req.user?.id && parsed.data.role && parsed.data.role !== before.role) {
+      throw new ValidationError("O'z rolingizni o'zgartirib bo'lmaydi");
+    }
+
+    // --- 3. Rol ierarxiyasi ---
+    //
+    // ADMIN boshqa ADMIN yoki FOUNDER bilan ishlay olmaydi.
+    // Tekshiruv IKKI tomonlama: hozirgi rol ham, yangi rol ham.
+    if (!canManageRole(actorRole, before.role)) {
+      throw new ValidationError(
+        `Sizda '${before.role}' rolidagi foydalanuvchini o'zgartirish huquqi yo'q`
+      );
+    }
+    if (parsed.data.role && !canManageRole(actorRole, parsed.data.role)) {
+      throw new ValidationError(
+        `Sizda '${parsed.data.role}' roli berish huquqi yo'q`
+      );
+    }
+
+    // --- 4. Oxirgi FOUNDER himoyasi ---
+    //
+    // Founder qolmasa umumiy hisobot va foydalanuvchi boshqaruvi
+    // butunlay yopiladi — bazaga qo'lda kirmasdan tuzatib
+    // bo'lmaydi.
+    const losesFounder =
+      before.role === "FOUNDER" &&
+      ((parsed.data.role && parsed.data.role !== "FOUNDER") ||
+        parsed.data.isActive === false);
+
+    if (losesFounder) {
+      const founders = await prisma.user.count({
+        where: { role: "FOUNDER", isActive: true },
+      });
+      if (founders <= 1) {
+        throw new ValidationError(
+          "Oxirgi FOUNDER — avval boshqa founder tayinlang"
+        );
+      }
+    }
+
+    // --- 5. Oxirgi ADMIN himoyasi ---
+    const losesAdmin =
+      before.role === "ADMIN" &&
+      ((parsed.data.role && parsed.data.role !== "ADMIN") ||
+        parsed.data.isActive === false);
+
+    if (losesAdmin) {
+      const admins = await prisma.user.count({
+        where: { role: "ADMIN", isActive: true },
+      });
       if (admins <= 1) {
-        throw new ValidationError("Oxirgi ADMIN rolini o'zgartirib bo'lmaydi");
+        throw new ValidationError("Oxirgi ADMIN — avval boshqa admin tayinlang");
       }
     }
 

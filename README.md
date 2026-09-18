@@ -1,31 +1,24 @@
-# Imron Hotel PMS × Beds24
+# Backend — mahalliy ishga tushirish
 
-Mehmonxona boshqaruv tizimining Beds24 channel manager bilan
-ikki tomonlama integratsiyasi.
+Bu fayl **mahalliy** (kompyuterda) ishga tushirish uchun.
+Kundalik ish serverda olib boriladi — [`../SERVER.md`](../SERVER.md).
 
-```
-Booking.com / Airbnb / Expedia
-            ↕
-         Beds24
-            ↕  API v2 + Webhook
-      PMS Backend  ←→  PostgreSQL
-            ↕  WebSocket
-   Shaxmatka / Admin / Website
-```
+Loyiha logikasi: [`../PROJECT_LOGIC.md`](../PROJECT_LOGIC.md)
 
 ---
 
-## Ishga tushirish
-
-### 1. Talablar
+## Talablar
 
 - Node.js 22+
-- PostgreSQL 16+ (`btree_gist` kengaytmasi bilan)
+- PostgreSQL 16+ (`btree_gist` kengaytmasi bilan — overbooking
+  constraint'i shunga tayanadi)
 - Redis 7+
 
 Docker bilan: `docker compose up` — uchala xizmat ko'tariladi.
 
-### 2. Sozlash
+---
+
+## Sozlash
 
 ```bash
 cd backend
@@ -39,38 +32,58 @@ cp .env.example .env
 | `DATABASE_URL` | PostgreSQL manzili |
 | `REDIS_URL` | Redis manzili |
 | `ENCRYPTION_KEY` | Beds24 token'larini shifrlash (32 bayt **hex** = 64 belgi) |
-| `JWT_SECRET` | Sessiya imzosi |
+| `JWT_SECRET` | Sessiya imzosi (32+ belgi) |
 | `WEBHOOK_URL_TOKEN` | Webhook URL'idagi maxfiy token |
 
 Kalit yasash (**hex**, base64 emas):
 
 ```bash
-openssl rand -hex 32
-# yoki Windows'da:
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-### 3. Baza
+---
+
+## Baza
 
 ```bash
 npm install
 npx prisma migrate deploy
-npm run db:seed          # 12 xona, 3 tur, test foydalanuvchilar
+npm run db:seed          # 18 xona, 9 tarif, 3285 narx, test foydalanuvchilar
 ```
 
-### 4. Ishga tushirish
+**Seed mavjud ma'lumotni o'chiradi.** Ishlatilayotgan bazada
+ehtiyot bo'ling.
+
+Seed'dan keyin Beds24 ulanishi va mapping tiklanadi:
 
 ```bash
-npm run dev              # backend :3000
+npm run beds24:mock
 ```
-
-Shaxmatka — `index (7).html` faylini brauzerda oching.
 
 ---
 
-## Beds24'ga ulash
+## Ishga tushirish
 
-Mock server bilan sinash uchun (Beds24 hisobisiz):
+```bash
+npm run dev              # backend :3000 (yoki .env dagi PORT)
+```
+
+Frontend backendning o'zidan beriladi (`backend/public/app/`),
+alohida server kerak emas:
+
+| Manzil | Nima |
+|---|---|
+| `/` | Sayt |
+| `/shaxmatka` | Bandlik jadvali |
+| `/admin-panel` | Xodimlar paneli |
+
+Kirish: `founder@imron.local` / `admin12345`
+
+---
+
+## Mock Beds24
+
+Beds24 hisobisiz sinash uchun:
 
 ```bash
 cd mock-beds24 && npm install && npm run dev   # :4000
@@ -78,107 +91,40 @@ cd mock-beds24 && npm install && npm run dev   # :4000
 
 `.env` da `BEDS24_BASE_URL="http://localhost:4000"`.
 
-**Haqiqiy Beds24'ga ulash** — to'liq qadamlar:
-[`11-BOSQICHLAR-ROADMAP.md`](11-BOSQICHLAR-ROADMAP.md) → FAZA 15.
+Mock 9 room type / 18 xona qaytaradi — PMS inventari bilan
+aynan mos (`mock-beds24/fixtures/properties.ts`).
 
-Qisqacha:
-
-1. Beds24 panelida invite code yarating
-   (Settings → Account → Access, scope: bookings + inventory + properties)
-2. `npm run beds24:connect` — kod so'raladi, token shifrlanib DB'ga yoziladi
-3. `.env`: `BEDS24_BASE_URL="https://api.beds24.com/v2"`
-4. Beds24 panelida webhook URL: `https://<domen>/api/webhooks/beds24/<token>`
-5. `/admin/mapping` sahifasida uch xona turini Beds24 turlariga bog'lang
-
----
-
-## Production sozlamalari
-
-Topshirishdan oldin `.env` da **majburiy**:
-
-```env
-AUTH_REQUIRED="true"          # JWT barcha /api/* da
-RATE_LIMIT_DISABLED="false"   # cheklovlar yoqilgan
-```
-
-Tekshirish: `GET /health` → `security: { auth: true, rateLimit: true }`
-
-**Seed parollarini o'zgartiring.** `admin@imron.local` / `admin12345`
-faqat ishlab chiqish uchun.
-
-HTTPS — Nginx + Let's Encrypt orqali, kodda emas.
+Real Beds24'ga ulash qadamlari: [`../TODO.md`](../TODO.md).
 
 ---
 
 ## Testlar
 
 ```bash
-npm test                 # 365 test
-npm run typecheck        # tip tekshiruvi
-./check-docs.sh          # hujjatlar yaxlitligi
+PMS_URL=http://127.0.0.1:3000 MOCK_URL=http://127.0.0.1:4000 npm test
 ```
 
-Testlar ishlayotgan backend (`:3000`), mock (`:4000`), PostgreSQL va
-Redis'ni talab qiladi.
+**`127.0.0.1` yozing, `localhost` emas.** Node 18+ da
+`localhost` avval IPv6 (`::1`) ga hal bo'ladi va SSH tunnel
+orqali ishlaganda ulanish rad etiladi.
+
+**Testlar bazani tozalaydi** — har test faylidan oldin seed
+chaqiriladi. Ishlatilayotgan bazada ishlatmang.
 
 ---
 
-## Hujjatlar
+## Buyruqlar
 
-| Fayl | Nima haqida |
+| Buyruq | Nima |
 |---|---|
-| [`TZ-ASL.md`](TZ-ASL.md) | Mijozning asl texnik topshirig'i — **ustuvor manba** |
-| [`00-INDEX.md`](00-INDEX.md) | Navigatsiya: qaysi savol qaysi hujjatda |
-| [`01`](01-ARXITEKTURA-VA-QOIDALAR.md) | Arxitektura, qatlamlar, o'zgarmas qoidalar |
-| [`02`](02-DATABASE-SXEMA.md) | Ma'lumotlar bazasi, overbooking constraint'i |
-| [`03`](03-BEDS24-API-INTEGRATSIYA.md) | Beds24 API, kredit tizimi |
-| [`04`](04-WEBHOOK-HANDLER.md) | Webhook qabul qilish, polling fallback |
-| [`05`](05-SYNC-QUEUE-BULLMQ.md) | Navbatlar, retry, o'lik xat |
-| [`06`](06-XONA-MAPPING.md) | Xona mapping — eng muhim qism |
-| [`07`](07-AVAILABILITY-VA-RATES-SYNC.md) | Bandlik va narx sinxronizatsiyasi |
-| [`08`](08-RESERVATION-STATUS-VA-TOLOV.md) | Statuslar, to'lov hisob-kitobi |
-| [`09`](09-REALTIME-WEBSOCKET.md) | Real-time yangilanish |
-| [`10`](10-SECURITY-VA-SYNCLOG.md) | Xavfsizlik, RBAC, audit |
-| [`11`](11-BOSQICHLAR-ROADMAP.md) | Bosqichlar va **topshirish qadamlari** |
-| [`12`](12-PMS-DAN-BEDS24-GA-SYNC.md) | PMS → Beds24: sakkiz amal |
-| [`13`](13-WEBSITE-INTEGRATSIYA.md) | Website uchun ommaviy API |
-
----
-
-## Tuzilma
-
-```
-backend/          Node + Express + Prisma
-  src/
-    lib/          umumiy: xato, shifrlash, JWT, rate limit
-    routes/       HTTP endpoint'lar
-    services/     biznes mantiq
-      beds24/     kanal adapteri (almashtiriladigan)
-      channel/    interfeys va registr
-    queues/       BullMQ worker'lari
-    realtime/     WebSocket
-  prisma/         schema va migratsiyalar
-
-mock-beds24/      Beds24 taqlidi — hisobsiz sinash uchun
-index (7).html    Shaxmatka (mavjud frontend)
-```
-
----
-
-## Muhim xususiyatlar
-
-**Overbooking imkonsiz.** PostgreSQL `EXCLUDE USING gist` constraint'i
-bilan kafolatlanadi — dastur mantig'i xato qilsa ham baza rad etadi.
-30 parallel so'rovdan faqat bittasi o'tadi.
-
-**Beds24 o'chsa PMS ishlaydi.** Bron, check-in, narx, to'lov —
-hammasi davom etadi. Sync navbatda kutadi va Beds24 qaytganda
-avtomatik yuboriladi.
-
-**Kanal almashtiriladi.** `ChannelAdapter` interfeysi va registr —
-yangi kanal qo'shish uchun bitta fayl o'zgaradi.
-
-**Kredit tejash.** Beds24'da 5 daqiqada 100 kredit cheklovi bor.
-Sakkiz chora qo'llanadi: token kesh, webhook (polling emas),
-o'zgarmagan kunlarni yubormaslik, oraliqqa yig'ish, debounce va
-boshqalar.
+| `npm run dev` | Ishlab chiqish (tsx watch) |
+| `npm run build` | TypeScript → `dist/` |
+| `npm start` | `dist/server.js` |
+| `npm test` | Vitest |
+| `npm run db:migrate` | Yangi migratsiya |
+| `npm run db:deploy` | Migratsiyalarni qo'llash |
+| `npm run db:seed` | Baza to'ldirish |
+| `npm run db:studio` | Prisma Studio |
+| `npm run beds24:connect` | Real Beds24 ulanishi |
+| `npm run beds24:mock` | Mock ulanish + 9 mapping |
+| `npm run build:css` | Shaxmatka Tailwind CSS |

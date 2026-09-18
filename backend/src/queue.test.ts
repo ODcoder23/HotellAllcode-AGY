@@ -20,9 +20,10 @@ import {
 } from "./services/webhookProcessor.js";
 import { isRedisHealthy, getQueueCounts } from "./queues/index.js";
 import type { ExternalReservation } from "./services/channel/types.js";
+import { TYPES, loadTypes } from "./testUtils.js";
 
-const PMS = "http://localhost:3000";
-const MOCK = "http://localhost:4000";
+const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
+const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
 const EXT = { standard: "101001", double: "101002", deluxe: "101003" } as const;
 
 /** Webhook worker ishlab bo'lishini kutadi */
@@ -62,13 +63,25 @@ const ext = (over: Partial<ExternalReservation> = {}): ExternalReservation => ({
 });
 
 async function mapAll() {
-  for (const [pms, external] of Object.entries(EXT)) {
+  // EXT kalitlari tarixiy nomlar — ular faqat tashqi Beds24
+  // ID'sini topish uchun. PMS turi TYPES dan keladi (bazadagi
+  // haqiqiy turlar).
+  const pairs: Array<[string, string]> = [
+    [TYPES.a, EXT.standard],
+    [TYPES.b, EXT.double],
+    [TYPES.c, EXT.deluxe],
+  ];
+
+  for (const [pms, external] of pairs) {
     await upsertMapping({ roomTypeId: pms, externalRoomTypeId: external });
   }
 }
 
 describe("FAZA 7 — queue va webhook -> Reservation", () => {
   beforeAll(async () => {
+    // Tur ID'lari bazadan olinadi (testUtils.ts) — ilgari
+    // "standard"/"double"/"deluxe" qattiq yozilgan edi
+    await loadTypes();
     const health = await fetch(`${PMS}/health`).then((r) => r.json() as any);
     if (health.redis !== "connected") {
       throw new Error("Redis ishlamayapti — redis-server ishga tushiring");
@@ -170,7 +183,7 @@ describe("FAZA 7 — queue va webhook -> Reservation", () => {
       const r = await assignRoom(ext({ checkIn: "2027-12-01", checkOut: "2027-12-04" }));
       expect(r.ok).toBe(true);
       if (r.ok) {
-        expect(r.roomTypeId).toBe("standard");
+        expect(r.roomTypeId).toBe(TYPES.a);
         expect(["101", "102", "105", "107", "109", "111"]).toContain(r.roomId);
       }
     });
@@ -434,7 +447,7 @@ describe("FAZA 7 — queue va webhook -> Reservation", () => {
       expect(stuck).toBeDefined();
 
       // Admin mapping'ni to'g'irladi
-      await upsertMapping({ roomTypeId: "double", externalRoomTypeId: "88888" });
+      await upsertMapping({ roomTypeId: TYPES.b, externalRoomTypeId: "88888" });
 
       // "Qayta ishlash" tugmasi
       await fetch(`${PMS}/api/admin/webhook-events/${stuck.id}/reprocess`, { method: "POST" });

@@ -14,6 +14,7 @@
  */
 
 import { prisma } from "../lib/prisma.js";
+import { getAuditRetentionDays } from "./settings.js";
 import { sanitizeForLog } from "../lib/sanitize.js";
 
 /**
@@ -32,7 +33,22 @@ export const AUDIT_ACTIONS = [
   "webhook.reprocessed",
   "reservation.cancelled",
   "reservation.no_show",
+  // Pul harakati — naqd yo'qolsa javobgar ko'rinsin (SAVOLLAR.md S13)
+  "payment.received",
+  "payment.refunded",
+  "payment.reversed",
+  // Xarajatlar (SAVOLLAR.md S14) — foyda hisobiga ta'sir qiladi
+  "expense.created",
+  "expense.deleted",
+  // Bot ruxsatlari (TOZALIK-BOT.md §7) — kim moliyani ko'ra oladi
+  "bot.access_granted",
+  "bot.access_changed",
+  "bot.access_revoked",
   "rate.changed",
+  "room.blocked",
+  "room.unblocked",
+  "floor.blocked",
+  "floor.unblocked",
   "user.created",
   "user.role_changed",
   "user.login",
@@ -112,4 +128,37 @@ export async function listAudit(opts: {
     // Foydalanuvchi o'chirilgan bo'lsa ham yozuv qoladi
     user: r.user ? { email: r.user.email, fullName: r.user.fullName, role: r.user.role } : null,
   }));
+}
+
+// ============================================================
+//  Tozalash — SAVOLLAR.md S16
+// ============================================================
+
+/**
+ * Eski audit yozuvlarini o'chiradi.
+ *
+ * QOIDA (2026-09-17 kelishuvi): jurnal `AUDIT_RETENTION_DAYS` kun
+ * saqlanadi (boshlang'ich 365). Bronlar, mehmonlar va to'lovlar
+ * O'CHIRILMAYDI — ular kichik va moliyaviy tarix uchun kerak.
+ *
+ * NEGA AYNAN JURNAL: u eng tez o'sadigan jadval — har amal uchun
+ * bitta yozuv. Bir yildan eski yozuv amalda hech qachon o'qilmaydi,
+ * lekin zaxira nusxasini va so'rovlarni sekinlashtiradi.
+ *
+ * Haftada bir marta ishlaydi (`scheduler.ts`).
+ */
+export async function pruneAuditLog(): Promise<{
+  deleted: number;
+  olderThanDays: number;
+}> {
+  const days = await getAuditRetentionDays();
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+
+  const result = await prisma.auditLog.deleteMany({
+    where: { createdAt: { lt: cutoff } },
+  });
+
+  return { deleted: result.count, olderThanDays: days };
 }

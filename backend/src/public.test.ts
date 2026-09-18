@@ -28,12 +28,29 @@ import {
   expireUnpaidBookings,
 } from "./services/publicBooking.js";
 import { fromDateKey } from "./lib/serialize.js";
+import { TYPES, loadTypes, tariffFor } from "./testUtils.js";
 
-const PMS = "http://localhost:3000";
-const MOCK = "http://localhost:4000";
+const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
+const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
 
 const EXT = { standard: "101001", double: "101002", deluxe: "101003" } as const;
-const TOTAL = { standard: 6, double: 4, deluxe: 2 } as const;
+
+/**
+ * Tur bo'yicha xona soni — BAZADAN.
+ *
+ * Ilgari `{ standard: 6, double: 4, deluxe: 2 }` qattiq yozilgan
+ * edi; loyiha 18 xonaga o'tganda bu sonlar noto'g'ri bo'lib qoldi.
+ * `loadTotals()` beforeAll da to'ldiradi.
+ */
+const TOTAL = { a: 0, b: 0, c: 0 };
+
+async function loadTotals() {
+  for (const [key, typeId] of [["a", TYPES.a], ["b", TYPES.b], ["c", TYPES.c]] as const) {
+    TOTAL[key] = await prisma.room.count({
+      where: { roomTypeId: typeId, isActive: true },
+    });
+  }
+}
 
 /**
  * Public API tokensiz ishlashi KERAK.
@@ -80,7 +97,15 @@ const mockState = async () =>
   };
 
 async function mapAll() {
-  for (const [pms, external] of Object.entries(EXT)) {
+  // EXT kalitlari tarixiy nomlar — ular faqat tashqi Beds24
+  // ID'sini topish uchun. PMS turi TYPES dan keladi.
+  const pairs: Array<[string, string]> = [
+    [TYPES.a, EXT.standard],
+    [TYPES.b, EXT.double],
+    [TYPES.c, EXT.deluxe],
+  ];
+
+  for (const [pms, external] of pairs) {
     await upsertMapping({ roomTypeId: pms, externalRoomTypeId: external });
   }
 }
@@ -99,7 +124,7 @@ async function setPrices(from: string, to: string) {
     method: "PUT",
     body: JSON.stringify({
       from, to,
-      prices: { standard: 40, double: 55, deluxe: 90 },
+      prices: { [TYPES.a]: 40, [TYPES.b]: 55, [TYPES.c]: 90 },
     }),
   });
 }
@@ -128,6 +153,10 @@ async function cleanupWebsiteBookings() {
 
 describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
   beforeAll(async () => {
+    // Tur ID'lari bazadan olinadi (testUtils.ts) — ilgari
+    // "standard"/"double"/"deluxe" qattiq yozilgan edi
+    await loadTypes();
+    await loadTotals();
     const health = await fetch(`${PMS}/health`).then((r) => r.json() as any);
     if (health.redis !== "connected") throw new Error("Redis ishlamayapti");
     const mock = await fetch(`${MOCK}/authentication/setup`, { headers: { code: "mock-invite-code" } });
@@ -227,10 +256,25 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       await setPrices(day(35), day(38));
       const res = await publicApi(`/api/public/availability?from=${day(35)}&to=${day(38)}&adults=2`);
 
-      const std = res.body.roomTypes.find((t: any) => t.id === "standard");
+      const std = res.body.roomTypes.find((t: any) => t.id === TYPES.a);
       expect(std.pricePerNight).toBe(40);
       expect(res.body.nights).toBe(3);
-      expect(std.totalPrice).toBe(120);         // 40 x 3
+
+      /**
+       * `totalPrice` NONUSHTANI HAM O'Z ICHIGA OLADI (S10,
+       * 2026-09-17). Ilgari `toBe(120)` — faqat xona narxi.
+       *
+       * Saytdan kelgan bron har doim ovqat tarifi bilan
+       * (BOTLAR-REJA.md): mehmon darhol to'liq summani ko'radi,
+       * tasdiqlashda kutilmagan qo'shimcha chiqmasin.
+       *
+       * Nonushta narxi sozlamadan keladi, shuning uchun qattiq
+       * raqam yozilmaydi — javobning o'z maydonlaridan
+       * hisoblanadi.
+       */
+      expect(std.roomTotal).toBe(120);          // 40 x 3 kecha
+      expect(std.mealTotal).toBe(std.mealPricePerPerson * 2 * 3);
+      expect(std.totalPrice).toBe(std.roomTotal + std.mealTotal);
     });
 
     it("narx belgilanmagan tur KO'RSATILMAYDI", async () => {
@@ -258,7 +302,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
 
       // Oraliqning o'rtasiga bitta bron qo'yamiz
       const room = await prisma.room.findFirstOrThrow({
-        where: { roomTypeId: "deluxe", isActive: true },
+        where: { roomTypeId: TYPES.c, isActive: true },
       });
       const created = await api("/api/reservations", {
         method: "POST",
@@ -267,18 +311,19 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
           checkIn: day(52),
           checkOut: day(53),
           guestName: "Min Testi",
+          phone: "+99892200001",
           guestPhone: "+998900000090",
           adults: 1,
-          pricePerNight: 90,
+          pricePerNight: await tariffFor(room.id),
         }),
       });
       expect(created.status).toBe(201);
 
       const res = await publicApi(`/api/public/availability?from=${day(50)}&to=${day(55)}&adults=2`);
-      const deluxe = res.body.roomTypes.find((t: any) => t.id === "deluxe");
+      const deluxe = res.body.roomTypes.find((t: any) => t.id === TYPES.c);
 
       // Oraliqning bir kunida 1 ta band -> butun oraliq uchun 1
-      expect(deluxe.availableCount).toBe(TOTAL.deluxe - 1);
+      expect(deluxe.availableCount).toBe(TOTAL.c - 1);
 
       await prisma.reservation.delete({ where: { id: created.body.id } }).catch(() => {});
     });
@@ -287,13 +332,13 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
   // --- Xona tanlash (13-fayl §3) -----------------------------
   describe("xona avtomatik tanlash", () => {
     it("bo'sh xona topiladi", async () => {
-      const roomId = await pickRoom("standard", fromDateKey(day(60)), fromDateKey(day(62)));
+      const roomId = await pickRoom(TYPES.a, fromDateKey(day(60)), fromDateKey(day(62)));
       expect(roomId).toBeTruthy();
     });
 
     it("band xona tanlanmaydi", async () => {
       const room = await prisma.room.findFirstOrThrow({
-        where: { roomTypeId: "deluxe", isActive: true },
+        where: { roomTypeId: TYPES.c, isActive: true },
         orderBy: { sortOrder: "asc" },
       });
 
@@ -304,13 +349,14 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
           checkIn: day(65),
           checkOut: day(67),
           guestName: "Band Testi",
+          phone: "+99892200002",
           guestPhone: "+998900000091",
           adults: 1,
-          pricePerNight: 90,
+          pricePerNight: await tariffFor(room.id),
         }),
       });
 
-      const picked = await pickRoom("deluxe", fromDateKey(day(65)), fromDateKey(day(67)));
+      const picked = await pickRoom(TYPES.c, fromDateKey(day(65)), fromDateKey(day(67)));
       expect(picked).not.toBe(room.id);
 
       await prisma.reservation.delete({ where: { id: created.body.id } }).catch(() => {});
@@ -318,7 +364,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
 
     it("hammasi band bo'lsa null qaytaradi", async () => {
       const rooms = await prisma.room.findMany({
-        where: { roomTypeId: "deluxe", isActive: true },
+        where: { roomTypeId: TYPES.c, isActive: true },
       });
 
       const ids: string[] = [];
@@ -330,15 +376,19 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
             checkIn: day(70),
             checkOut: day(72),
             guestName: `Toliq ${r.number}`,
-            guestPhone: "+998900000092",
+            // Xona raqamiga bog'langan — bir xil telefon bitta
+            // `Guest` yozuviga birlashadi va test noto'g'ri
+            // sonlarni ko'rardi (S6: telefon bir xil bo'lsa
+            // mehmon yangilanadi, yangisi yaratilmaydi).
+            phone: `+9989220${r.number}`,
             adults: 1,
-            pricePerNight: 90,
+            pricePerNight: await tariffFor(r.id),
           }),
         });
         if (res.status === 201) ids.push(res.body.id);
       }
 
-      const picked = await pickRoom("deluxe", fromDateKey(day(70)), fromDateKey(day(72)));
+      const picked = await pickRoom(TYPES.c, fromDateKey(day(70)), fromDateKey(day(72)));
       expect(picked).toBeNull();
 
       await prisma.reservation.deleteMany({ where: { id: { in: ids } } });
@@ -346,14 +396,14 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
 
     it("xizmatdan chiqarilgan xona tanlanmaydi", async () => {
       const room = await prisma.room.findFirstOrThrow({
-        where: { roomTypeId: "deluxe", isActive: true },
+        where: { roomTypeId: TYPES.c, isActive: true },
         orderBy: { sortOrder: "asc" },
       });
       const before = room.status;
 
       await prisma.room.update({ where: { id: room.id }, data: { status: "OUT_OF_ORDER" } });
 
-      const picked = await pickRoom("deluxe", fromDateKey(day(75)), fromDateKey(day(77)));
+      const picked = await pickRoom(TYPES.c, fromDateKey(day(75)), fromDateKey(day(77)));
       expect(picked).not.toBe(room.id);
 
       await prisma.room.update({ where: { id: room.id }, data: { status: before } });
@@ -368,7 +418,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const res = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "deluxe",
+          roomTypeId: TYPES.c,
           checkIn: day(80),
           checkOut: day(83),
           adults: 2,
@@ -390,7 +440,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const created = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "standard",
+          roomTypeId: TYPES.a,
           checkIn: day(85),
           checkOut: day(87),
           adults: 1,
@@ -413,12 +463,12 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       await setPrices(day(90), day(92));
 
       const before = await publicApi(`/api/public/availability?from=${day(90)}&to=${day(92)}&adults=2`);
-      const deluxeBefore = before.body.roomTypes.find((t: any) => t.id === "deluxe").availableCount;
+      const deluxeBefore = before.body.roomTypes.find((t: any) => t.id === TYPES.c).availableCount;
 
       await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "deluxe",
+          roomTypeId: TYPES.c,
           checkIn: day(90),
           checkOut: day(92),
           adults: 2,
@@ -427,7 +477,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       });
 
       const after = await publicApi(`/api/public/availability?from=${day(90)}&to=${day(92)}&adults=2`);
-      const deluxeAfter = after.body.roomTypes.find((t: any) => t.id === "deluxe").availableCount;
+      const deluxeAfter = after.body.roomTypes.find((t: any) => t.id === TYPES.c).availableCount;
 
       expect(deluxeAfter).toBe(deluxeBefore - 1);
     });
@@ -438,7 +488,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const created = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "deluxe",
+          roomTypeId: TYPES.c,
           checkIn: day(95),
           checkOut: day(97),
           adults: 2,
@@ -451,10 +501,25 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       //
       // Mock kredit cheklovi 100/5daqiqa (03-fayl §3). Ko'p test
       // ketma-ket ishlaganda kredit tugab, job KECHIKTIRILADI —
-      // bu xato emas, kutilgan xatti-harakat (05-fayl §3). Shuning
-      // uchun reset qilib kreditni tiklaymiz va uzoqroq kutamiz.
-      await mockControl("reset");
+      // bu xato emas, kutilgan xatti-harakat (05-fayl §3).
+      //
+      // `refill-credits`, `reset` EMAS (2026-09-17): `reset`
+      // BRONLARNI HAM o'chiradi (mock-beds24/server.ts §112).
+      // Bron yaratilgandan keyin chaqirilgani uchun test o'z
+      // bronini o'chirib yuborardi va keyin uni 60 soniya
+      // kutardi — "bron Beds24'ga yetmadi" deb yiqilardi,
+      // aslida zanjir ishlardi.
+      await mockControl("refill-credits");
       await mapAll();
+
+      /**
+       * Oxirgi turtki xatosi — sababni ko'rsatish uchun.
+       *
+       * Ilgari `.catch(() => {})` xatoni butunlay yutardi va
+       * test "bron Beds24'ga yetmadi" deb yiqilardi, sabab esa
+       * ko'rinmasdi. Endi xabar assert'ga qo'shiladi.
+       */
+      let lastPushError = "";
 
       const sent = await waitFor(async () => {
         const { bookings } = await mockState();
@@ -467,11 +532,27 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
         });
         if (r && !r.externalReservationId) {
           const { pushReservation } = await import("./services/reservationSync.js");
-          await pushReservation(r.id).catch(() => {});
+          await pushReservation(r.id).catch((e) => {
+            lastPushError = e instanceof Error ? e.message : String(e);
+          });
         }
         return false;
-      }, 25000);
-      expect(sent, "bron Beds24'ga yetmadi").toBe(true);
+      }, 60000);
+
+      /**
+       * Kutish 60 s (ilgari 25 s).
+       *
+       * Baza SSH tunnel orqali kelganda har so'rov ~700 ms
+       * (o'lchangan), bitta bron yaratish ~11 s. Worker
+       * navbatdan olib, Beds24'ga yuborishi ham shuncha.
+       * 25 s yetmasdi va test "bron Beds24'ga yetmadi" deb
+       * yiqilardi — aslida zanjir ishlardi, jonli sinovda
+       * `push_reservation` `success` qaytaradi.
+       */
+      expect(
+        sent,
+        `bron Beds24'ga yetmadi${lastPushError ? ` — ${lastPushError}` : ""}`
+      ).toBe(true);
 
       const { bookings } = await mockState();
       const booking = bookings.find((b) => String(b.firstName).includes("Beds24"))!;
@@ -493,7 +574,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       }, 20000);
 
       expect(availSent, "availability yuborilmadi").toBe(true);
-    }, 45000);
+    }, 90000);
   });
 
   // --- PENDING_PAYMENT (13-fayl §5) --------------------------
@@ -504,7 +585,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const created = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "standard",
+          roomTypeId: TYPES.a,
           checkIn: day(100),
           checkOut: day(102),
           adults: 1,
@@ -537,7 +618,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const created = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "deluxe",
+          roomTypeId: TYPES.c,
           checkIn: day(105),
           checkOut: day(107),
           adults: 1,
@@ -568,7 +649,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const created = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "standard",
+          roomTypeId: TYPES.a,
           checkIn: day(110),
           checkOut: day(112),
           adults: 1,
@@ -618,7 +699,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const created = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "double",
+          roomTypeId: TYPES.b,
           checkIn: day(115),
           checkOut: day(118),
           adults: 2,
@@ -638,7 +719,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const created = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "standard",
+          roomTypeId: TYPES.a,
           checkIn: day(120),
           checkOut: day(122),
           adults: 1,
@@ -674,7 +755,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const res = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "standard",
+          roomTypeId: TYPES.a,
           checkIn: day(125),
           checkOut: day(127),
           adults: 1,
@@ -696,12 +777,28 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       await setPrices(day(130), day(145));
       const phone = "+998901119999";
 
+      /**
+       * ENG KO'P XONALI turni tanlaymiz.
+       *
+       * Ilgari `TYPES.a` qattiq yozilgan edi. 18 xonali
+       * tuzilmada u `standard3` — BITTA xonali tarif, va
+       * ikkinchi bron "bo'sh xona qolmadi" (409) olardi.
+       * Spam himoyasi (400) umuman ishga tushmasdi va test
+       * noto'g'ri sababdan yiqilardi.
+       *
+       * Har bron BOSHQA sanaga ketadi, shuning uchun bitta
+       * xona ham yetardi — lekin `pickRoom` bandlikni sana
+       * bo'yicha qaraydi va 1 xonali turda zaxira qolmaydi.
+       */
+      const roomType = (Object.entries(TOTAL) as Array<["a" | "b" | "c", number]>)
+        .sort((x, y) => y[1] - x[1])[0][0];
+
       let lastStatus = 0;
       for (let i = 0; i < 5; i++) {
         const res = await publicApi("/api/public/reservations", {
           method: "POST",
           body: JSON.stringify({
-            roomTypeId: "standard",
+            roomTypeId: TYPES[roomType],
             checkIn: day(130 + i * 2),
             checkOut: day(131 + i * 2),
             adults: 1,
@@ -720,7 +817,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const res = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "standard",
+          roomTypeId: TYPES.a,
           checkIn: day(150),
           checkOut: day(152),
           adults: 1,
@@ -755,7 +852,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
         publicApi("/api/public/reservations", {
           method: "POST",
           body: JSON.stringify({
-            roomTypeId: "deluxe",
+            roomTypeId: TYPES.c,
             checkIn: day(160),
             checkOut: day(162),
             adults: 1,
@@ -769,20 +866,20 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const ok = results.filter((r) => r.status === 201);
 
       // Ko'pi bilan 2 ta — xonalar soni
-      expect(ok.length).toBeLessThanOrEqual(TOTAL.deluxe);
+      expect(ok.length).toBeLessThanOrEqual(TOTAL.c);
       expect(ok.length).toBeGreaterThan(0);
 
       // DB darajasida ham tekshiramiz: oraliqda kesishuvchi
       // deluxe bronlari xonalar sonidan oshmasligi kerak
       const active = await prisma.reservation.count({
         where: {
-          room: { roomTypeId: "deluxe" },
+          room: { roomTypeId: TYPES.c },
           status: { notIn: ["CANCELLED", "NO_SHOW"] },
           checkIn: { lt: fromDateKey(day(162)) },
           checkOut: { gt: fromDateKey(day(160)) },
         },
       });
-      expect(active).toBeLessThanOrEqual(TOTAL.deluxe);
+      expect(active).toBeLessThanOrEqual(TOTAL.c);
     }, 30000);
 
     it("bo'sh xona qolmasa tushunarli xato beriladi", async () => {
@@ -790,7 +887,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
 
       // Deluxe'ni to'ldiramiz
       const rooms = await prisma.room.findMany({
-        where: { roomTypeId: "deluxe", isActive: true },
+        where: { roomTypeId: TYPES.c, isActive: true },
       });
       const ids: string[] = [];
       for (const r of rooms) {
@@ -801,9 +898,11 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
             checkIn: day(165),
             checkOut: day(167),
             guestName: `Band ${r.number}`,
-            guestPhone: "+998900000093",
+            // Xona raqamiga bog'langan — izoh yuqoridagi
+            // "Toliq" halqasida
+            phone: `+9989221${r.number}`,
             adults: 1,
-            pricePerNight: 90,
+            pricePerNight: await tariffFor(r.id),
           }),
         });
         if (res.status === 201) ids.push(res.body.id);
@@ -812,7 +911,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const res = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: "deluxe",
+          roomTypeId: TYPES.c,
           checkIn: day(165),
           checkOut: day(167),
           adults: 1,

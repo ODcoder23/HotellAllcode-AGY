@@ -8,7 +8,8 @@
 
 import express from "express";
 import { fileURLToPath } from "node:url";
-import { config } from "./lib/config.js";
+import { join } from "node:path";
+import { config, assertProductionSafe } from "./lib/config.js";
 import { prisma } from "./lib/prisma.js";
 import { errorHandler } from "./lib/errors.js";
 import { roomsRouter } from "./routes/rooms.js";
@@ -25,6 +26,9 @@ import { internalLimiter, webhookLimiter } from "./lib/rateLimit.js";
 import "./queues/workers.js";     // worker'lar ishga tushadi
 import { scheduleMaintenance } from "./queues/scheduler.js";
 import "./queues/deadLetter.js";   // TZ 11-band: beds24-retry navbati
+import { startBot, stopBot } from "./bot/index.js";
+import { startCleaningBot, stopCleaningBot } from "./bot/cleaning-bot.js";
+import { startKitchenBot, stopKitchenBot } from "./bot/kitchen-bot.js";
 
 const app = express();
 
@@ -38,11 +42,30 @@ app.use(express.json({
   },
 }));
 
-// CORS — dev uchun ochiq; production'da Nginx orqali (TZ 18-band)
+// CORS (TZ 18-band)
+//
+// Frontend backendning o'zidan xizmat qilinadi, shuning uchun
+// odatda CORS umuman kerak emas — brauzer bir xil origin'ga
+// so'rovni to'smaydi.
+//
+// `CORS_ORIGINS` faqat tashqi domen kerak bo'lganda to'ldiriladi
+// (masalan sayt alohida domenda bo'lsa). Ro'yxatda bo'lmagan
+// origin'ga ruxsat berilmaydi.
+//
+// Avval `*` edi: har qanday sayt brauzer orqali bronlarni
+// o'qishi, yaratishi va bekor qilishi mumkin edi.
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  const origin = req.headers.origin;
+
+  if (origin && config.corsOrigins.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+    // Origin ro'yxatga qarab o'zgargani uchun kesh kalitiga
+    // qo'shiladi — aks holda proxy bitta javobni hammaga beradi
+    res.header("Vary", "Origin");
+    res.header("Access-Control-Allow-Methods", "GET,POST,PATCH,PUT,DELETE,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
+  }
+
   if (req.method === "OPTIONS") { res.sendStatus(204); return; }
   next();
 });
@@ -115,8 +138,36 @@ app.use("/api/webhooks", webhookLimiter, webhooksRouter);
 // uchun mapping/ulanish/log sahifalari shu yerda. Oddiy HTML+fetch,
 // framework yo'q. Keyinroq mavjud panelga ko'chirish mumkin.
 // fileURLToPath — Windows'da URL.pathname oldiga "/" qo'shadi
-// va yo'l "/C:/..." bo'lib ishlamaydi.
+// --- Yuklangan fayllar (tozalash rasmlari va b.) -------------
+const uploadsDir = fileURLToPath(new URL("../public/uploads", import.meta.url));
+app.use("/uploads", express.static(uploadsDir));
+
 app.use("/admin", express.static(fileURLToPath(new URL("../public/admin", import.meta.url))));
+
+// --- Frontend (sayt, admin panel, Shaxmatka) ----------------
+// Birlashtirishdan keyin uchala frontend shu serverdan xizmat
+// qilinadi. Natijada port konflikti, CORS va API_BASE muammosi
+// bir vaqtda hal bo'ladi — hammasi bitta origin.
+//
+// DIQQAT: bu qator 404 handler'dan OLDIN turishi shart.
+const appDir = fileURLToPath(new URL("../public/app", import.meta.url));
+app.use(express.static(appDir));
+
+// "/" → sayt (mehmonlar uchun)
+app.get("/", (_req, res) => {
+  res.sendFile(join(appDir, "index.html"));
+});
+
+// "/admin-panel" → xodimlar paneli.
+// "/admin" band: yuqoridagi mapping/connection/sync-log sahifalari.
+app.get(["/admin-panel", "/panel"], (_req, res) => {
+  res.sendFile(join(appDir, "admin-panel.html"));
+});
+
+// "/shaxmatka" → bandlik jadvali
+app.get("/shaxmatka", (_req, res) => {
+  res.sendFile(join(appDir, "shaxmatka.html"));
+});
 
 // --- 404 ----------------------------------------------------
 app.use((req, res) => {
@@ -127,11 +178,24 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // --- Ishga tushirish ----------------------------------------
-const server = app.listen(config.port, () => {
-  console.log(`\n  Imron PMS backend — FAZA 8`);
+//
+// Ishlab chiqarishda xavfsiz bo'lmagan sozlama bilan ishga
+// tushirmaymiz: `AUTH_REQUIRED=false` yoki dev webhook tokeni
+// bilan chiqish mehmonlar ma'lumotini ochiq qoldirardi.
+// Dev rejimida hech narsa tekshirilmaydi.
+assertProductionSafe();
+
+// `config.host` berilsa faqat o'sha interfeysda tinglaydi
+// (serverda "127.0.0.1"), aks holda hammasida.
+const server = (config.host
+  ? app.listen(config.port, config.host, onReady)
+  : app.listen(config.port, onReady));
+
+function onReady() {
+  console.log(`\n  Imron PMS backend — FAZA 14`);
   console.log(`  http://localhost:${config.port}`);
   console.log(`  DB: ${config.databaseUrl.replace(/:[^:@]*@/, ":***@")}`);
-});
+}
 
 // WebSocket shu HTTP server ustiga o'rnatiladi — alohida port kerak
 // emas, Nginx ham bitta proxy qoidasi bilan o'tkazadi (09-fayl §4).
@@ -141,11 +205,26 @@ startRealtimeServer(server);
 // Redis yo'q bo'lsa jim o'tkazib yuboriladi (TZ 17, 19-band).
 void scheduleMaintenance();
 
+// Telegram botlar. Token yo'q bo'lsa jim o'tkazib yuboriladi —
+// botlar ixtiyoriy qism (TZ 19-band ruhida).
+//
+//   1-bot: boshqaruv (egasi/menejer) — moliya, bronlar
+//   2-bot: tozalik (farroshlar guruhi) — topshiriqlar
+//   3-bot: oshxona (oshpazlar) — porsiyalar
+//
+// Uchalasi ALOHIDA: xavfsizlik va ruxsatlar bo'lingan.
+void startBot();
+void startCleaningBot();
+void startKitchenBot();
+
 console.log("");
 
 // Toza to'xtash
 const shutdown = async (sig: string) => {
   console.log(`\n${sig} — to'xtatilmoqda...`);
+  await stopBot().catch(() => {});
+  await stopCleaningBot().catch(() => {});
+  await stopKitchenBot().catch(() => {});
   await stopRealtimeServer().catch(() => {});
   server.close();
   await shutdownQueues().catch(() => {});

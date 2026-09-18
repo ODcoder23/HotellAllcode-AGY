@@ -24,9 +24,19 @@ import { setupConnection } from "./services/beds24/auth.js";
 import * as mapping from "./services/mapping.js";
 import { PMS_EVENTS, ADMIN_EVENTS } from "./realtime/events.js";
 
-const PMS = "http://localhost:3000";
-const WS_URL = "ws://localhost:3000/ws";
-const MOCK = "http://localhost:4000";
+const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
+
+/**
+ * WebSocket manzili PMS dan olinadi.
+ *
+ * Ilgari `ws://localhost:3000/ws` qattiq yozilgan edi va
+ * `PMS_URL` ni umuman e'tiborga olmasdi: backend boshqa portda
+ * bo'lsa (bizda 3200) barcha realtime testlari ulana olmasdi.
+ * `localhost` ham muammo — Node 18+ uni IPv6 ga hal qiladi
+ * (vitest.setup.ts izohiga qarang).
+ */
+const WS_URL = PMS.replace(/^http/, "ws") + "/ws";
+const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
 const TOKEN = "dev-webhook-token";
 
 /**

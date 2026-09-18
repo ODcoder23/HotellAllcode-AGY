@@ -21,9 +21,16 @@ import {
   searchAvailability,
   createPublicBooking,
   findByCode,
+  listRoomTypes,
 } from "../services/publicBooking.js";
 
 export const publicRouter = Router();
+
+// --- GET /api/public/room-types -----------------------------
+// Sayt "Xonalar" bo'limi. Sana talab qilinmaydi — vitrina.
+publicRouter.get("/room-types", publicReadLimiter, asyncHandler(async (_req, res) => {
+  res.json(await listRoomTypes());
+}));
 
 // --- GET /api/public/availability ---------------------------
 const searchSchema = z.object({
@@ -51,6 +58,13 @@ const bookingSchema = z.object({
   checkOut: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   adults: z.number().int().min(1).max(20),
   children: z.number().int().min(0).max(20).optional(),
+  /**
+   * Nonushta (SAVOLLAR.md S10).
+   *
+   * Sayt bu maydonni yubormasa `false` — mehmon ataylab
+   * tanlamagan bo'lsa qo'shimcha pul olinmasin.
+   */
+  withMeal: z.boolean().optional(),
   guest: z.object({
     fullName: z.string().min(2).max(100),
     phone: z.string().min(7).max(20),

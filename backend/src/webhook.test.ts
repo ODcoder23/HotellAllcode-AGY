@@ -19,8 +19,8 @@ import { prisma } from "./lib/prisma.js";
 import { computePayloadHash, validatePayloadShape } from "./services/webhook.js";
 import { sanitizeForLog } from "./lib/sanitize.js";
 
-const PMS = "http://localhost:3000";
-const MOCK = "http://localhost:4000";
+const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
+const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
 const TOKEN = "dev-webhook-token";
 
 const post = async (path: string, body: unknown, headers: Record<string, string> = {}) => {

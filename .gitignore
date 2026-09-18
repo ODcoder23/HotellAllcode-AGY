@@ -6,6 +6,9 @@ _backup/
 *.bak
 .DS_Store
 
+# docker-compose maxfiy qiymatlari — hech qachon repoga tushmasin
+.env
+
 # Backend
 backend/node_modules/
 backend/dist/

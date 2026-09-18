@@ -8,6 +8,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import { Prisma } from "@prisma/client";
+import { ZodError } from "zod";
 
 export class AppError extends Error {
   constructor(
@@ -116,6 +117,24 @@ export function errorHandler(
     res.status(400).json({
       error: "So'rov tanasi noto'g'ri (JSON kutilgan).",
       code: "BAD_JSON",
+    });
+    return;
+  }
+
+  /**
+   * Zod validatsiya xatosi — bu ham KLIENT xatosi.
+   *
+   * Ko'p marshrut `parse()` yordamchisi orqali o'zi ushlaydi, lekin
+   * `schema.parse()` to'g'ridan-to'g'ri chaqirilgan joylarda xato
+   * shu yerga kelardi va 500 bo'lib chiqardi ("Serverda kutilmagan
+   * xato") — aslida foydalanuvchi noto'g'ri qiymat yuborgan.
+   *
+   * Xabar shakli `parse()` bilan bir xil: "maydon: sabab".
+   */
+  if (err instanceof ZodError) {
+    res.status(400).json({
+      error: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+      code: "VALIDATION",
     });
     return;
   }

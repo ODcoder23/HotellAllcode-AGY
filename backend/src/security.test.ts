@@ -27,7 +27,7 @@ import { sanitizeForLog } from "./lib/sanitize.js";
 import { encrypt, decrypt } from "./lib/encryption.js";
 import type { UserRole } from "@prisma/client";
 
-const PMS = "http://localhost:3000";
+const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
 const BACKEND_DIR = path.resolve(fileURLToPath(new URL("..", import.meta.url)));
 
 const api = async (path: string, init: RequestInit = {}) => {
@@ -220,11 +220,39 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
   });
 
   // --- 4. RBAC (TZ 18-band, 4-talab) -------------------------
-  describe("4. RBAC — uch rol (10-fayl §3)", () => {
-    it("ADMIN hamma huquqqa ega", () => {
+  describe("4. RBAC — to'rt rol (10-fayl §3)", () => {
+    it("FOUNDER hamma huquqqa ega", () => {
+      // Egasi — yagona rol, unda hech narsa yopiq emas
       for (const p of Object.keys(PERMISSIONS)) {
+        expect(can("FOUNDER", p as never), `FOUNDER uchun ${p} yopiq`).toBe(true);
+      }
+    });
+
+    it("ADMIN texnik ishlarni qiladi, biznes raqamlarini ko'rmaydi", () => {
+      // 2026-09-16: FOUNDER roli qo'shilganda ikki huquq ADMIN'dan
+      // olindi. Ilgari "ADMIN hamma huquqqa ega" edi.
+      expect(can("ADMIN", "report.read")).toBe(false);   // daromad, foyda
+      expect(can("ADMIN", "user.manage")).toBe(false);   // adminlarni nazorat
+
+      // Qolgan hammasi ochiq
+      for (const p of Object.keys(PERMISSIONS)) {
+        if (p === "report.read" || p === "user.manage") continue;
         expect(can("ADMIN", p as never), `ADMIN uchun ${p} yopiq`).toBe(true);
       }
+    });
+
+    it("umumiy hisobot faqat egasiga ko'rinadi", () => {
+      expect(can("FOUNDER", "report.read")).toBe(true);
+      expect(can("ADMIN", "report.read")).toBe(false);
+      expect(can("MANAGER", "report.read")).toBe(false);
+      expect(can("STAFF", "report.read")).toBe(false);
+    });
+
+    it("foydalanuvchi boshqaruvi faqat egasida", () => {
+      expect(can("FOUNDER", "user.manage")).toBe(true);
+      expect(can("ADMIN", "user.manage")).toBe(false);
+      expect(can("MANAGER", "user.manage")).toBe(false);
+      expect(can("STAFF", "user.manage")).toBe(false);
     });
 
     it("MANAGER Beds24 sozlamalariga KIROLMAYDI", () => {
@@ -259,9 +287,15 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       }
     });
 
-    it("ADMIN har huquqda bor — qulflanib qolmaslik uchun", () => {
+    it("FOUNDER har huquqda bor — qulflanib qolmaslik uchun", () => {
+      // 2026-09-16 dan beri bu rolni FOUNDER bajaradi: ADMIN'dan
+      // `report.read` va `user.manage` olib tashlandi, shuning
+      // uchun "hamma narsani qila oladigan" yagona rol — egasi.
+      //
+      // Bittasi bo'lmasa tizim qulflanadi: hech kim o'sha amalni
+      // bajara olmaydi va bazaga qo'lda kirmasdan tuzatib bo'lmaydi.
       for (const [perm, roles] of Object.entries(PERMISSIONS)) {
-        expect(roles as readonly UserRole[], `${perm} da ADMIN yo'q`).toContain("ADMIN");
+        expect(roles as readonly UserRole[], `${perm} da FOUNDER yo'q`).toContain("FOUNDER");
       }
     });
 
@@ -339,8 +373,19 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
     });
 
     it("bron bekor qilinishi qayd etiladi", async () => {
+      // Tur nomi qattiq yozilmaydi: "standard" 12 xonali eski
+      // tuzilishdan qolgan edi va bu test topa olmay yiqilardi
       const room = await prisma.room.findFirstOrThrow({
-        where: { roomTypeId: "standard", isActive: true },
+        where: { isActive: true },
+        orderBy: { sortOrder: "asc" },
+      });
+
+      // Narx tarifdan olinadi — pastroq narx chegirma sababini
+      // talab qiladi (SAVOLLAR.md S4)
+      const plan = await prisma.ratePlan.findFirst({
+        where: { roomTypeId: room.roomTypeId },
+        orderBy: { price: "desc" },
+        select: { price: true },
       });
 
       const created = await api("/api/reservations", {
@@ -351,9 +396,10 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
           checkIn: "2032-03-01",
           checkOut: "2032-03-02",
           guestName: "Audit Testi",
+          phone: "+99890700001",
           guestPhone: "+998900000080",
           adults: 1,
-          pricePerNight: 100,
+          pricePerNight: plan ? Number(plan.price) : 100,
         }),
       });
       expect(created.status).toBe(201);
