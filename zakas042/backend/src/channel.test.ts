@@ -79,6 +79,9 @@ const PROPERTY = {
   ],
 };
 
+/** Hisobdagi ikkinchi obyekt (xonasiz) — obyekt almashtirish testi uchun */
+const SECOND_PROPERTY = { id: 778, name: "Ikkinchi obyekt (soxta)", currency: "USD", roomTypes: [] };
+
 const nowStamp = () => new Date().toISOString().replace("T", " ").slice(0, 19);
 
 function send(res: http.ServerResponse, status: number, body: unknown) {
@@ -162,7 +165,10 @@ const server = http.createServer(async (req, res) => {
   }
   if (path === "/properties") {
     const all = url.searchParams.get("includeAllRooms") === "true";
-    return send(res, 200, { success: true, data: [{ ...PROPERTY, roomTypes: all ? PROPERTY.roomTypes : [] }] });
+    return send(res, 200, {
+      success: true,
+      data: [{ ...PROPERTY, roomTypes: all ? PROPERTY.roomTypes : [] }, { ...SECOND_PROPERTY }],
+    });
   }
 
   if (path === "/bookings" && req.method === "GET") {
@@ -1012,6 +1018,57 @@ describe("Kurs (Markaziy bank / qo'lda)", () => {
     // Kechagi dollar bron kursi o'zgarmaydi (bron kelgan kun kursi qotadi)
     expect(Number((await byExternal(9001))!.exchangeRate)).toBe(RATE);
   });
+});
+
+/** Fon ishlari (bog'lashdan keyingi import va yuborish) tugashini kutadi */
+async function settle(quietMs = 1500, maxMs = 20_000): Promise<void> {
+  const deadline = Date.now() + maxMs;
+  let last = -1;
+  while (Date.now() < deadline) {
+    const n = fake.posts.length + fake.credits;
+    if (n === last) return;
+    last = n;
+    await new Promise((r) => setTimeout(r, quietMs));
+  }
+}
+
+describe("Provider va obyekt tanlash, mapping'dagi obyekt (TZ 11, 12)", () => {
+  it("boshqa obyektga o'tilsa bog'lanishlar o'chadi, qaytganda tiklanadi", async () => {
+    if (!ready()) return;
+    const conn = await api("/api/admin/connection", { token: tok.admin });
+    expect(conn.body.provider).toEqual({ code: "beds24", name: "Beds24" });
+    expect(conn.body.providers).toEqual([{ code: "beds24", name: "Beds24" }]);
+
+    const props = await api("/api/admin/connection/properties", { token: tok.admin });
+    expect(props.status).toBe(200);
+    expect(props.body.current).toBe("777");
+    expect(props.body.properties.map((p: any) => p.id)).toEqual(["777", "778"]);
+
+    const active = () => prisma.channelMapping.count({ where: { isActive: true } });
+    const before = await active();
+    expect(before).toBeGreaterThan(0);
+    // Har bog'lanishda obyekt yozilgan (TZ 11-band external_property_id)
+    expect(await prisma.channelMapping.count({ where: { isActive: true, externalPropertyId: "777" } })).toBe(before);
+
+    if (authOn) {
+      const denied = await api("/api/admin/connection/property", { method: "POST", token: tok.manager, body: { propertyId: "778" } });
+      expect(denied.status).toBe(403);
+    }
+    const bad = await api("/api/admin/connection/property", { method: "POST", token: tok.admin, body: { propertyId: "999" } });
+    expect(bad.status).toBe(400);
+
+    const sw = await api("/api/admin/connection/property", { method: "POST", token: tok.admin, body: { propertyId: "778" } });
+    expect(sw.status).toBe(200);
+    expect(sw.body.connection.propertyId).toBe("778");
+    expect(sw.body.mappingChanges.deactivated).toBe(before);
+    expect(await active()).toBe(0);
+
+    const back = await api("/api/admin/connection/property", { method: "POST", token: tok.admin, body: { propertyId: "777" } });
+    expect(back.status).toBe(200);
+    expect(back.body.mappingChanges.reactivated).toBe(before);
+    expect(await active()).toBe(before);
+    await settle();   // qaytgandan keyingi to'liq import fonda
+  }, 60_000);
 });
 
 describe("Holat va uzish", () => {

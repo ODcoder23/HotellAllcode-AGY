@@ -48,7 +48,7 @@ import type {
   WebhookResult,
 } from "../channel/types.js";
 import { beds24Request, getCreditState, RateLimitError, Beds24ApiError } from "./client.js";
-import { Beds24AuthError, connect, disconnect, getConnectionStatus } from "./auth.js";
+import { Beds24AuthError, connect, disconnect, getConnectionStatus, switchProperty } from "./auth.js";
 
 // --- Beds24 javob shakllari ---------------------------------
 
@@ -331,6 +331,23 @@ export class Beds24Adapter implements ChannelAdapter {
 
   connectionStatus(): Promise<ConnectionStatus> {
     return getConnectionStatus();
+  }
+
+  async listProperties() {
+    const res = await beds24Request<Beds24List<Beds24Property>>("/properties", { estimatedCost: 2 });
+    return (res.data ?? []).map((p) => ({
+      id: String(p.id),
+      name: p.name || `Obyekt ${p.id}`,
+      currency: (p.currency ?? "").toUpperCase(),
+    }));
+  }
+
+  async selectProperty(propertyId: string) {
+    const ids = (await this.listProperties()).map((p) => p.id);
+    if (!ids.includes(propertyId)) {
+      throw new Beds24AuthError(`Hisobda ${propertyId} obyekti yo'q (bor: ${ids.join(", ") || "—"})`, false);
+    }
+    await switchProperty(propertyId);
   }
 
   async ping() {

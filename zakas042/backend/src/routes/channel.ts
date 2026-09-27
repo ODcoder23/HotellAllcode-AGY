@@ -7,6 +7,7 @@
  * Dollar summasi bron ichida — Shaxmatkada hamma xodimga (reservation.read).
  *
  *   ulanish     GET/POST/DELETE /connection, POST /connection/ping,
+ *               GET /connection/properties, POST /connection/property,
  *               GET /status (= /channel-health)
  *   mapping     GET/PUT /mapping, DELETE /mapping/:id, GET /mapping/external,
  *               GET /mapping/health, POST /mapping/auto-units,
@@ -31,10 +32,10 @@ import { audit } from "../services/auditLog.js";
 import { describeSyncLog } from "../lib/syncLog.js";
 import { Beds24AuthError } from "../services/beds24/auth.js";
 import { Beds24ApiError, RateLimitError, getCreditState } from "../services/beds24/client.js";
-import { getChannel } from "../services/channel/registry.js";
+import { getChannel, hasChannel, listChannelInfo } from "../services/channel/registry.js";
 import { invalidateRoomTypes } from "../services/channel/propertyCache.js";
 import {
-  autoMapUnits, deleteMapping, getExternalProperty, listMappings, mappingHealth,
+  alignMappingsToProperty, autoMapUnits, deleteMapping, getExternalProperty, listMappings, mappingHealth,
   requeueAfterMappingChange, setMappingMeal, upsertMapping,
 } from "../services/mapping.js";
 import { reservationInclude } from "../services/reservations.js";
@@ -103,9 +104,13 @@ async function connectionView() {
   let channelCurrency: string | null = null;
   if (status.isConnected) channelCurrency = await getChannel().getCurrency().catch(() => null);
   const fx = channelCurrency ? await getFxRate(channelCurrency) : await getFxRate("USD");
+  const channel = getChannel();
   return {
     ...status,
     connected: status.isConnected,
+    // TZ 12-band: Provider (hozir faqat Beds24 ro'yxatdan o'tgan)
+    provider: { code: channel.code, name: channel.name },
+    providers: listChannelInfo(),
     credits: getCreditState(),
     currency: { pms: "UZS", channel: channelCurrency },
     fx,
@@ -121,20 +126,23 @@ channelRouter.get("/connection", ...read, asyncHandler(async (_req, res) => {
 }));
 
 const connectSchema = z.object({
+  provider: z.string().max(40).refine(hasChannel, "noma'lum provider").optional(),
   inviteCode: z.string().trim().min(4).max(500).optional(),
   refreshToken: z.string().trim().min(10).max(2000).optional(),
   propertyId: z.string().regex(/^\d+$/, "faqat raqam").max(20).optional(),
 }).refine((v) => !!v.inviteCode !== !!v.refreshToken, "inviteCode YOKI refreshToken (bittasi)");
 
 channelRouter.post("/connection", ...write, asyncHandler(async (req: AuthedRequest, res) => {
-  const body = parse(connectSchema, req.body);
-  const conn = await beds24(() => getChannel().connect(body));
+  const { provider, ...body } = parse(connectSchema, req.body);
+  const conn = await beds24(() => getChannel(provider).connect(body));
+  // Boshqa obyektga ulangan bo'lsa eski obyekt bog'lanishlari o'chadi (TZ 11-band)
+  const mappingChanges = await alignMappingsToProperty(conn.propertyId);
   await audit({
     userId: req.user?.id,
     action: "channel.connected",
     entityType: "ChannelConnection",
     entityId: conn.id,
-    after: { propertyId: conn.propertyId, via: body.inviteCode ? "invite_code" : "refresh_token" },
+    after: { propertyId: conn.propertyId, via: body.inviteCode ? "invite_code" : "refresh_token", ...mappingChanges },
     ipAddress: req.ip,
   });
   // Darhol tekshiramiz — admin natijani shu zahoti ko'rsin. Import
@@ -143,7 +151,40 @@ channelRouter.post("/connection", ...write, asyncHandler(async (req: AuthedReque
   // darhol ikki tomonga (Beds24'dan import, PMS'dan yuborish)
   const ping = await pingChannel();
   if (ping.ok && (await prisma.channelMapping.count({ where: { isActive: true } })) > 0) afterMappingChange();
-  res.status(201).json({ connection: await connectionView(), ping });
+  res.status(201).json({ connection: await connectionView(), ping, mappingChanges });
+}));
+
+/** Hisobdagi obyektlar — ulangandan keyin obyektni tanlash (TZ 12-band) */
+channelRouter.get("/connection/properties", ...read, asyncHandler(async (_req, res) => {
+  const status = await getChannel().connectionStatus();
+  if (!status.isConnected) throw new ValidationError("Ulanmagan");
+  const properties = await beds24(() => getChannel().listProperties());
+  res.json({ current: status.propertyId, properties });
+}));
+
+/**
+ * Ulanishni shu hisobdagi boshqa obyektga o'tkazish. Eski obyekt
+ * bog'lanishlari nofaol bo'ladi (qaytib ulanganda tiklanadi), bronlar
+ * yangi obyektdan to'liq o'qiladi.
+ */
+channelRouter.post("/connection/property", ...write, asyncHandler(async (req: AuthedRequest, res) => {
+  const { propertyId } = parse(z.object({ propertyId: z.string().regex(/^\d+$/, "faqat raqam").max(20) }), req.body);
+  const before = await getChannel().connectionStatus();
+  if (!before.isConnected) throw new ValidationError("Ulanmagan");
+  await beds24(() => getChannel().selectProperty(propertyId));
+  invalidateRoomTypes();
+  const mappingChanges = await alignMappingsToProperty(propertyId);
+  await audit({
+    userId: req.user?.id,
+    action: "channel.connected",
+    entityType: "ChannelConnection",
+    before: { propertyId: before.propertyId },
+    after: { propertyId, via: "property_switch", ...mappingChanges },
+    ipAddress: req.ip,
+  });
+  const ping = await pingChannel();
+  if (ping.ok && (await prisma.channelMapping.count({ where: { isActive: true } })) > 0) afterMappingChange();
+  res.json({ connection: await connectionView(), ping, mappingChanges });
 }));
 
 channelRouter.delete("/connection", ...write, asyncHandler(async (req: AuthedRequest, res) => {

@@ -51,6 +51,7 @@ export async function listMappings() {
   });
   return rows.map((m) => ({
     id: m.id,
+    externalPropertyId: m.externalPropertyId,
     externalRoomTypeId: m.externalRoomTypeId,
     externalUnitId: m.externalUnitId,
     externalName: m.externalName,
@@ -212,11 +213,14 @@ export async function upsertMapping(input: MappingInput) {
     });
   }
 
+  // TZ 11-band: bog'lanish qaysi Beds24 obyektiga tegishli
+  const conn = await activeConnection();
   const data = {
     roomTypeId: unitId ? null : input.roomTypeId ?? null,
     roomId: unitId ? input.roomId ?? null : null,
     externalName: input.externalName ?? existing?.externalName ?? null,
     includesMeal: input.includesMeal ?? existing?.includesMeal ?? false,
+    externalPropertyId: conn?.propertyId ?? existing?.externalPropertyId ?? null,
     isActive: true,
   };
 
@@ -292,6 +296,41 @@ export async function autoMapUnits() {
     }
   }
   return { mapped, skipped };
+}
+
+/**
+ * Bog'lanishlarni ulangan obyektga moslaydi (TZ 11-band) — ulash yoki
+ * obyekt almashtirilgandan keyin chaqiriladi.
+ *
+ *   - boshqa obyektniki — nofaol (Beds24 xona id'lari boshqa obyektda
+ *     boshqa xonani bildiradi: bron noto'g'ri xonaga tushardi)
+ *   - shu obyektniki (ilgari almashtirilganda o'chgan) — qayta faol
+ *   - obyekti noma'lum (eski yozuv) — shu obyektga yoziladi
+ *
+ * Obyekt almashgan bo'lsa bronlar kursori tashlanadi — keyingi polling
+ * yangi obyektning hamma bronlarini to'liq o'qiydi.
+ */
+export async function alignMappingsToProperty(propertyId: string): Promise<{ deactivated: number; reactivated: number }> {
+  const channel = await getBeds24Channel();
+  const [deactivated, reactivated] = await prisma.$transaction([
+    prisma.channelMapping.updateMany({
+      where: { channelId: channel.id, isActive: true, externalPropertyId: { not: null }, NOT: { externalPropertyId: propertyId } },
+      data: { isActive: false },
+    }),
+    prisma.channelMapping.updateMany({
+      where: { channelId: channel.id, isActive: false, externalPropertyId: propertyId },
+      data: { isActive: true },
+    }),
+    prisma.channelMapping.updateMany({
+      where: { channelId: channel.id, externalPropertyId: null },
+      data: { externalPropertyId: propertyId },
+    }),
+  ]);
+  if (deactivated.count > 0 || reactivated.count > 0) {
+    // reconciliation.ts `KEY_BOOKINGS_PULL`
+    await prisma.syncState.deleteMany({ where: { channelId: channel.id, key: "bookings_pull" } });
+  }
+  return { deactivated: deactivated.count, reactivated: reactivated.count };
 }
 
 /**

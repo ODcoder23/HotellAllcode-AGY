@@ -185,6 +185,26 @@ export async function connect(input: { inviteCode?: string; refreshToken?: strin
   return conn;
 }
 
+/**
+ * Faol ulanishni shu hisobdagi boshqa obyektga o'tkazadi (token o'sha).
+ * Obyekt hisobda borligini chaqiruvchi tekshiradi (adapter).
+ */
+export async function switchProperty(propertyId: string): Promise<void> {
+  const conn = await activeConnection();
+  if (!conn) throw new Beds24AuthError("Beds24 ulanmagan", false);
+  if (conn.propertyId === propertyId) return;
+  // Shu obyektning eski (nofaol) yozuvi — unique(channelId, propertyId) ga urilmasin
+  await prisma.channelConnection.deleteMany({
+    where: { channelId: conn.channelId, propertyId, NOT: { id: conn.id } },
+  });
+  await prisma.channelConnection.update({
+    where: { id: conn.id },
+    data: { propertyId, lastCheckedAt: null, lastCheckOk: null, lastError: null },
+  });
+  const { invalidateRoomTypes } = await import("../channel/propertyCache.js");
+  invalidateRoomTypes();
+}
+
 /** Ulanishni o'chirish — tokenlar bazadan o'chiriladi */
 export async function disconnect(): Promise<number> {
   const r = await prisma.channelConnection.updateMany({

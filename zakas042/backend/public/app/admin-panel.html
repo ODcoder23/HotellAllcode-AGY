@@ -5984,7 +5984,8 @@
         cards.innerHTML =
           '<div class="card"><div class="card-title">Beds24 ulanishi</div>' +
             kv('Holati', connState) +
-            kv('Obyekt ID', esc(c.propertyId || '—')) +
+            kv('Provider', esc((c.provider && c.provider.name) || '—')) +
+            kv('Obyekt ID', esc(c.propertyId || '—') + ' <a class="ch-link" href="/admin/connection.html" target="_blank">tanlash ↗</a>') +
             kv('Valyuta', esc((c.currency && c.currency.channel) || '—') + (c.fx ? ' · 1 $ = ' + som(c.fx.rate) + " so'm" : '')) +
             kv('Oxirgi tekshiruv', when(c.lastCheckedAt)) +
             kv('Kredit (5 daq.)', c.credits.remaining === null ? '—' : c.credits.remaining, c.credits.isLow) +
@@ -6129,10 +6130,13 @@
         try{
           const r = await api('/api/admin/connection', { method: 'POST', body });
           const warn = scopeWarning(Object.assign({}, r.connection, { scopes: (r.ping && r.ping.scopes) || r.connection.scopes }));
+          const mc = r.mappingChanges || {};
           info('Ulandi', (r.ping && r.ping.ok
             ? 'Beds24: ' + (r.ping.detail || 'ishlayapti') + '. '
             : 'Ulandi, lekin tekshiruv xato berdi: ' + ((r.ping && r.ping.detail) || '') + '. ') +
             (warn ? warn + ' ' : '') +
+            (mc.deactivated ? "Boshqa obyektga ulandi: eski obyektning " + mc.deactivated + " ta bog'lanishi o'chirildi. " : '') +
+            (mc.reactivated ? mc.reactivated + " ta bog'lanish tiklandi. " : '') +
             "Xonalar hali bog'lanmagan bo'lsa — \"Unit'larni avtomatik bog'lash\": shundan keyin Beds24 bronlari import qilinadi. Bog'langan bo'lsa import va yuborish fonda boshlandi.");
           loadChannels();
         }catch(e){ fail(e.message); }

@@ -70,6 +70,11 @@ export function listChannels(): string[] {
   return [...adapters.keys()];
 }
 
+/** Provider tanlash ro'yxati (TZ 12-band, ulanish sahifasi) */
+export function listChannelInfo(): Array<{ code: string; name: string }> {
+  return [...adapters.values()].map((a) => ({ code: a.code, name: a.name }));
+}
+
 /**
  * Kanal ro'yxatdan o'tganmi.
  *

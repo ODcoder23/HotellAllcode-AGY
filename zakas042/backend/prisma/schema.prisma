@@ -775,6 +775,12 @@ model ChannelMapping {
   roomType           RoomType? @relation(fields: [roomTypeId], references: [id])
   roomId             String?
   room               Room?     @relation(fields: [roomId], references: [id])
+  /**
+   * Beds24 obyekti (property) — TZ 11-band `external_property_id`.
+   * Boshqa obyektga ulanganda bu obyektning bog'lanishlari nofaol
+   * bo'ladi, qaytib ulanganda tiklanadi (services/mapping.ts)
+   */
+  externalPropertyId String?
   externalRoomTypeId String // Beds24 "roomId" (xona turi)
   externalUnitId     String? // Beds24 unit (jismoniy xona)
   /**

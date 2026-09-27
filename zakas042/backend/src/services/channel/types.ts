@@ -192,6 +192,12 @@ export interface ChannelAdapter {
   /** Ulanish holati (kalitsiz) */
   connectionStatus(): Promise<ConnectionStatus>;
 
+  /** Hisobdagi hamma obyektlar — ulangandan keyin obyekt tanlash uchun */
+  listProperties(): Promise<Array<{ id: string; name: string; currency: string }>>;
+
+  /** Ulanishni shu hisobdagi boshqa obyektga o'tkazish (hisobda yo'q — xato) */
+  selectProperty(propertyId: string): Promise<void>;
+
   /** Ulanish tekshiruvi. FAZA 15 `beds24:verify` shuni chaqiradi */
   ping(): Promise<{ ok: boolean; detail: string; creditsRemaining?: number }>;
 
