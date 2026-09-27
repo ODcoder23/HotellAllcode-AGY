@@ -17,7 +17,7 @@ curl -s -m 5 "http://127.0.0.1:$PORT/health"; echo
 
 echo
 echo "=== Baza ==="
-docker compose exec -T postgres psql -U imron -d imron_pms -t -c \
+docker compose exec -T postgres psql -U imron -d imron_pms -t < /dev/null -c \
   "SELECT '  xona: ' || COUNT(*) FROM \"Room\"
    UNION ALL SELECT '  bron: ' || COUNT(*) FROM \"Reservation\"
    UNION ALL SELECT '  foydalanuvchi: ' || COUNT(*) FROM \"User\"

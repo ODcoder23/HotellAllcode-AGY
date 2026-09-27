@@ -12,10 +12,10 @@
 # ============================================================
 set -euo pipefail
 cd /srv/projects/hotel
-mkdir -p backups
+mkdir -p backups && chmod 700 backups   # baza nusxasi — faqat root
 
 F="backups/db-$(date +%F).dump"
-docker compose exec -T postgres pg_dump -U imron -d imron_pms -Fc > "$F.tmp"
+docker compose exec -T postgres pg_dump -U imron -d imron_pms -Fc < /dev/null > "$F.tmp"
 
 # Bo'sh yoki o'qilmaydigan nusxa eskisini almashtirmasin
 [ -s "$F.tmp" ] || { echo "$(date -Is) zaxira bo'sh" >&2; rm -f "$F.tmp"; exit 1; }

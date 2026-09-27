@@ -40,10 +40,11 @@ cd /srv/projects/hotel
 [ -f .env ] || { echo "XATO: /srv/projects/hotel/.env yo'q (SERVER.md, birinchi o'rnatish)"; exit 1; }
 
 # 1. Zaxira — baza ishlayotgan va unda bron/foydalanuvchi bo'lsa
-mkdir -p backups
+mkdir -p backups && chmod 700 backups
 if docker compose ps --status running postgres 2>/dev/null | grep -q postgres; then
   F="backups/pre-deploy-$(date +%F-%H%M).dump"
-  docker compose exec -T postgres pg_dump -U imron -d imron_pms -Fc > "$F"
+  # < /dev/null: aks holda `exec` skriptning qolgan qismini (ssh stdin) yutadi
+  docker compose exec -T postgres pg_dump -U imron -d imron_pms -Fc < /dev/null > "$F"
   SIZE=$(stat -c%s "$F")
   [ "$SIZE" -gt 0 ] || { echo "XATO: zaxira bo'sh — deploy to'xtatildi"; exit 1; }
   cat "$F" | docker compose exec -T postgres pg_restore -l > /dev/null \
@@ -58,7 +59,7 @@ rm -f /tmp/hotel-deploy.tgz
 chmod +x deploy/*.sh
 
 # 3. Yig'ish va ishga tushirish
-docker compose up -d --build 2>&1 | grep -vE '^\s*$' | tail -8
+docker compose up -d --build < /dev/null 2>&1 | tail -8
 
 # 4. Tekshiruv
 PORT=$(grep -E '^API_PORT=' .env | cut -d= -f2)

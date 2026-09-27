@@ -42,12 +42,17 @@ Bog'liq: [SERVER.md](SERVER.md) · [BEDS24.md](BEDS24.md) ·
 
 ## C. Serverga joylash
 
-- [ ] Port — registrdan (`/srv/projects/_registry`), loyiha registrga yoziladi
-- [ ] Kod, `.env` (yangi `JWT_SECRET`, `ENCRYPTION_KEY`, `WEBHOOK_URL_TOKEN`)
-- [ ] Build va ishga tushirish, migratsiyalar
-- [ ] SSL sertifikat
-- [ ] Boshlang'ich ma'lumot, FOUNDER paroli egasiga
-- [ ] Tekshiruv: `/health`, sayt, Shaxmatka, admin panel, WebSocket
+- [x] Port — registrdan (9001), loyiha registrga yozildi; `/srv/projects/hotel`
+- [x] Kod, `.env` (yangi `JWT_SECRET`, `ENCRYPTION_KEY`, `WEBHOOK_URL_TOKEN`,
+      baza paroli — serverda yaratildi); 3 ta Telegram bot tiklandi
+- [x] Build va ishga tushirish, 27 migratsiya; deploy oldidan zaxira ishlaydi
+- [x] SSL sertifikat (Let's Encrypt), HTTP → HTTPS, HSTS
+- [x] Boshlang'ich ma'lumot (18 xona, 9 tarif), FOUNDER paroli egasiga
+- [x] Tekshiruv: `/health`, sayt, Shaxmatka, admin panel, WebSocket (wss),
+      API va `/uploads` tokensiz 401, noto'g'ri webhook tokeni 404.
+      Topilib tuzatildi: sidebar'da qattiq yozilgan "2 yangi"; deploy
+      skriptida `docker compose exec` ssh stdin'ini yutardi; zaxira
+      papkasi hammaga o'qiladigan edi
 
 ## D. Beds24
 
@@ -55,7 +60,9 @@ Bog'liq: [SERVER.md](SERVER.md) · [BEDS24.md](BEDS24.md) ·
       (bookings: o'qish + yozish; inventory: o'qish + yozish;
       properties: o'qish)
 - [ ] Ulash → obyekt → unit'larni bog'lash → import natijasi
-- [ ] Beds24 panelida webhook URL
+      (Channel manager → Ulanish; invite code bir martalik)
+- [ ] Beds24 panelida webhook URL — Ulanish sahifasida "Webhook URL"
+      (faqat egasi va admin ko'radi)
 - [ ] Narxlar: tur darajasida bog'langan tarif Beds24'dan tortiladi yoki
       admin Narxlar bo'limida kiritadi
 - [ ] Jonli sinov: Beds24'dagi bron → PMS; PMS broni → Beds24; bekor qilish
@@ -63,6 +70,8 @@ Bog'liq: [SERVER.md](SERVER.md) · [BEDS24.md](BEDS24.md) ·
 ## E. Keyin — egasi
 
 - [ ] **[egasi]** Haqiqiy domen (hozir vaqtinchalik manzil)
-- [ ] **[egasi]** Telegram bot tokenlari (eski `.env` bilan birga o'chgan)
+- [x] Telegram botlari (egasi, tozalik, oshxona) — lokal `.env` dagi tokenlar
+      bilan tiklandi. Lokal `npm run dev` shu `.env` bilan ishga tushirilmasin —
+      bitta bot ikki joydan so'ralsa Telegram 409 beradi
 - [ ] **[egasi]** Xodimlar, maoshlar, nonushta narxi, foydalanuvchilar
 - [ ] **[egasi]** Qarorlar — [ISH_REJASI.md](ISH_REJASI.md) 2-bo'lim

@@ -393,6 +393,19 @@ describe("Ruxsatlar — avvalgidek: egasi va admin boshqaradi, menejer o'qiydi",
     expect(r.body.encryptionKeySet).toBe(true);
     expect(r.text.toLowerCase()).not.toContain("refreshtoken");
   });
+
+  it("webhook URL (maxfiy token bilan) — egasi va admin ko'radi, menejer yo'q", async () => {
+    const admin = await api("/api/admin/connection", { token: tok.admin });
+    expect(admin.body.webhookUrl).toMatch(/^https?:\/\/[^/]+\/api\/webhooks\/beds24\/.{16,}$/);
+    expect(admin.body.webhookUrl.endsWith(WEBHOOK_TOKEN)).toBe(true);
+
+    if (!authOn) return;   // AUTH_REQUIRED=false — hamma ADMIN
+    const manager = await api("/api/admin/connection", { token: tok.manager });
+    expect(manager.status).toBe(200);
+    expect(manager.body.webhookConfigured).toBe(true);
+    expect(manager.body.webhookUrl).toBeNull();
+    expect(manager.text).not.toContain(WEBHOOK_TOKEN);
+  });
 });
 
 // ============================================================

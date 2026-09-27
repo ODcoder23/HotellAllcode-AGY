@@ -44,7 +44,7 @@ find_free_port() {
 PORT=$(find_free_port) || { echo "XATO: bo'sh port yo'q"; exit 1; }
 
 # --- 2. .env ---------------------------------------------------------
-mkdir -p "$ROOT/backups"
+mkdir -p "$ROOT/backups" && chmod 700 "$ROOT/backups"
 umask 077
 {
   echo "# Imron Hotel PMS — server sozlamalari ($(date +%F)). Git'ga KIRMAYDI."

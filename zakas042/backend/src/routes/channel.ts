@@ -27,7 +27,8 @@ import { asyncHandler, NotFoundError, ValidationError } from "../lib/errors.js";
 import { serializeReservation, toDateKey } from "../lib/serialize.js";
 import { addDays, hotelToday } from "../lib/hotelTime.js";
 import { config } from "../lib/config.js";
-import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
+import { authRequired, requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
+import { can } from "../services/auth.js";
 import { audit } from "../services/auditLog.js";
 import { describeSyncLog } from "../lib/syncLog.js";
 import { Beds24AuthError } from "../services/beds24/auth.js";
@@ -121,8 +122,19 @@ async function connectionView() {
   };
 }
 
-channelRouter.get("/connection", ...read, asyncHandler(async (_req, res) => {
-  res.json(await connectionView());
+/**
+ * `webhookUrl` — Beds24 paneliga kiritiladigan to'liq manzil (maxfiy token
+ * bilan). Faqat ulash huquqi borlarga (`channel.write`: egasi, admin);
+ * menejer faqat "sozlangan" belgisini ko'radi. Manzil so'rovdan quriladi —
+ * domen o'zgarsa ham to'g'ri (nginx `X-Forwarded-Proto`, `trust proxy`).
+ */
+channelRouter.get("/connection", ...read, asyncHandler(async (req: AuthedRequest, res) => {
+  const view = await connectionView();
+  const canWrite = !authRequired() || (req.user !== undefined && can(req.user.role, "channel.write"));
+  const webhookUrl = canWrite && view.webhookConfigured
+    ? `${req.protocol}://${req.get("host")}/api/webhooks/beds24/${config.beds24.webhookUrlToken}`
+    : null;
+  res.json({ ...view, webhookUrl });
 }));
 
 const connectSchema = z.object({

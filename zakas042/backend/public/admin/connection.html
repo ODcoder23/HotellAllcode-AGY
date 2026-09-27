@@ -99,6 +99,9 @@ async function load() {
         (c.catchUpIntervalMinutes > 0 ? " · catch-up har " + c.catchUpIntervalMinutes + " daqiqa" : "") : "o'chiq"],
       ["Bronlarni oxirgi o'qish", when(s.lastPollAt)],
       ["Webhook", c.webhookConfigured ? "sozlangan (24 soatda " + s.webhooks24h + ")" : "sozlanmagan — bronlar polling bilan keladi"],
+      // To'liq manzil — faqat egasi va admin'ga keladi (maxfiy token bilan)
+      ...(c.webhookUrl ? [["Webhook URL (Beds24 paneliga)", '<span class="mono" style="word-break:break-all">' + esc(c.webhookUrl) + "</span>" +
+        '<br><span class="sub">Beds24 → Settings → Properties → Access → Booking Webhook, versiya: "twoWithPersonalData". Maxfiy — boshqalarga bermang.</span>']] : []),
       ["Mapping", s.mapping.roomsMapped + " / " + s.mapping.roomsTotal + " xona"],
       ["Bronlar", "Beds24'dan kelgan " + r.fromChannel + " · yuborilgan " + r.synced + " · kutmoqda " + r.pending +
         " · xato " + r.failed + " · rad etilgan " + r.rejected],

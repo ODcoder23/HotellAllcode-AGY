@@ -88,18 +88,19 @@ boshqarish oynasi.
    o'tilganda tiklanadi), bronlar yangi obyektdan to'liq o'qiladi.
 4. "Unit'larni avtomatik bog'lash" (unit nomi = PMS xona raqami),
    qolganini qo'lda. Bog'langach import va yuborish fonda boshlanadi.
-5. Webhook: `.env` da `WEBHOOK_URL_TOKEN` (16+ belgi), Beds24'da URL
-   `https://<domen>/api/webhooks/beds24/<token>`, versiya
-   `twoWithPersonalData`. Webhook bo'lmasa bronlar polling bilan keladi.
+5. Webhook: `.env` da `WEBHOOK_URL_TOKEN` (16+ belgi; o'rnatishda
+   serverda yaratiladi). To'liq URL — Ulanish sahifasida "Webhook URL"
+   (faqat egasi va admin ko'radi). Beds24 → Settings → Properties →
+   Access → Booking Webhook: shu URL, versiya `twoWithPersonalData`.
+   Webhook bo'lmasa bronlar polling bilan keladi (5 daqiqa).
 6. Mavjud PMS narxlari Beds24'ga **avtomatik yuborilmaydi** (Booking.com
    narxi kutilmaganda o'zgarmasin). Kerak bo'lsa: Narxlar → "Beds24'ga
    yuborish" yoki narxni qayta saqlash.
 
-**Real hisobga birinchi ulashdan oldin (egasi bilan):** Booking.com broni
-uchun PMS'da 101-xona 30.09–03.10 ga qo'lda yopib qo'yilgan. Bog'lashdan
-oldin shu yopiq ochiladi (egasi roziligi bilan) — aks holda import bronni
-"xona band" deb boshqa xonaga joylaydi va yopiq Beds24'ga `black` bo'lib
-ketadi.
+**Real hisobga ulash (2026-09-28):** server bo'sh bazadan qayta
+o'rnatilgan — PMS'da bron va yopiq kun yo'q, shuning uchun import
+Beds24'dagi bronlarni to'g'ridan-to'g'ri tushiradi. Tartib —
+[ISHGA_TUSHIRISH.md](ISHGA_TUSHIRISH.md) D bo'limi.
 
 ## 5. Oqimlar va navbatlar (TZ 11-band)
 
