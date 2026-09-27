@@ -253,7 +253,8 @@ avtomatik bekor qilinadi (faqat `WEBSITE` manbali bron).
 
 **Qoida:** saytdan kelgan bron **har doim ovqat bilan**
 (`withMeal: true`). Qidiruv va bron bir xil summa qaytarishi
-shart — aks holda mehmon boshqa narx ko'radi.
+shart — aks holda mehmon boshqa narx ko'radi. API `withMeal: false`
+ni rad etadi (400), jimgina e'tiborsiz qoldirmaydi.
 
 ### Bron kodi
 
@@ -314,14 +315,15 @@ soat :01 da hamma xonani qayta hisoblaydi (kun almashganda).
 | Check-in | Faqat kirish kuni (kelajakdagi bron emas), oldingi mehmon chiqmaguncha yo'q, ta'mirdagi xonaga yo'q | `checkIn()` |
 | Kelmadi | Kirish kuni kelmaguncha belgilanmaydi | `markNoShow()` |
 | Parallel to'lov | Bron qatori `FOR UPDATE` bilan qulflanadi — ikki kassir qarzdan oshirib yozolmaydi | `addPayment()`, `reversePayment()` |
-| Bekor qilingan bron | Qo'shimcha xizmat qo'shib bo'lmaydi | `addCharge()` |
+| Bekor qilingan bron | Qo'shimcha xizmat qo'shib bo'lmaydi (bron qatori qulf ostida tekshiriladi) | `addCharge()` |
+| Xona / sana o'zgartirish | Audit jurnaliga eski va yangi qiymat bilan; o'zgarmagan sana rad etiladi | `changeRoom()`, `changeDates()` |
 | Mehmon ismi | Bir xil telefonda ism yangilanadi | `findOrCreateGuest()` |
 | Telefon majburiy | Telefonsiz bron har safar yangi mehmon yozuvi yaratardi | `phoneSchema` |
 | O'tmish bronlari | 30 kungacha ruxsat, undan oldin rad | `createReservation()` |
 | Iflos xona | Tozalanmaguncha check-in yo'q | `checkIn()` |
 | To'lov egasi | Kim qabul qilgani yoziladi (`Payment.userId`) | `addPayment()` |
 | Bir yildan uzoq bron | Rad etiladi | `validateRange()` |
-| Spam himoyasi | Bir telefonga 24 soatda 3 ta to'lanmagan bron | `checkSpam()` |
+| Spam himoyasi | Bir telefonga 24 soatda 3 ta to'lanmagan bron; raqam raqamlari bo'yicha (oxirgi 9 ta) solishtiriladi | `checkSpam()` |
 
 ### Sozlanadigan qiymatlar (`BUSINESS_DEFAULTS`)
 
@@ -553,6 +555,7 @@ Redis qaytgach davom etadi. `/health` "degraded" qaytaradi, "down" emas.
 | Bot spam | Honeypot maydoni saytdagi formada |
 | Loglar | `sanitizeForLog()` token/parol/karta raqamini `[REDACTED]` qiladi |
 | Audit | `AuditLog` — kim, nima, qachon, qaysi IP |
+| Tozalash rasmlari | `/uploads` login'siz ochilmaydi: API imzoli havola beradi (12 soat) yoki Bearer token (`lib/uploadAccess.ts`) |
 
 ### Production tekshiruvi
 

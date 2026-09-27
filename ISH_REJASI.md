@@ -1,6 +1,6 @@
 # Ish rejasi
 
-**Yangilandi:** 2026-09-27. Faqat **ochiq** ishlar. Har band kod bilan
+**Yangilandi:** 2026-09-28. Faqat **ochiq** ishlar. Har band kod bilan
 tekshirilgan — bajarilganlar olib tashlandi (tarix: `git log`).
 Beds24 integratsiyasi 2026-09-27 da qaytdi (Q19), STOP olib tashlandi.
 
@@ -13,52 +13,32 @@ kod tashqarisida (server, Beds24 kabineti).
 
 ---
 
-## 0. Darhol — xavfsizlik va jonli tizim
+## 0. Server va xavfsizlik
 
-- [ ] **[tashqi]** Serverdagi 4 ta hisob parolini almashtirish (founder,
-      admin, manager, staff) — hozir `prisma/seed.ts` dagi standart parol.
-- [ ] **[tashqi]** Server SSH parolini almashtirish.
-- [ ] **[qaror]** Repo ochiq: private qilish yoki git tarixini tozalash.
-      Tarixda server IP, standart parol va 2 ta tozalash rasmi qolgan
-      (fayllar 2026-09-27 da repodan chiqarildi, tarixda bor).
-- [ ] **[tashqi]** Beds24'ni real hisobga ulash (egasi invite code
-      bergach, [BEDS24.md](BEDS24.md) 4-bo'lim): serverga chiqarish
-      (zaxira → migratsiya `20260927120000_beds24_restore`), `.env` da
-      `ENCRYPTION_KEY` va `WEBHOOK_URL_TOKEN`; 101-xonadagi qo'lda
-      yopiqni (30.09–03.10) bog'lashdan oldin ochish (egasi roziligi
-      bilan); ulash → bog'lash → import natijasini Bronlar bo'limida
-      tekshirish; Beds24'da webhook URL.
+Server **yo'q**: 2026-09-27 da egasining buyrug'i bilan butunlay
+o'chirildi (baza ham, nusxasiz). Ishlab chiqarish yo'q — jonli
+bazadagi eski ishlar (surilgan bronlarni topish va h.k.) endi
+bajarib bo'lmaydi.
+
+- [ ] **[qaror]** Qayta deploy qachon ([SERVER.md](SERVER.md)). Deploy
+      bilan birga: 4 ta hisobga yangi parol (seed'dagi standart parol
+      emas), yangi SSH parol, `.env` da `ENCRYPTION_KEY`,
+      `WEBHOOK_URL_TOKEN`.
+- [ ] **[qaror]** Eski `origin` repo (ODcoder23/imron-hotel-pms-full)
+      **ochiq** — tarixida eski server IP, standart parol va 2 ta
+      tozalash rasmi. Ish private `agy` repoda davom etadi. Ochiq repoga
+      nima qilish (private / o'chirish) — egasi.
+- [ ] **[tashqi]** Beds24'ni real hisobga ulash — deploy'dan keyin,
+      [CHANNEL_MANAGER_TZ.md](CHANNEL_MANAGER_TZ.md) 9-bosqich.
+      101-xonadagi qo'lda yopiq (30.09–03.10) endi yo'q — baza bilan
+      birga o'chgan.
 - [ ] **[tashqi]** Beds24 kabinetida eski API tokenni o'chirish.
-- [ ] **[tashqi]** Sichqoncha bilan surilib ketgan bronlarni topish:
-      jonli bazadan (faqat o'qib) oxirgi haftalarda o'zgargan bronlarni
-      qabulxona ro'yxati bilan solishtirish, xatolarini "Sanalarni
-      o'zgartirish" bilan tuzatish.
 
 ## 1. Xatolar
 
-- [ ] **Shaxmatka `no_show` bronni band deb hisoblaydi.** Backend uni
-      bo'sh deb biladi (`isRoomFree`, availability) — shaxmatkadagi
-      `isRoomAvailable` faqat `cancelled` ni chiqaradi. Natija:
-      qabulxona bo'sh xonaga bron qila olmaydi.
-- [ ] **Shaxmatka yopilgan kunlarni ko'rsatmaydi.** Ta'mir yoki Beds24 (`black`) bilan
-      yopilgan kunlar (`GET /api/rooms/blocks`) jadvalda yo'q — xodim
-      yopiq kunga bron qilmoqchi bo'lib, backenddan rad oladi.
-- [ ] **Sana/xona o'zgartirish audit jurnaliga yozilmaydi**
-      (`change-room`, `change-dates`) — kim, qachon, eski/yangi qiymat.
-      Sana o'zgarmagan bo'lsa ham amal bajariladi (xona uchun to'silgan).
-- [ ] **Sayt API'si `withMeal` ni qabul qiladi, lekin e'tiborsiz
-      qoldiradi** (sayt broni har doim nonushta bilan). Maydonni olib
-      tashlash yoki hisobga olish.
-- [ ] **`/uploads` (tozalash rasmlari) login'siz ochiq.** Tozalik boti
-      rasmni egasini tekshirishdan OLDIN diskka yozadi — rad etilgan rasm
-      diskda qoladi.
-- [ ] **Sayt bronini bot bilan to'ldirish:** telefon bo'yicha cheklov
-      raqam almashtirilsa ishlamaydi; bir necha IP'dan butun mehmonxonani
-      24 soatga `PENDING_PAYMENT` bilan band qilib qo'yish mumkin.
-- [ ] Sayt bronida kod (`IMR-…`) bron yaratilgandan keyin alohida
-      yoziladi (tranzaksiyadan tashqari); `addCharge` da qulf va audit yo'q.
-- [ ] Umumiy hisobot telefonda gorizontal suriladi ("Manba bo'yicha"
-      jadvali `grid g2` ichida).
+Ochiq xato yo'q — 2026-09-28 da hammasi tuzatildi (`git log`).
+Sayt bronlari bilan mehmonxonani band qilib qo'yish — 2-bo'limda,
+chegara egasining qarori.
 
 ## 2. Egasining qarori kerak
 
@@ -72,6 +52,13 @@ kod tashqarisida (server, Beds24 kabineti).
       keladigan `CONFIRMED` **va `PENDING_PAYMENT`** — to'lanmagan sayt
       bronlari ham porsiyaga kiradi.
 - [ ] **[qaror]** Bron uzunligining yuqori chegarasi (kecha soni).
+- [ ] **[qaror]** Sayt bronlari bilan mehmonxonani band qilib qo'yish.
+      Hozir: bir IP'dan soatiga 5 ta bron, bir raqamga 24 soatda 3 ta
+      to'lanmagan (raqamlar bo'yicha, 2026-09-28). Ko'p IP va ko'p raqam
+      bilan butun mehmonxonani 24 soatga `PENDING_PAYMENT` qilib qo'yish
+      mumkin. Variantlar: bir kechada to'lanmagan sayt bronlari uchun
+      xonalar ulushi (masalan 50%), to'lov kutish muddatini qisqartirish
+      (24 → 2–6 soat), oldindan to'lov.
 - [ ] **[qaror]** Narx katta o'zgarganda (X% dan ko'p) tasdiqlash so'ralsinmi.
 - [ ] **[qaror]** Qaytim (sdacha): `Payment` ga "berilgan summa" maydoni kerakmi.
 - [ ] **[qaror]** Mehmon pasporti: `Guest` da maydon yo'q — qonun talab
