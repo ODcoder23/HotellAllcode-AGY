@@ -59,12 +59,16 @@ const bookingSchema = z.object({
   adults: z.number().int().min(1).max(20),
   children: z.number().int().min(0).max(20).optional(),
   /**
-   * Nonushta (SAVOLLAR.md S10).
+   * Nonushta — saytdan kelgan bron HAR DOIM nonushta bilan
+   * (BOTLAR-REJA.md, 2026-09-17), tanlov yo'q.
    *
-   * Sayt bu maydonni yubormasa `false` — mehmon ataylab
-   * tanlamagan bo'lsa qo'shimcha pul olinmasin.
+   * `true` yoki yo'q — qabul qilinadi (eski sayt versiyasi `true`
+   * yuboradi). `false` — rad etiladi: ilgari u jimgina e'tiborsiz
+   * qolar, mehmon nonushtasiz narx kutib, nonushtali narx olardi.
    */
-  withMeal: z.boolean().optional(),
+  withMeal: z.literal(true, {
+    errorMap: () => ({ message: "Saytdan bron faqat nonushta bilan qilinadi" }),
+  }).optional(),
   guest: z.object({
     fullName: z.string().min(2).max(100),
     phone: z.string().min(7).max(20),

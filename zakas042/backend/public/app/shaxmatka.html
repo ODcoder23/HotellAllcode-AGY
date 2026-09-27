@@ -41,6 +41,16 @@
   .sx-room  { border-right: 2px solid var(--sx-line-strong); border-bottom: 2px solid var(--sx-line); }
   .sx-hcell { border-right: 2px solid var(--sx-line); border-bottom: 2px solid var(--sx-line-strong); }
   .sx-hleft { border-right: 2px solid var(--sx-line-strong); border-bottom: 2px solid var(--sx-line-strong); }
+
+  /* Yopiq kun (ta'mir, Beds24 `black`) — qiya chiziqli katak */
+  .sx-blocked {
+    background-color: #f5f5f4;
+    background-image: repeating-linear-gradient(135deg, rgba(120, 113, 108, .22) 0 6px, transparent 6px 12px);
+  }
+  .sx-blocked-label {
+    font-size: 10px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: #57534e; background: rgba(255, 255, 255, .85); padding: 1px 4px; border-radius: 3px;
+  }
 </style>
 </head>
 <body>
@@ -221,6 +231,11 @@ function resMoney(res) {
 }
 // Xona / sana o'zgartirish faqat faol bronda (backend ham shunday tekshiradi)
 const isMovable = (res) => res.status === "pending_payment" || res.status === "confirmed" || res.status === "checked_in";
+// Xonani band qiladimi — backend `isRoomFree` bilan bir xil: bekor qilingan
+// va kelmagan bron xonani bo'shatadi
+const holdsRoom = (res) => res.status !== "cancelled" && res.status !== "no_show";
+// Yopiq kun kaliti: "101|2026-10-01"
+const blockKey = (roomId, dateKey) => `${roomId}|${dateKey}`;
 const isSom = (res) => String(res?.currency || "UZS").toUpperCase() === "UZS";
 // Kurs matni: 12500 -> "12 500"
 const fmtRate = (r) => Number(r).toLocaleString("ru-RU", { maximumFractionDigits: 2 }).replace(/[\u00a0\u202f]/g, " ");
@@ -307,6 +322,8 @@ const api = {
     apiFetch(`/api/rooms/available?from=${from}&to=${to}${exclude ? `&exclude=${exclude}` : ""}`),
   setRoomStatus: (id, status) =>
     apiFetch(`/api/rooms/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  // Ta'mir yoki Beds24 (`black`) bilan yopilgan kunlar, `to` ham kiradi
+  roomBlocks: (from, to) => apiFetch(`/api/rooms/blocks?from=${from}&to=${to}`),
 
   login: (email, password) =>
     apiFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
@@ -753,6 +770,47 @@ function App() {
   useEffect(() => { reload(); }, [reload]);
 
   /**
+   * Yopiq kunlar — ta'mir va Beds24 `black` (`RoomDayStatus.isBlocked`).
+   *
+   * Ilgari Shaxmatka ularni umuman o'qimasdi: xodim yopiq kunga bron
+   * qilmoqchi bo'lib, backenddan rad olardi. Endi katak chiziqli
+   * ko'rinadi va `isRoomAvailable` uni band deb biladi.
+   *
+   * Oraliq: ko'rinib turgan kunlar + bir yil oldinga — yangi bron
+   * oynasida sana jadvaldan tashqarida tanlanishi mumkin. Faqat yopiq
+   * kunlar qaytadi, shuning uchun javob kichik.
+   */
+  const [blocks, setBlocks] = useState(() => new Map());
+  const blockFrom = toKey(viewStart < today ? viewStart : today);
+  const blockTo = toKey(addDays(viewStart > today ? viewStart : today, rangeLen + 366));
+
+  const loadBlocks = useCallback(async () => {
+    try {
+      const rows = await api.roomBlocks(blockFrom, blockTo);
+      const m = new Map();
+      for (const b of rows) m.set(blockKey(b.roomId, b.date), b.reason || "Yopiq");
+      setBlocks(m);
+    } catch { /* jim — bron baribir backendda tekshiriladi */ }
+  }, [blockFrom, blockTo]);
+
+  useEffect(() => {
+    if (!loading && !needsLogin) loadBlocks();
+  }, [loadBlocks, loading, needsLogin]);
+
+  /**
+   * Realtime'dan chaqirish uchun ref: `handleRealtime` o'zgarsa WebSocket
+   * qayta ulanadi, shuning uchun u `loadBlocks` ga bog'lanmaydi. Bir
+   * nechta event ketma-ket kelsa bitta so'rov ketadi.
+   */
+  const loadBlocksRef = useRef(loadBlocks);
+  loadBlocksRef.current = loadBlocks;
+  const blocksTimer = useRef(null);
+  const scheduleBlocksReload = useCallback(() => {
+    clearTimeout(blocksTimer.current);
+    blocksTimer.current = setTimeout(() => loadBlocksRef.current(), 300);
+  }, []);
+
+  /**
    * API xatosini foydalanuvchiga ko'rsatadi.
    * 409 (xona band) — mavjud conflictMsg mexanizmi orqali,
    * boshqalari ham shu yerda.
@@ -796,6 +854,7 @@ function App() {
       // Uzoq uzilishdan keyin — o'tkazib yuborilgan event'lar bor
       case "__resync":
         reload();
+        scheduleBlocksReload();
         break;
 
       case "reservation.created":
@@ -825,8 +884,10 @@ function App() {
         break;
 
       case "availability.changed":
-        // Shaxmatka bandlikni bronlardan o'zi hisoblaydi — bu event
-        // Website/Admin panel uchun. E'tiborsiz qoldiramiz.
+        // Bandlikni Shaxmatka bronlardan o'zi hisoblaydi. Bu event
+        // xona yopilganda yoki ochilganda ham keladi (ta'mir, Beds24
+        // `black`) — yopiq kunlarni qayta o'qiymiz.
+        scheduleBlocksReload();
         break;
 
       default:
@@ -835,7 +896,7 @@ function App() {
         // Bron holati (✓ / ⚠) `reservation.updated` bilan keladi
         break;
     }
-  }, [reload, applyReservation]);
+  }, [reload, applyReservation, scheduleBlocksReload]);
 
   useEffect(() => {
     const client = createRealtimeClient({
@@ -858,16 +919,23 @@ function App() {
   );
 
   /* ------------------------------ availability check ------------------------------ */
+  // Backend `isRoomFree` bilan bir xil: band bron yoki yopiq kun.
+  // Chiqish kuni tekshirilmaydi — `[checkIn, checkOut)`.
   const isRoomAvailable = useCallback((roomId, checkIn, checkOut, excludeId) => {
     const ci = fromKey(checkIn), co = fromKey(checkOut);
-    return !reservations.some((r) => {
+    const busy = reservations.some((r) => {
       if (r.id === excludeId) return false;
       if (r.roomId !== roomId) return false;
-      if (r.status === "cancelled") return false;
+      if (!holdsRoom(r)) return false;
       const rci = fromKey(r.checkIn), rco = fromKey(r.checkOut);
       return ci < rco && co > rci;
     });
-  }, [reservations]);
+    if (busy) return false;
+    for (let d = ci; d < co; d = addDays(d, 1)) {
+      if (blocks.has(blockKey(roomId, toKey(d)))) return false;
+    }
+    return true;
+  }, [reservations, blocks]);
 
   const availableRoomsFor = useCallback((checkIn, checkOut, excludeId, roomType) => {
     return rooms.filter((rm) => (!roomType || rm.type === roomType || true) && isRoomAvailable(rm.id, checkIn, checkOut, excludeId));
@@ -1137,14 +1205,13 @@ function App() {
 
           {/* room rows */}
           {visibleRooms.map((room) => {
-            // Bekor qilinganlar odatda gridda ko'rinmaydi — xona bo'sh
-            // deb hisoblanadi. Lekin filtr aynan "Bekor qilingan"ga
-            // qo'yilsa ularni ko'rsatamiz: aks holda filtr hech nima
-            // topmaydi va bekor qilingan bron tarixini ko'rish
-            // imkonsiz bo'ladi (TZ 2-band: tarix saqlanadi).
-            const showCancelled = filters.resStatus === "cancelled";
+            // Bekor qilingan va kelmagan bronlar odatda gridda ko'rinmaydi —
+            // xona bo'sh deb hisoblanadi (backend ham shunday). Lekin filtr
+            // aynan shu holatga qo'yilsa ularni ko'rsatamiz: aks holda filtr
+            // hech nima topmaydi va tarixni ko'rish imkonsiz bo'ladi
+            // (TZ 2-band: tarix saqlanadi).
             const roomReservations = reservations.filter(
-              (r) => r.roomId === room.id && (showCancelled ? true : r.status !== "cancelled")
+              (r) => r.roomId === room.id && (holdsRoom(r) || filters.resStatus === r.status)
             );
             return (
               <div key={room.id} className="flex relative" style={{ height: ROW_HEIGHT }}>
@@ -1161,14 +1228,33 @@ function App() {
                 </div>
 
                 <div className="relative" style={{ width: days.length * cellWidth, height: ROW_HEIGHT }}>
-                  {days.map((d, i) => (
-                    <div
-                      key={i}
-                      onClick={() => openCreate({ roomId: room.id, checkIn: toKey(d), checkOut: toKey(addDays(d, 1)) })}
-                      className={`sx-cell absolute top-0 hover:bg-blue-50 cursor-cell ${isSameDay(d, today) ? "bg-blue-50" : ""}`}
-                      style={{ left: i * cellWidth, width: cellWidth, height: ROW_HEIGHT }}
-                    />
-                  ))}
+                  {days.map((d, i) => {
+                    const key = toKey(d);
+                    const reason = blocks.get(blockKey(room.id, key));
+                    if (reason) {
+                      // Yopiq kun: bron ochilmaydi, sababi ko'rsatiladi
+                      const label = reason.startsWith("Beds24") ? "Beds24" : "Yopiq";
+                      return (
+                        <div
+                          key={i}
+                          title={`Yopiq: ${reason}`}
+                          onClick={() => setConflictMsg(`Xona ${room.number}, ${fmtShort(d)} — yopiq (${reason}). Bu kunga bron qilib bo'lmaydi.`)}
+                          className="sx-cell sx-blocked absolute top-0 flex items-center justify-center cursor-not-allowed"
+                          style={{ left: i * cellWidth, width: cellWidth, height: ROW_HEIGHT }}
+                        >
+                          {cellWidth >= 64 && <span className="sx-blocked-label">{label}</span>}
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        key={i}
+                        onClick={() => openCreate({ roomId: room.id, checkIn: key, checkOut: toKey(addDays(d, 1)) })}
+                        className={`sx-cell absolute top-0 hover:bg-blue-50 cursor-cell ${isSameDay(d, today) ? "bg-blue-50" : ""}`}
+                        style={{ left: i * cellWidth, width: cellWidth, height: ROW_HEIGHT }}
+                      />
+                    );
+                  })}
 
                   {roomReservations.map((res) => {
                     const ci = fromKey(res.checkIn), co = fromKey(res.checkOut);
@@ -1688,10 +1774,10 @@ function ReservationBlock({ res, left, width, dimmed, highlighted, onOpen }) {
 
 function RoomQuickMenu({ room, x, y, reservations, today, priceForType, onClose, onNewReservation, onViewReservation, onChangeStatus, onMaintenanceBlock }) {
   if (!room) return null;
-  const current = reservations.find((r) => r.roomId === room.id && r.status !== "cancelled" && r.status !== "checked_out" &&
+  const current = reservations.find((r) => r.roomId === room.id && holdsRoom(r) && r.status !== "checked_out" &&
     fromKey(r.checkIn) <= today && fromKey(r.checkOut) > today);
   const next = reservations
-    .filter((r) => r.roomId === room.id && r.status !== "cancelled" && fromKey(r.checkIn) > today)
+    .filter((r) => r.roomId === room.id && holdsRoom(r) && fromKey(r.checkIn) > today)
     .sort((a, b) => fromKey(a.checkIn) - fromKey(b.checkIn))[0];
 
   const MARGIN = 8;
@@ -2273,9 +2359,11 @@ function ChangeRoomModal({ res, rooms, availableRoomsFor, onClose, onConfirm }) 
 function ChangeDatesModal({ res, onClose, onConfirm }) {
   const [checkIn, setCheckIn] = useState(res.checkIn);
   const [checkOut, setCheckOut] = useState(res.checkOut);
+  // Backend o'zgarmagan sanani rad etadi — tugma ham o'chiq
+  const unchanged = checkIn === res.checkIn && checkOut === res.checkOut;
   return (
     <Modal title="Sanalarni o'zgartirish" subtitle={res.guestName} onClose={onClose} width={380}
-      footer={<><Btn onClick={onClose}>Bekor qilish</Btn><Btn variant="primary" onClick={() => onConfirm(checkIn, checkOut)}>Saqlash</Btn></>}>
+      footer={<><Btn onClick={onClose}>Bekor qilish</Btn><Btn variant="primary" disabled={unchanged} onClick={() => onConfirm(checkIn, checkOut)}>Saqlash</Btn></>}>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Kirish sanasi"><TextInput type="date" value={checkIn} onChange={(e) => setCheckIn(e.target.value)} /></Field>
         <Field label="Chiqish sanasi"><TextInput type="date" value={checkOut} onChange={(e) => setCheckOut(e.target.value)} /></Field>

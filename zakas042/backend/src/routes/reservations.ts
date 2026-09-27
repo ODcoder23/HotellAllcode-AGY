@@ -259,18 +259,21 @@ reservationsRouter.post("/:id/no-show", requireAuth, requirePermission("reservat
 }));
 
 // --- Xona / sana o'zgartirish -------------------------------
-reservationsRouter.post("/:id/change-room", requireAuth, requirePermission("reservation.write"), asyncHandler(async (req, res) => {
+// Audit jurnaliga servis yozadi — eski qiymat faqat tranzaksiya ichida aniq
+reservationsRouter.post("/:id/change-room", requireAuth, requirePermission("reservation.write"), asyncHandler(async (req: AuthedRequest, res) => {
   const { roomId } = parse(z.object({ roomId: z.string().min(1) }), req.body);
-  res.json(serializeReservation(await svc.changeRoom(req.params.id, roomId)));
+  const actor = { userId: req.user?.id, ipAddress: req.ip };
+  res.json(serializeReservation(await svc.changeRoom(req.params.id, roomId, actor)));
 }));
 
-reservationsRouter.post("/:id/change-dates", requireAuth, requirePermission("reservation.write"), asyncHandler(async (req, res) => {
+reservationsRouter.post("/:id/change-dates", requireAuth, requirePermission("reservation.write"), asyncHandler(async (req: AuthedRequest, res) => {
   const { checkIn, checkOut } = parse(
     z.object({ checkIn: dateKey, checkOut: dateKey }),
     req.body
   );
   assertNotTooOld(checkIn);
-  res.json(serializeReservation(await svc.changeDates(req.params.id, checkIn, checkOut)));
+  const actor = { userId: req.user?.id, ipAddress: req.ip };
+  res.json(serializeReservation(await svc.changeDates(req.params.id, checkIn, checkOut, actor)));
 }));
 
 // --- To'lov va xarajat --------------------------------------
@@ -328,7 +331,7 @@ reservationsRouter.post("/:id/payments/:pid/reverse", requireAuth, requirePermis
   res.json(serializeReservation(result));
 }));
 
-reservationsRouter.post("/:id/charges", requireAuth, requirePermission("payment.write"), asyncHandler(async (req, res) => {
+reservationsRouter.post("/:id/charges", requireAuth, requirePermission("payment.write"), asyncHandler(async (req: AuthedRequest, res) => {
   const { label, amount } = parse(
     z.object({
       label: z.string().min(1).max(200),
@@ -336,7 +339,19 @@ reservationsRouter.post("/:id/charges", requireAuth, requirePermission("payment.
     }),
     req.body
   );
-  res.status(201).json(serializeReservation(await svc.addCharge(req.params.id, label, amount)));
+  const result = await svc.addCharge(req.params.id, label, amount);
+
+  // Xizmat mehmon qarzini oshiradi — kim qo'shgani jurnalda qolsin
+  await audit({
+    userId: req.user?.id,
+    action: "charge.added",
+    entityType: "Reservation",
+    entityId: req.params.id,
+    after: { label, amount },
+    ipAddress: req.ip,
+  });
+
+  res.status(201).json(serializeReservation(result));
 }));
 
 // --- POST /api/reservations/:id/resync -----------------------

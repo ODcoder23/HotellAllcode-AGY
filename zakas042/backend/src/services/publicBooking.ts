@@ -402,11 +402,10 @@ export type PublicBookingInput = {
   adults: number;
   children?: number;
   /**
-   * E'TIBORGA OLINMAYDI (2026-09-17): saytdan kelgan bron
-   * har doim ovqat bilan. Maydon kontraktni buzmaslik uchun
-   * qoldirilgan — eski sayt versiyasi yuborsa xato bermaydi.
+   * Faqat `true` (2026-09-17): saytdan kelgan bron har doim ovqat
+   * bilan. `false` ni yo'nalish (`routes/public.ts`) rad etadi.
    */
-  withMeal?: boolean;
+  withMeal?: true;
   guest: { fullName: string; phone: string; email?: string };
   notes?: string;
 };
@@ -538,6 +537,7 @@ export async function createPublicBooking(
          * olinadi va bronga ko'chiriladi (SAVOLLAR.md S10).
          */
         withMeal: true,
+        code,
         source: "website",
         pricePerNight: price,
         notes: input.notes?.slice(0, 500),
@@ -576,9 +576,6 @@ export async function createPublicBooking(
     );
   }
 
-  // Kodni yozamiz — `createReservation` uni bilmaydi
-  await prisma.reservation.update({ where: { id: reservation.id }, data: { code } });
-
   const room = await prisma.room.findUniqueOrThrow({ where: { id: roomId } });
 
   /**
@@ -610,17 +607,25 @@ export async function createPublicBooking(
  *
  * Cheklovsiz bo'lsa bitta bot butun mehmonxonani "to'lov kutilmoqda"
  * holatida band qilib qo'yishi mumkin — real sotuv to'xtaydi.
+ *
+ * Raqam RAQAMLARI bo'yicha solishtiriladi (oxirgi 9 ta — O'zbekiston
+ * raqami, +998 siz ham). Ilgari satr aynan solishtirilardi: "+998 90
+ * 111-22-33" va "+998901112233" ikki xil raqam hisoblanib, bo'sh joy
+ * qo'yish bilan cheklov chetlab o'tilardi.
  */
 async function checkSpam(phone: string): Promise<void> {
   const since = new Date(Date.now() - 24 * 3600_000);
+  const tail = phone.replace(/\D/g, "").slice(-9);
+  if (tail.length < 7) throw new ValidationError("Telefon raqami noto'g'ri");
 
-  const count = await prisma.reservation.count({
-    where: {
-      guest: { phone },
-      status: "PENDING_PAYMENT",
-      createdAt: { gte: since },
-    },
-  });
+  const [{ count }] = await prisma.$queryRaw<Array<{ count: number }>>`
+    SELECT COUNT(*)::int AS count
+    FROM "Reservation" r
+    JOIN "Guest" g ON g.id = r."guestId"
+    WHERE r.status = 'PENDING_PAYMENT'
+      AND r."createdAt" >= ${since}
+      AND right(regexp_replace(g.phone, '\\D', '', 'g'), 9) = ${tail}
+  `;
 
   if (count >= 3) {
     throw new ValidationError(

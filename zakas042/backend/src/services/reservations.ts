@@ -36,6 +36,10 @@ import {
   getMealPrice, getFreeCancelHours, getCancelFeeNights,
 } from "./settings.js";
 import { createOnCheckout, createStayEndTask } from "./cleaning.js";
+import { audit } from "./auditLog.js";
+
+/** Amalni kim bajargani — audit jurnali uchun (yo'nalishdan keladi) */
+export type Actor = { userId?: string | null; ipAddress?: string };
 
 /** Bron o'qishda har doim shu bog'liqliklar kerak (serializeReservation uchun) */
 export const reservationInclude = {
@@ -214,6 +218,12 @@ type CreateInput = {
   paymentMethod?: string;
   /** To'lovni kim qabul qilgani (S13) — initialPayment uchun */
   userId?: string;
+  /**
+   * Sayt bron kodi (`IMR-XXXXX`) — faqat `publicBooking.ts` beradi.
+   * Bron bilan bitta `create` da yoziladi: ilgari alohida `update`
+   * edi va WebSocket/Telegram xabari kodsiz ketardi.
+   */
+  code?: string;
 };
 
 /**
@@ -378,6 +388,7 @@ export async function createReservation(input: CreateInput) {
       data: {
         roomId: input.roomId,
         guestId: guest.id,
+        ...(input.code ? { code: input.code } : {}),
         checkIn,
         checkOut,
         adults: input.adults ?? 1,
@@ -520,8 +531,13 @@ export async function updateReservation(id: string, patch: UpdatePatch) {
   return result;
 }
 
-/** 3. Xonani almashtirish (TZ 2-band, mijoz qarori Q6) */
-export async function changeRoom(id: string, newRoomId: string) {
+/**
+ * 3. Xonani almashtirish (TZ 2-band, mijoz qarori Q6).
+ *
+ * Audit: kim, qachon, qaysi xonadan qaysi xonaga — mehmon noto'g'ri
+ * xonaga tushsa javobgar ko'rinsin.
+ */
+export async function changeRoom(id: string, newRoomId: string, actor: Actor = {}) {
   const r = await serializableTx(async (tx) => {
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
     if (!res) throw new NotFoundError("Bron");
@@ -590,13 +606,30 @@ export async function changeRoom(id: string, newRoomId: string) {
   await notifyRoomStatus(r.oldRoomId);
   await notifyRoomStatus(r.updated.roomId);
 
+  await audit({
+    userId: actor.userId ?? null,
+    action: "reservation.room_changed",
+    entityType: "Reservation",
+    entityId: id,
+    before: { roomId: r.oldRoomId },
+    after: { roomId: r.updated.roomId },
+    ipAddress: actor.ipAddress,
+  });
+
   // TZ 2-band 3-amal (mijoz qarori Q6): Beds24'da ham ko'rinadi
   await onReservationChanged(r.updated.id, "room_changed", { previousState: { roomId: r.oldRoomId } });
   return r.updated;
 }
 
-/** 4. Sanani o'zgartirish (TZ 2-band) */
-export async function changeDates(id: string, checkInKey: string, checkOutKey: string) {
+/**
+ * 4. Sanani o'zgartirish (TZ 2-band).
+ *
+ * Sanalar o'zgarmagan bo'lsa rad etiladi (xona uchun ham shunday):
+ * ilgari bo'sh amal Beds24'ga qayta yuborilar va jurnalni to'ldirardi.
+ * Audit: eski va yangi sanalar — sichqoncha bilan surilib ketgan bronni
+ * kim o'zgartirgani ko'rinsin.
+ */
+export async function changeDates(id: string, checkInKey: string, checkOutKey: string, actor: Actor = {}) {
   const checkIn = fromDateKey(checkInKey);
   const checkOut = fromDateKey(checkOutKey);
 
@@ -608,6 +641,11 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
     if (!res) throw new NotFoundError("Bron");
     assertMovable(res.status);
+
+    if (checkIn.getTime() === res.checkIn.getTime() && checkOut.getTime() === res.checkOut.getTime()) {
+      throw new ValidationError("Sanalar o'zgarmagan");
+    }
+
     assertChannelAllows(res, "sanani o'zgartirish");
 
     // Xonadagi mehmonning kirish sanasi — o'tgan fakt, uni o'zgartirib
@@ -641,6 +679,16 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
   await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "dates_changed");
   await notifyReservation("reservation.updated", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
+
+  await audit({
+    userId: actor.userId ?? null,
+    action: "reservation.dates_changed",
+    entityType: "Reservation",
+    entityId: id,
+    before: r.previous,
+    after: { checkIn: checkInKey, checkOut: checkOutKey },
+    ipAddress: actor.ipAddress,
+  });
 
   // TZ 2-band 4-amal. Beds24 yangi sanada joy bo'lmasa rad etadi —
   // bron REJECTED bo'ladi, Shaxmatka ogohlantiradi
@@ -1228,21 +1276,31 @@ export async function reversePayment(
  * o'zgartirish orqali beriladi (SAVOLLAR.md S4).
  */
 export async function addCharge(reservationId: string, label: string, amount: number) {
-  const res = await prisma.reservation.findUnique({ where: { id: reservationId } });
-  if (!res) throw new NotFoundError("Bron");
-
   if (amount <= 0) {
     throw new ValidationError("Xizmat summasi musbat bo'lishi kerak");
   }
 
-  // Bekor qilingan bron summasi = faqat jarima (lib/money.ts) — xizmat
-  // qo'shilsa ham hisobga kirmaydi, xodim esa uni "qarz" deb kutardi
-  if (res.status === "CANCELLED" || res.status === "NO_SHOW") {
-    throw new ValidationError(`Bron "${STATUS_LABEL[res.status]}" holatida — xizmat qo'shib bo'lmaydi`);
-  }
+  /**
+   * Qulf ostida (`lockReservation`, to'lov bilan bir xil): holat
+   * tekshiruvi va yozuv orasida bron bekor qilinsa, xizmat bekor
+   * bronga tushib qolardi.
+   */
+  await prisma.$transaction(async (tx) => {
+    await lockReservation(tx, reservationId);
+    const res = await tx.reservation.findUniqueOrThrow({
+      where: { id: reservationId },
+      select: { status: true },
+    });
 
-  await prisma.charge.create({
-    data: { reservationId, label, amount: new Prisma.Decimal(round2(amount)) },
+    // Bekor qilingan bron summasi = faqat jarima (lib/money.ts) — xizmat
+    // qo'shilsa ham hisobga kirmaydi, xodim esa uni "qarz" deb kutardi
+    if (res.status === "CANCELLED" || res.status === "NO_SHOW") {
+      throw new ValidationError(`Bron "${STATUS_LABEL[res.status]}" holatida — xizmat qo'shib bo'lmaydi`);
+    }
+
+    await tx.charge.create({
+      data: { reservationId, label, amount: new Prisma.Decimal(round2(amount)) },
+    });
   });
 
   const updated = await prisma.reservation.findUniqueOrThrow({

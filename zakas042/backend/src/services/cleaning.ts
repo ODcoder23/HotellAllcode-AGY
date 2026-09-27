@@ -349,6 +349,30 @@ export async function acceptTask(
  * tushib qolmasin.
  */
 export async function completeTask(taskId: string, telegramId: string, photoUrl?: string | null) {
+  await assertCanComplete(taskId, telegramId);
+
+  const updated = await prisma.cleaningTask.update({
+    where: { id: taskId },
+    data: {
+      status: "PENDING",
+      finishedAt: new Date(),
+      ...(photoUrl ? { photoUrl } : {}),
+    },
+    include: taskInclude,
+  });
+
+  emit(taskId, "updated");
+  return updated;
+}
+
+/**
+ * Shu odam topshiriqni tugata oladimi — tugatmasdan tekshiradi.
+ *
+ * Bot rasmni diskka yozishdan OLDIN chaqiradi: ilgari rasm avval
+ * saqlanar, keyin `completeTask` rad etardi — begona yoki yopilgan
+ * topshiriq rasmi diskda qolib ketardi.
+ */
+export async function assertCanComplete(taskId: string, telegramId: string): Promise<void> {
   const task = await prisma.cleaningTask.findUnique({
     where: { id: taskId },
     include: taskInclude,
@@ -378,19 +402,6 @@ export async function completeTask(taskId: string, telegramId: string, photoUrl?
     const who = task.claimedByName ?? task.employee?.fullName ?? "boshqa xodim";
     throw new ValidationError(`Bu xonani ${who} olgan`);
   }
-
-  const updated = await prisma.cleaningTask.update({
-    where: { id: taskId },
-    data: {
-      status: "PENDING",
-      finishedAt: new Date(),
-      ...(photoUrl ? { photoUrl } : {}),
-    },
-    include: taskInclude,
-  });
-
-  emit(taskId, "updated");
-  return updated;
 }
 
 /**

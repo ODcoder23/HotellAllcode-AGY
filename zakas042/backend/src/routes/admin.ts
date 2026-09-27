@@ -42,6 +42,7 @@ import {
   deleteBotAccess,
 } from "../services/botAccess.js";
 import { audit, listAudit } from "../services/auditLog.js";
+import { signUploadUrl } from "../lib/uploadAccess.js";
 import { runExpireNow } from "../queues/scheduler.js";
 import { cleanQueueHistory } from "../queues/index.js";
 import { getFullReport } from "../services/report.js";
@@ -454,7 +455,8 @@ adminRouter.get(
         employeeName: t.employee?.fullName ?? null,
         claimedByName: t.claimedByName,
         workerName: t.claimedByName ?? t.employee?.fullName ?? null,
-        photoUrl: t.photoUrl ?? null,
+        // Imzoli havola — `/uploads` login'siz ochilmaydi (lib/uploadAccess.ts)
+        photoUrl: signUploadUrl(t.photoUrl ?? null),
         /** Guruhga xabar yuborilganmi */
         sentToGroup: Boolean(t.chatId),
         createdAt: t.createdAt.toISOString(),

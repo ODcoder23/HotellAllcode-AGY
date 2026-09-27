@@ -225,6 +225,10 @@
   .g4{ grid-template-columns: repeat(4, 1fr); }
   .g3{ grid-template-columns: repeat(3, 1fr); }
   .g2{ grid-template-columns: repeat(2, 1fr); }
+  /* Grid bolasi mazmunidan torroq bo'la olsin: aks holda keng jadval
+     (mobilda min-width 620px) kartani ekrandan kengaytirib, butun sahifa
+     gorizontal surilardi — .table-wrap ichidagi skroll ishlamasdi */
+  .grid > *{ min-width:0; }
   @media (max-width: 980px){ .g4{grid-template-columns:repeat(2,1fr);} .g3{grid-template-columns:repeat(2,1fr);} }
 
   .card{ background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-m); padding: 18px 20px; }
@@ -582,6 +586,8 @@
     .add-staff-card{ min-height:120px; }
 
     table{ min-width:620px; }
+    /* 3–4 ustunli kichik jadvallar ekranga sig'adi — surish shart emas */
+    table.tbl-fit{ min-width:0; }
 
     .modal-box{ width:92vw; padding:22px 18px; }
     .login-card{ width:92vw; padding:26px 20px 22px; }
@@ -1144,17 +1150,17 @@
         <div class="grid g2">
           <div class="card">
             <div class="card-title">Manba bo'yicha</div>
-            <div class="table-wrap"><table id="repBySource"></table></div>
+            <div class="table-wrap"><table class="tbl-fit" id="repBySource"></table></div>
           </div>
           <div class="card">
             <div class="card-title">Tarif bo'yicha</div>
-            <div class="table-wrap"><table id="repByType"></table></div>
+            <div class="table-wrap"><table class="tbl-fit" id="repByType"></table></div>
           </div>
         </div>
 
         <div class="section-head"><h2>Xodimlar</h2></div>
         <div class="card">
-          <div class="table-wrap"><table id="repStaff"></table></div>
+          <div class="table-wrap"><table class="tbl-fit" id="repStaff"></table></div>
         </div>
 
         <!-- Kanal (Beds24) — davr bo'yicha: kelgan bronlar, summasi (so'mda), yetmaganlar -->

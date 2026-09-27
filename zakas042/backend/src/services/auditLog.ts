@@ -23,10 +23,15 @@ export const AUDIT_ACTIONS = [
   "meal_price.changed",
   "reservation.cancelled",
   "reservation.no_show",
+  // Mehmon boshqa xonaga yoki sanaga ko'chdi — eski/yangi qiymat bilan
+  "reservation.room_changed",
+  "reservation.dates_changed",
   // Pul harakati — naqd yo'qolsa javobgar ko'rinsin (SAVOLLAR.md S13)
   "payment.received",
   "payment.refunded",
   "payment.reversed",
+  // Qo'shimcha xizmat (minibar, transfer) — mehmon qarzini oshiradi
+  "charge.added",
   // Xarajatlar (SAVOLLAR.md S14) — foyda hisobiga ta'sir qiladi
   "expense.created",
   "expense.deleted",

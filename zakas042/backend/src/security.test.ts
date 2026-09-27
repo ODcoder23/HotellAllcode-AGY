@@ -976,6 +976,58 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
     });
   });
 
+  // --- Tozalash rasmlari (/uploads) ----------------------------
+  describe("tozalash rasmlari — /uploads login'siz ochilmaydi", () => {
+    const dir = path.join(BACKEND_DIR, "public", "uploads", "cleaning");
+    const fileName = `sectest_${Date.now()}.jpg`;
+    const rawUrl = `/uploads/cleaning/${fileName}`;
+    let taskId = "";
+    let authOn = false;
+
+    beforeAll(async () => {
+      authOn = (await api("/health")).body?.security?.auth === true;
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, fileName), Buffer.from([0xff, 0xd8, 0xff, 0xd9]));
+      const room = await prisma.room.findFirstOrThrow({ where: { isActive: true } });
+      taskId = (await prisma.cleaningTask.create({
+        data: { roomId: room.id, reason: "Rasm testi", status: "PENDING", photoUrl: rawUrl },
+      })).id;
+    });
+
+    afterAll(async () => {
+      fs.rmSync(path.join(dir, fileName), { force: true });
+      if (taskId) await prisma.cleaningTask.deleteMany({ where: { id: taskId } });
+    });
+
+    // Bo'sh `Authorization` — setup o'rami token qo'shmasin
+    const anon = (url: string) => fetch(`${PMS}${url}`, { headers: { Authorization: "" } });
+
+    it("imzosiz manzil tokensiz ochilmaydi (auth rejimida)", async () => {
+      const res = await anon(rawUrl);
+      expect(res.status).toBe(authOn ? 401 : 200);
+    });
+
+    it("panel imzoli havola oladi — u tokensiz ochiladi, buzilgani yo'q", async () => {
+      const list = await api("/api/admin/cleaning", { headers: adminAuth });
+      expect(list.status).toBe(200);
+      const task = list.body.tasks.find((t: { id: string }) => t.id === taskId);
+      expect(task?.photoUrl).toBeTruthy();
+
+      if (!authOn) {
+        expect(task.photoUrl).toBe(rawUrl);
+        return;
+      }
+      expect(task.photoUrl).toMatch(/^\/uploads\/cleaning\/.+\?exp=\d+&sig=[\w-]+$/);
+      expect((await anon(task.photoUrl)).status).toBe(200);
+
+      // Imzo boshqa faylga yoki boshqa muddatga ko'chirilmaydi
+      const sig = new URL(task.photoUrl, PMS).searchParams.get("sig");
+      const exp = Number(new URL(task.photoUrl, PMS).searchParams.get("exp"));
+      expect((await anon(`${rawUrl}?exp=${exp + 3600}&sig=${sig}`)).status).toBe(401);
+      expect((await anon(`/uploads/cleaning/boshqa.jpg?exp=${exp}&sig=${sig}`)).status).toBe(401);
+    });
+  });
+
   // --- Cheklist (10-fayl §9) ---------------------------------
   describe("xavfsizlik cheklisti — FAZA 12 mezoni", () => {
     it("/health xavfsizlik holatini ko'rsatadi", async () => {

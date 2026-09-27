@@ -362,6 +362,9 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       expect(res.status).toBe(201);
       expect(res.body.reservationCode).toMatch(/^IMR-[A-Z0-9]{5}$/);
       expect(res.body.roomNumber).toBeTruthy();
+      // Kod bron bilan bitta yozuvda saqlanadi
+      const row = await prisma.reservation.findUnique({ where: { code: res.body.reservationCode } });
+      expect(row?.roomId).toBe(res.body.roomNumber);
       // 13-fayl §5: darhol CONFIRMED emas — mijoz hali to'lamagan
       expect(res.body.status).toBe("pending_payment");
       // 90 x 3 + nonushta: sayt broni HAR DOIM ovqat bilan
@@ -645,6 +648,27 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       expect(exists).toBeNull();
     });
 
+    it("withMeal: false jimgina e'tiborsiz qolmaydi — rad etiladi (sayt broni har doim nonushta bilan)", async () => {
+      const res = await publicApi("/api/public/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          roomTypeId: TYPES.a,
+          checkIn: day(125),
+          checkOut: day(127),
+          adults: 1,
+          withMeal: false,
+          guest: { fullName: "Nonushtasiz Mehmon", phone: "+998901110011" },
+        }),
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("nonushta");
+
+      const exists = await prisma.reservation.findFirst({
+        where: { guest: { fullName: "Nonushtasiz Mehmon" } },
+      });
+      expect(exists).toBeNull();
+    });
+
     it("bir raqamga 3 tadan ko'p to'lanmagan bron bo'lmaydi", async () => {
       await setPrices(day(130), day(145));
       const phone = "+998901119999";
@@ -683,6 +707,29 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
 
       // 4-urinishda to'xtaydi
       expect(lastStatus).toBe(400);
+    }, 30000);
+
+    it("raqamni boshqacha yozish (bo'sh joy, chiziqcha, +998 siz) cheklovni chetlab o'tmaydi", async () => {
+      await setPrices(day(160), day(175));
+      const roomType = (Object.entries(TOTAL) as Array<["a" | "b" | "c", number]>)
+        .sort((x, y) => y[1] - x[1])[0][0];
+      const variants = ["+998 90 111-88-77", "+998901118877", "90 111 88 77", "(90) 111-88-77"];
+
+      const statuses: number[] = [];
+      for (const [i, phone] of variants.entries()) {
+        const res = await publicApi("/api/public/reservations", {
+          method: "POST",
+          body: JSON.stringify({
+            roomTypeId: TYPES[roomType],
+            checkIn: day(160 + i * 2),
+            checkOut: day(161 + i * 2),
+            adults: 1,
+            guest: { fullName: `Format ${i}`, phone },
+          }),
+        });
+        statuses.push(res.status);
+      }
+      expect(statuses).toEqual([201, 201, 201, 400]);
     }, 30000);
 
     it("qisqa ism rad etiladi", async () => {

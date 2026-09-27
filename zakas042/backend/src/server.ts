@@ -26,6 +26,7 @@ import { channelRouter } from "./routes/channel.js";
 import { webhooksRouter } from "./routes/webhooks.js";
 import { parseAuth, authRequired, requireAuth, requirePermission } from "./lib/authMiddleware.js";
 import { internalLimiter } from "./lib/rateLimit.js";
+import { uploadAccess } from "./lib/uploadAccess.js";
 import { scheduleMaintenance } from "./queues/scheduler.js";
 // TZ 11-band: Beds24 navbatlari worker'lari va o'lik xat (beds24-retry)
 import "./queues/workers.js";
@@ -145,9 +146,11 @@ app.use("/api/admin", internalLimiter, channelRouter, adminRouter);
 app.use("/api/webhooks", webhooksRouter);
 
 // --- Yuklangan fayllar (tozalash rasmlari) ------------------
-// fileURLToPath — Windows'da URL.pathname oldiga "/" qo'shadi
+// fileURLToPath — Windows'da URL.pathname oldiga "/" qo'shadi.
+// Login'siz ochiq emas: imzoli havola (API beradi) yoki token —
+// lib/uploadAccess.ts
 const uploadsDir = fileURLToPath(new URL("../public/uploads", import.meta.url));
-app.use("/uploads", express.static(uploadsDir));
+app.use("/uploads", uploadAccess, express.static(uploadsDir));
 
 // --- Frontend (sayt, admin panel, Shaxmatka) ----------------
 // Birlashtirishdan keyin uchala frontend shu serverdan xizmat
