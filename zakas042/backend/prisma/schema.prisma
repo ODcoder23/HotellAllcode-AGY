@@ -645,8 +645,15 @@ model RatePlan {
   roomType    RoomType @relation(fields: [roomTypeId], references: [id])
   date        DateTime @db.Date
   price       Decimal  @db.Decimal(12, 2)
-  // Kamida necha kecha. Hozir hech qayerda majburlanmaydi (standart 1)
-  minStay     Int      @default(1)
+  // Cheklovlar (TZ 10-band) — Beds24 kalendariga (OTA'larga) boradi.
+  // null = PMS bu cheklovni boshqarmaydi: yuborilmaydi, Beds24'dagisi
+  // buzilmaydi. PMS o'zi (sayt, qabulxona) hozircha majburlamaydi
+  minStay         Int?     // kamida necha kecha (1 = cheklovsiz)
+  maxStay         Int?     // ko'pi bilan necha kecha (0 = cheklovsiz)
+  // Beds24'da bitta `override` maydoni — ikkalasi birga boshqariladi
+  // (biri null bo'lsa ikkinchisi ham null)
+  closedArrival   Boolean? // shu kuni kirish yo'q (CTA)
+  closedDeparture Boolean? // shu kuni chiqish yo'q (CTD)
   source      String   @default("pms")   // "pms" | "beds24" — oxirgi yangilanish qayerdan kelgan
   syncedAt    DateTime?                   // Beds24'ga yuborilgan vaqt (null = yuborilmagan)
   syncError   String?                     // oxirgi yuborish xatosi (panel belgisi)

@@ -1,5 +1,9 @@
 /**
- * Narx sinxronizatsiyasi — TZ 7-band
+ * Narx va cheklovlar sinxronizatsiyasi — TZ 9, 10-band
+ *
+ * Cheklovlar (2026-09-27): minStay, maxStay, kirish/chiqish taqiqi
+ * (`RatePlan`). null — PMS boshqarmaydi: yuborilmaydi, Beds24'dagisi
+ * buzilmaydi. Narx bilan bitta so'rovda ketadi va bitta `syncedAt`.
  *
  * Mijoz qarori Q8: avtomatik o'suvchi narx YO'Q, admin qo'lda belgilaydi.
  * Q9 ("Beds24 ustuvor"): Shaxmatka/admin panel — Beds24'ni boshqarish
@@ -34,6 +38,7 @@ import { activeConnection } from "./beds24/auth.js";
 import { rateFor } from "./exchangeRate.js";
 import { notifyRateSync } from "../realtime/notify.js";
 import { rateSyncQueue, enqueueWithTimeout } from "../queues/index.js";
+import type { DayRestrictions, ExternalRateDay } from "./channel/types.js";
 
 /** Debounce oynasi — bir necha o'zgarish bitta yuborishga birlashadi */
 const DEBOUNCE_MS = 3000;
@@ -134,12 +139,38 @@ async function markRateError(roomTypeId: string, from: Date, to: Date, error: st
   });
 }
 
+/** PMS qatoridagi cheklovlar -> kanalga yuboriladigani (null — yuborilmaydi) */
+export function restrictionsForPush(r: {
+  minStay: number | null; maxStay: number | null;
+  closedArrival: boolean | null; closedDeparture: boolean | null;
+}): DayRestrictions {
+  return {
+    ...(r.minStay !== null ? { minStay: r.minStay } : {}),
+    // 0 — cheklovsiz: Beds24'da maydon olib tashlanadi
+    ...(r.maxStay !== null ? { maxStay: r.maxStay > 0 ? r.maxStay : null } : {}),
+    ...(r.closedArrival !== null || r.closedDeparture !== null
+      ? { closedArrival: r.closedArrival === true, closedDeparture: r.closedDeparture === true }
+      : {}),
+  };
+}
+
+/** Jurnal va panel uchun qisqa matn: "kamida 2 · ko'pi bilan 7 · kirish yo'q" */
+export function restrictionText(r: DayRestrictions): string {
+  return [
+    r.minStay && r.minStay > 1 ? `kamida ${r.minStay}` : null,
+    r.maxStay ? `ko'pi bilan ${r.maxStay}` : null,
+    r.closedArrival ? "kirish yo'q" : null,
+    r.closedDeparture ? "chiqish yo'q" : null,
+  ].filter(Boolean).join(" · ");
+}
+
 /**
- * Bir tarif narxlarini Beds24'ga yuboradi — `[from, to]` (ikkalasi kiradi).
+ * Bir tarif narx va cheklovlarini Beds24'ga yuboradi — `[from, to]`
+ * (ikkalasi kiradi).
  *
  * Faqat `syncedAt = null` kunlar yuboriladi — yuborilgani qayta ketmaydi
- * (kredit tejash). Faqat NARX: minStay PMS'da sozlanmaydi, yuborilsa
- * Beds24'dagi cheklovni ("kamida 3 kecha") jimgina 1 ga tushirardi.
+ * (kredit tejash). Cheklov faqat PMS boshqarsa (null emas) yuboriladi —
+ * aks holda Beds24'dagi "kamida 3 kecha" jimgina bosilib ketardi.
  */
 export async function pushRates(roomTypeId: string, from: Date, to: Date): Promise<RatePushOutcome> {
   const started = Date.now();
@@ -169,11 +200,14 @@ export async function pushRates(roomTypeId: string, from: Date, to: Date): Promi
   const days = pending.map((d) => ({
     date: toDateKey(d.date) ?? "",
     price: toChannelPrice(toNumber(d.price), conv.rate),
+    ...restrictionsForPush(d),
   }));
   // Jurnal uchun (TZ 16-band: sana va qiymat)
+  const restrictions = [...new Set(days.map((d) => restrictionText(d)))].filter(Boolean);
   const logInfo = {
     from: days[0]?.date, to: days[days.length - 1]?.date, days: days.length,
     prices: priceSummary(days.map((d) => d.price)), currency: conv.currency,
+    ...(restrictions.length ? { restrictions: restrictions.length === 1 ? restrictions[0] : "turli cheklovlar" } : {}),
   };
 
   let detail = "";
@@ -193,17 +227,24 @@ export async function pushRates(roomTypeId: string, from: Date, to: Date): Promi
     detail = [detail, `${externalRoomTypeId}: ${r.detail ?? "ok"}`].filter(Boolean).join("; ");
   }
 
-  // Faqat HAQIQATAN yuborilgan (sana, narx) juftligi belgilanadi: yuborish
-  // davomida admin narxni yana o'zgartirgan bo'lsa u kun "kutmoqda" qoladi
-  const byPrice = new Map<string, Date[]>();
+  // Faqat HAQIQATAN yuborilgan (sana, narx, cheklovlar) belgilanadi:
+  // yuborish davomida admin narx yoki cheklovni yana o'zgartirgan bo'lsa
+  // u kun "kutmoqda" qoladi
+  const groups = new Map<string, { sent: (typeof pending)[number]; dates: Date[] }>();
   for (const d of pending) {
-    const key = toNumber(d.price).toFixed(2);
-    byPrice.set(key, [...(byPrice.get(key) ?? []), d.date]);
+    const key = [toNumber(d.price).toFixed(2), d.minStay, d.maxStay, d.closedArrival, d.closedDeparture].join("|");
+    const g = groups.get(key);
+    if (g) g.dates.push(d.date);
+    else groups.set(key, { sent: d, dates: [d.date] });
   }
-  for (const [price, dates] of byPrice) {
+  for (const { sent, dates } of groups.values()) {
     await prisma.ratePlan.updateMany({
-      where: { roomTypeId, date: { in: dates }, price: new Prisma.Decimal(price), syncedAt: null },
-      data: { syncedAt: new Date(), syncError: null, channelPrice: new Prisma.Decimal(toChannelPrice(Number(price), conv.rate)) },
+      where: {
+        roomTypeId, date: { in: dates }, syncedAt: null, price: sent.price,
+        minStay: sent.minStay, maxStay: sent.maxStay,
+        closedArrival: sent.closedArrival, closedDeparture: sent.closedDeparture,
+      },
+      data: { syncedAt: new Date(), syncError: null, channelPrice: new Prisma.Decimal(toChannelPrice(toNumber(sent.price), conv.rate)) },
     });
   }
 
@@ -285,8 +326,38 @@ export type PullRatesResult = {
   detail?: string;
 };
 
+type RestrictionPatch = {
+  minStay?: number; maxStay?: number; closedArrival?: boolean; closedDeparture?: boolean;
+};
+
 /**
- * Beds24 kalendaridagi narxni PMS'ga tortadi (Beds24 ustuvor).
+ * Beds24 cheklovi PMS qatoridan farq qiladimi — farq qilsa yangi qiymatlar.
+ *
+ * PMS'da null (boshqarilmaydi) = neytral qiymat: kamida 1, ko'pi bilan
+ * cheklovsiz (0), kirish/chiqish ochiq. Beds24 ham neytral bo'lsa hech
+ * narsa yozilmaydi — aks holda birinchi tortish 365 kunni "o'zgardi"
+ * deb belgilardi.
+ */
+function restrictionPatch(
+  row: { minStay: number | null; maxStay: number | null; closedArrival: boolean | null; closedDeparture: boolean | null } | null,
+  day: ExternalRateDay
+): RestrictionPatch | null {
+  const patch: RestrictionPatch = {};
+  const rMin = day.minStay && day.minStay > 1 ? day.minStay : 1;
+  if (rMin !== (row?.minStay ?? 1)) patch.minStay = rMin;
+  const rMax = day.maxStay && day.maxStay > 0 ? day.maxStay : 0;
+  if (rMax !== (row?.maxStay ?? 0)) patch.maxStay = rMax;
+  const cta = day.closedArrival === true;
+  const ctd = day.closedDeparture === true;
+  if (cta !== (row?.closedArrival === true) || ctd !== (row?.closedDeparture === true)) {
+    patch.closedArrival = cta;
+    patch.closedDeparture = ctd;
+  }
+  return Object.keys(patch).length > 0 ? patch : null;
+}
+
+/**
+ * Beds24 kalendaridagi narx va cheklovlarni PMS'ga tortadi (Beds24 ustuvor).
  *
  * NEGA DAVRIY: Beds24 narx o'zgarishi haqida webhook YUBORMAYDI.
  * Bitta so'rov obyektning barcha xonalarini oladi (~2 kredit).
@@ -334,23 +405,33 @@ export async function pullRates(daysAhead = 365): Promise<PullRatesResult> {
 
   let checked = 0;
   let keptPending = 0;
-  const changes: Array<{ roomTypeId: string; date: string; price: number; channelPrice: number }> = [];
+  const changes: Array<{
+    roomTypeId: string; date: string;
+    price?: { price: number; channelPrice: number };
+    restrictions: RestrictionPatch | null;
+  }> = [];
 
   for (const day of remote) {
     const roomTypeId = typeByExternal.get(day.externalRoomTypeId);
-    // Narxi yo'q kun (Beds24'da yopiq) PMS'da o'zgarmaydi
-    if (!roomTypeId || day.price === undefined || day.price <= 0) continue;
+    if (!roomTypeId) continue;
+    const row = localByKey.get(`${roomTypeId}|${day.date}`);
+    const hasPrice = day.price !== undefined && day.price > 0;
+    // Narxi yo'q kun (Beds24'da yopiq) va PMS'da ham qatori yo'q — tegilmaydi
+    if (!row && !hasPrice) continue;
     checked++;
 
-    const row = localByKey.get(`${roomTypeId}|${day.date}`);
     if (row && row.syncedAt === null) { keptPending++; continue; }
-    if (row && sameChannelPrice(row, day.price, conv.rate)) continue;
+    const priceChanged = hasPrice && !(row && sameChannelPrice(row, day.price!, conv.rate));
+    const restrictions = restrictionPatch(row ?? null, day);
+    // Yangi qator narxsiz yaratilmaydi
+    if (!row && !priceChanged) continue;
+    if (!priceChanged && !restrictions) continue;
 
     changes.push({
       roomTypeId,
       date: day.date,
-      price: fromChannelPrice(day.price, conv.rate),
-      channelPrice: round2(day.price),
+      ...(priceChanged ? { price: { price: fromChannelPrice(day.price!, conv.rate), channelPrice: round2(day.price!) } } : {}),
+      restrictions,
     });
   }
 
@@ -358,20 +439,21 @@ export async function pullRates(daysAhead = 365): Promise<PullRatesResult> {
   if (changes.length > 0) {
     const now = new Date();
     await prisma.$transaction(
-      changes.map((c) =>
-        prisma.ratePlan.upsert({
+      changes.map((c) => {
+        const price = c.price
+          ? { price: new Prisma.Decimal(c.price.price), channelPrice: new Prisma.Decimal(c.price.channelPrice), source: "beds24" }
+          : {};
+        return prisma.ratePlan.upsert({
           where: { roomTypeId_date: { roomTypeId: c.roomTypeId, date: fromDateKey(c.date) } },
+          // `create` faqat narx bilan keladi (yuqoridagi shart)
           create: {
             roomTypeId: c.roomTypeId, date: fromDateKey(c.date),
-            price: new Prisma.Decimal(c.price), channelPrice: new Prisma.Decimal(c.channelPrice),
-            source: "beds24", syncedAt: now,
+            price: new Prisma.Decimal(c.price?.price ?? 0), channelPrice: new Prisma.Decimal(c.price?.channelPrice ?? 0),
+            ...(c.restrictions ?? {}), source: "beds24", syncedAt: now,
           },
-          update: {
-            price: new Prisma.Decimal(c.price), channelPrice: new Prisma.Decimal(c.channelPrice),
-            source: "beds24", syncedAt: now, syncError: null,
-          },
-        })
-      )
+          update: { ...price, ...(c.restrictions ?? {}), syncedAt: now, syncError: null },
+        });
+      })
     );
     for (const c of changes) notifyRateSync(c.roomTypeId, c.date, "synced");
   }

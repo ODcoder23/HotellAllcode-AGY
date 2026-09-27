@@ -114,10 +114,29 @@ type Beds24List<T> = {
   pages?: { nextPageExists?: boolean; nextPageLink?: string | null };
 };
 
+/**
+ * Kalendar kuni. `override` — bitta maydonda kun holati (API hujjati):
+ * none | blackout | exception | noCheckIn | noCheckOut | noCheckInOrCheckOut
+ */
 type CalendarRow = {
   roomId: number;
-  calendar: Array<{ from: string; to?: string; numAvail?: number; price1?: number; minStay?: number }>;
+  calendar: Array<{
+    from: string; to?: string; numAvail?: number; price1?: number;
+    minStay?: number; maxStay?: number; override?: string;
+  }>;
 };
+
+/** PMS boshqaradigan `override` qiymatlari (kirish/chiqish taqiqi) */
+const ARRIVAL_CLOSED = new Set(["noCheckIn", "noCheckInOrCheckOut"]);
+const DEPARTURE_CLOSED = new Set(["noCheckOut", "noCheckInOrCheckOut"]);
+
+/** Kirish/chiqish taqiqi -> Beds24 `override` */
+function overrideFor(closedArrival: boolean, closedDeparture: boolean): string {
+  if (closedArrival && closedDeparture) return "noCheckInOrCheckOut";
+  if (closedArrival) return "noCheckIn";
+  if (closedDeparture) return "noCheckOut";
+  return "none";
+}
 
 type PostResult = {
   success?: boolean;
@@ -556,32 +575,75 @@ export class Beds24Adapter implements ChannelAdapter {
     }
   }
 
+  /**
+   * Narx va cheklovlar (TZ 9, 10-band) — `POST /inventory/rooms/calendar`.
+   *
+   * Faqat berilgan cheklov yoziladi: PMS boshqarmaydigan maydon
+   * yuborilmaydi, Beds24'dagisi buzilmaydi. `maxStay: null` — olib tashlash.
+   *
+   * KIRISH/CHIQISH TAQIQI Beds24'da `override` maydonida — kunni butunlay
+   * yopish (`blackout`) ham shu maydonda. Beds24 panelida yopilgan kunga
+   * "kirish yo'q" yozilsa kun OCHILIB ketardi (OTA sota boshlardi).
+   * Shuning uchun avval joriy qiymat o'qiladi (1 kredit) va `blackout` /
+   * `exception` kunlariga `override` yuborilmaydi.
+   */
   async pushRates(payload: RatesPush): Promise<SyncResult> {
     try {
-      // Narx VA minStay birga guruhlanadi — ikkalasi ham oraliqda bir xil bo'lishi kerak
-      const ranges = groupConsecutive(payload.days, (d) => `${d.price}|${d.minStay ?? ""}`);
+      const roomId = Number(payload.externalRoomTypeId);
+      const withOverride = payload.days.filter((d) => d.closedArrival !== undefined || d.closedDeparture !== undefined);
+      const locked = withOverride.length > 0
+        ? await this.lockedDays(payload.externalRoomTypeId, withOverride.map((d) => d.date))
+        : new Set<string>();
+
+      const items = payload.days.map((d) => {
+        const c: Record<string, unknown> = { price1: d.price };
+        if (d.minStay !== undefined) c.minStay = d.minStay;
+        if (d.maxStay !== undefined) c.maxStay = d.maxStay;
+        if ((d.closedArrival !== undefined || d.closedDeparture !== undefined) && !locked.has(d.date)) {
+          c.override = overrideFor(d.closedArrival === true, d.closedDeparture === true);
+        }
+        return { date: d.date, fields: JSON.stringify(c) };
+      });
+
+      // Ketma-ket bir xil kunlar bitta oraliq: hamma maydon bir xil bo'lishi kerak
+      const ranges = groupConsecutive(items, (d) => d.fields);
 
       await beds24Request("/inventory/rooms/calendar", {
         method: "POST",
         body: [{
-          roomId: Number(payload.externalRoomTypeId),
-          calendar: ranges.map((r) => {
-            const [price, minStay] = String(r.value).split("|");
-            return {
-              from: r.from,
-              to: r.to,
-              price1: Number(price),
-              ...(minStay ? { minStay: Number(minStay) } : {}),
-            };
-          }),
+          roomId,
+          calendar: ranges.map((r) => ({ from: r.from, to: r.to, ...(JSON.parse(r.value) as Record<string, unknown>) })),
         }],
         estimatedCost: 2,
       });
 
-      return { ok: true, detail: `${payload.days.length} kun, ${ranges.length} oraliq` };
+      const skipped = withOverride.filter((d) => locked.has(d.date)).length;
+      return {
+        ok: true,
+        detail: `${payload.days.length} kun, ${ranges.length} oraliq` +
+          (skipped ? `; ${skipped} kun Beds24'da yopiq — kirish/chiqish taqiqi qo'yilmadi` : ""),
+      };
     } catch (e) {
       return toSyncFailure(e);
     }
+  }
+
+  /** Beds24'da butunlay yopilgan (`blackout`) yoki maxsus (`exception`) kunlar */
+  private async lockedDays(externalRoomTypeId: string, dates: string[]): Promise<Set<string>> {
+    const sorted = [...dates].sort();
+    const from = sorted[0]!;
+    const to = sorted[sorted.length - 1]!;
+    const res = await beds24Request<Beds24List<CalendarRow>>("/inventory/rooms/calendar", {
+      query: { roomId: externalRoomTypeId, startDate: from, endDate: to, includeOverride: true },
+      estimatedCost: 1,
+    });
+    const out = new Set<string>();
+    for (const c of res.data?.[0]?.calendar ?? []) {
+      if (c.override === "blackout" || c.override === "exception") {
+        for (const d of expandRange(c.from, c.to, from, to)) out.add(d);
+      }
+    }
+    return out;
   }
 
   async getAvailability(externalRoomTypeId: string, from: string, to: string) {
@@ -614,11 +676,14 @@ export class Beds24Adapter implements ChannelAdapter {
     const res = await beds24Request<Beds24List<CalendarRow>>("/inventory/rooms/calendar", {
       query: {
         ...(propertyId ? { propertyId } : {}),
-        startDate: from, endDate: to, includePrices: true, includeMinStay: true,
+        startDate: from, endDate: to,
+        includePrices: true, includeMinStay: true, includeMaxStay: true, includeOverride: true,
       },
       estimatedCost: 2,
     });
 
+    // minStay/maxStay kalendarda bo'lmasa Beds24 xona standartini beradi
+    // (API hujjati) — shu qiymat amal qiladi
     return (res.data ?? []).flatMap((row) =>
       (row.calendar ?? []).flatMap((c) =>
         expandRange(c.from, c.to, from, to).map((date) => ({
@@ -626,6 +691,9 @@ export class Beds24Adapter implements ChannelAdapter {
           date,
           price: c.price1,
           minStay: c.minStay,
+          maxStay: c.maxStay,
+          closedArrival: ARRIVAL_CLOSED.has(c.override ?? ""),
+          closedDeparture: DEPARTURE_CLOSED.has(c.override ?? ""),
         }))
       )
     );

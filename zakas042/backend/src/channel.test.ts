@@ -47,14 +47,21 @@ type Booking = {
   bookingTime?: string; modifiedTime: string;
 };
 
+/** Kalendar kuni (real API maydonlari). null — maydon olib tashlangan */
+type CalDay = {
+  numAvail?: number; price1?: number;
+  minStay?: number | null; maxStay?: number | null; override?: string | null;
+};
+const CAL_FIELDS = ["numAvail", "price1", "minStay", "maxStay", "override"] as const;
+
 const fake = {
   refresh: new Set<string>(),
   access: new Set<string>(),
   seq: 0,
   bookingSeq: 20_000,
   bookings: [] as Booking[],
-  /** roomId -> kun -> {numAvail, price1} */
-  calendar: new Map<number, Map<string, { numAvail?: number; price1?: number }>>(),
+  /** roomId -> kun -> kalendar qiymatlari */
+  calendar: new Map<number, Map<string, CalDay>>(),
   posts: [] as Array<{ path: string; body: any }>,
   pageSize: 2,
   credits: 100,
@@ -93,16 +100,18 @@ function issueTokens() {
   return t;
 }
 
-/** Ketma-ket bir xil qiymatli kunlar bitta oraliq (real API shunday beradi) */
-function compress(days: Array<[string, { numAvail?: number; price1?: number }]>, withAvail: boolean, withPrice: boolean) {
+/**
+ * Ketma-ket bir xil qiymatli kunlar bitta oraliq (real API shunday beradi).
+ * Faqat so'ralgan (`include*`) maydonlar qaytadi.
+ */
+function compress(days: Array<[string, CalDay]>, fields: Array<keyof CalDay>) {
   const out: Array<Record<string, unknown>> = [];
   for (const [date, v] of days.sort(([a], [b]) => a.localeCompare(b))) {
     const item: Record<string, unknown> = {};
-    if (withAvail) item.numAvail = v.numAvail;
-    if (withPrice && v.price1 !== undefined) item.price1 = v.price1;
+    for (const f of fields) if (v[f] !== undefined && v[f] !== null) item[f] = v[f];
     const last = out[out.length - 1];
     const next = last ? new Date(Date.parse(String(last.to) + "T00:00:00Z") + 86_400_000).toISOString().slice(0, 10) : "";
-    if (last && next === date && last.numAvail === item.numAvail && last.price1 === item.price1) last.to = date;
+    if (last && next === date && fields.every((f) => last[f] === item[f])) last.to = date;
     else out.push({ from: date, to: date, ...item });
   }
   return out;
@@ -208,7 +217,10 @@ const server = http.createServer(async (req, res) => {
       const m = fake.calendar.get(row.roomId) ?? new Map();
       for (const c of row.calendar) {
         for (let d = c.from; d <= c.to; d = new Date(Date.parse(d + "T00:00:00Z") + 86_400_000).toISOString().slice(0, 10)) {
-          m.set(d, { ...m.get(d), ...(c.price1 !== undefined ? { price1: c.price1 } : {}), ...(c.numAvail !== undefined ? { numAvail: c.numAvail } : {}) });
+          // Berilmagan maydon o'zgarmaydi, null — olib tashlanadi (real API)
+          const cur: CalDay = { ...m.get(d) };
+          for (const f of CAL_FIELDS) if (f in c) (cur as any)[f] = c[f];
+          m.set(d, cur);
         }
       }
       fake.calendar.set(row.roomId, m);
@@ -217,8 +229,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (path === "/inventory/rooms/calendar") {
-    const withAvail = url.searchParams.get("includeNumAvail") === "true";
-    const withPrice = url.searchParams.get("includePrices") === "true";
+    const flag = (name: string) => url.searchParams.get(name) === "true";
+    const fields = ([
+      flag("includeNumAvail") && "numAvail",
+      flag("includePrices") && "price1",
+      flag("includeMinStay") && "minStay",
+      flag("includeMaxStay") && "maxStay",
+      flag("includeOverride") && "override",
+    ].filter(Boolean)) as Array<keyof CalDay>;
     const start = url.searchParams.get("startDate") ?? "";
     const end = url.searchParams.get("endDate") ?? "";
     const only = url.searchParams.get("roomId");
@@ -226,8 +244,8 @@ const server = http.createServer(async (req, res) => {
       .filter(([roomId]) => !only || String(roomId) === only)
       .map(([roomId, days]) => ({
         roomId,
-        calendar: withAvail || withPrice
-          ? compress([...days.entries()].filter(([d]) => d >= start && d <= end), withAvail, withPrice)
+        calendar: fields.length
+          ? compress([...days.entries()].filter(([d]) => d >= start && d <= end), fields)
           : [],
       }));
     return send(res, 200, { success: true, data });
@@ -832,6 +850,72 @@ describe("Narx — PMS so'mda, Beds24'ga dollarda", () => {
     expect(log.body[0].value).toContain("40 USD");
   });
 
+  it("PMS boshqarmaydigan cheklov yuborilmaydi — Beds24'dagisi buzilmaydi", async () => {
+    if (!ready()) return;
+    const sent = fake.posts
+      .filter((p) => p.path === "/inventory/rooms/calendar")
+      .flatMap((p) => p.body as Array<{ calendar: Array<Record<string, any>> }>)
+      .flatMap((row) => row.calendar)
+      .filter((c) => c.from <= day(90) && c.to >= day(90));
+    expect(sent.length).toBeGreaterThan(0);
+    for (const c of sent) {
+      expect(c).not.toHaveProperty("minStay");
+      expect(c).not.toHaveProperty("maxStay");
+      expect(c).not.toHaveProperty("override");
+    }
+  });
+
+  it("cheklovlar (TZ 10): kamida/ko'pi bilan va kirish taqiqi Beds24'ga; yopiq (blackout) kun ochilmaydi", async () => {
+    if (!ready()) return;
+    await api("/api/rate-plans", { method: "PUT", token: tok.admin, body: { from: day(92), to: day(94), prices: { comfort3: 500_000 } } });
+    // Beds24 panelida 94-kun butunlay yopilgan
+    const cal = fake.calendar.get(5001) ?? new Map<string, CalDay>();
+    cal.set(day(94), { ...cal.get(day(94)), override: "blackout" });
+    fake.calendar.set(5001, cal);
+
+    const r = await api("/api/rate-plans/restrictions", {
+      method: "PUT", token: tok.admin,
+      body: { from: day(92), to: day(94), roomTypeIds: ["comfort3"], minStay: 2, maxStay: 7, closedArrival: true },
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.updated).toBe(3);
+
+    await waitFor(async () => fake.calendar.get(5001)?.get(day(94))?.minStay === 2, "Beds24 cheklovi");
+    expect(fake.calendar.get(5001)!.get(day(92))).toMatchObject({ price1: 40, minStay: 2, maxStay: 7, override: "noCheckIn" });
+    expect(fake.calendar.get(5001)!.get(day(94))!.override).toBe("blackout");
+
+    const row = await waitFor(async () => {
+      const plans = await api(`/api/rate-plans?from=${day(92)}&to=${day(92)}`, { token: tok.admin });
+      const x = plans.body.find((p: any) => p.roomTypeId === "comfort3");
+      return x?.syncStatus === "synced" ? x : null;
+    }, "cheklov yuborildi");
+    expect(row).toMatchObject({ minStay: 2, maxStay: 7, closedArrival: true, closedDeparture: false });
+
+    const log = await api("/api/admin/sync-log?action=push_rates&status=SUCCESS&limit=1", { token: tok.admin });
+    expect(log.body[0].value).toContain("kamida 2");
+  });
+
+  it("cheklov tekshiruvi va olib tashlash: kamida > ko'pi bilan — 400; ko'pi bilan 0 — Beds24'dan o'chadi", async () => {
+    if (!ready()) return;
+    const bad = await api("/api/rate-plans/restrictions", {
+      method: "PUT", token: tok.admin, body: { from: day(92), to: day(92), roomTypeIds: ["comfort3"], minStay: 8 },
+    });
+    expect(bad.status).toBe(400);
+    const empty = await api("/api/rate-plans/restrictions", {
+      method: "PUT", token: tok.admin, body: { from: day(92), to: day(92), roomTypeIds: ["comfort3"] },
+    });
+    expect(empty.status).toBe(400);
+
+    const r = await api("/api/rate-plans/restrictions", {
+      method: "PUT", token: tok.admin,
+      body: { from: day(92), to: day(92), roomTypeIds: ["comfort3"], maxStay: 0, closedArrival: false },
+    });
+    expect(r.status).toBe(200);
+    await waitFor(async () => fake.calendar.get(5001)?.get(day(92))?.maxStay === null, "maxStay olib tashlandi");
+    expect(fake.calendar.get(5001)!.get(day(92))!.override).toBe("none");
+    expect(fake.calendar.get(5001)!.get(day(92))!.minStay).toBe(2);   // tegilmagan
+  });
+
   it("bog'lanmagan tarif narxi yuborilmaydi va xato ham yozilmaydi", async () => {
     if (!ready()) return;
     const failedBefore = await prisma.syncLog.count({ where: { action: "push_rates", status: "FAILED" } });
@@ -869,6 +953,19 @@ describe("Narx — PMS so'mda, Beds24'ga dollarda", () => {
     expect(plan.source).toBe("beds24");
     const kept = await prisma.ratePlan.findUniqueOrThrow({ where: { roomTypeId_date: { roomTypeId: "famlux201", date: new Date(day(2)) } } });
     expect(Number(kept.price)).toBe(800_000);
+  });
+
+  it("Beds24 panelidagi cheklov ham PMS'ga tortiladi (tur darajasi)", async () => {
+    if (!ready()) return;
+    const cal = fake.calendar.get(5003)!;
+    cal.set(day(1), { ...cal.get(day(1)), minStay: 3, override: "noCheckOut" });
+
+    const r = await api("/api/admin/maintenance/pull-rates", { method: "POST", token: tok.admin });
+    expect(r.status).toBe(200);
+    expect(r.body.changed).toBe(1);
+    const plan = await prisma.ratePlan.findUniqueOrThrow({ where: { roomTypeId_date: { roomTypeId: "famlux201", date: new Date(day(1)) } } });
+    expect(plan).toMatchObject({ minStay: 3, closedArrival: false, closedDeparture: true, maxStay: null });
+    expect(plan.syncedAt).not.toBeNull();   // Beds24 bilan bir xil — qayta yuborilmaydi
   });
 
   it("farq tekshiruvi faqat qayd etadi", async () => {

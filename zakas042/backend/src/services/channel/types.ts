@@ -102,17 +102,33 @@ export type AvailabilityPush = {
   days: Array<{ date: string; available: number }>;
 };
 
-export type RatesPush = {
-  externalRoomTypeId: string;
-  days: Array<{ date: string; price: number; minStay?: number }>;
+/**
+ * Kunlik cheklovlar (TZ 10-band). Maydon berilmasa — kanaldagi qiymat
+ * o'zgarmaydi (PMS u cheklovni boshqarmaydi).
+ */
+export type DayRestrictions = {
+  minStay?: number;
+  /** null — cheklovni olib tashlash */
+  maxStay?: number | null;
+  /** Kirish/chiqish taqiqi — biri berilsa ikkinchisi `false` hisoblanadi */
+  closedArrival?: boolean;
+  closedDeparture?: boolean;
 };
 
-/** Kanaldagi narx — `pullRates` (Beds24 -> PMS) uchun */
+export type RatesPush = {
+  externalRoomTypeId: string;
+  days: Array<{ date: string; price: number } & DayRestrictions>;
+};
+
+/** Kanaldagi narx va cheklovlar — `pullRates` (Beds24 -> PMS) uchun */
 export type ExternalRateDay = {
   externalRoomTypeId: string;
   date: string;
   price?: number;
   minStay?: number;
+  maxStay?: number;
+  closedArrival?: boolean;
+  closedDeparture?: boolean;
 };
 
 /**
@@ -210,7 +226,11 @@ export interface ChannelAdapter {
   /** Availability yuborish (TZ 6-band, 07-fayl §4) */
   pushAvailability(payload: AvailabilityPush): Promise<SyncResult>;
 
-  /** Narx yuborish (TZ 7-band) */
+  /**
+   * Narx va cheklovlarni yuborish (TZ 9, 10-band) — `updatePrices` +
+   * `updateRestrictions`. Kanalda butunlay yopilgan kunni cheklov ochib
+   * yubormasligi kerak (adapter o'zi tekshiradi).
+   */
   pushRates(payload: RatesPush): Promise<SyncResult>;
 
   /** Joriy availability'ni o'qish — drift tekshiruvi (07-fayl §6) */
@@ -221,7 +241,7 @@ export interface ChannelAdapter {
   ): Promise<Array<{ date: string; available: number; price?: number }>>;
 
   /**
-   * Barcha xonalar narxini o'qish — Beds24 -> PMS (`pullRates`).
+   * Barcha xonalar narxi va cheklovlarini o'qish — Beds24 -> PMS (`pullRates`).
    *
    * Kanal narx o'zgarishi haqida webhook yubormaydi, shuning uchun
    * narx davriy tortib olinadi. `to` kiradi.

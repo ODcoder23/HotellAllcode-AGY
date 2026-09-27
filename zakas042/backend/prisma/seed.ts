@@ -272,7 +272,6 @@ async function main() {
         roomTypeId: rt.id,
         date: day(d),
         price: dec(rt.price),
-        minStay: 1,
       });
     }
   }

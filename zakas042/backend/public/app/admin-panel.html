@@ -107,6 +107,7 @@
   .ch-dot.b24{ background:transparent; box-shadow:inset 0 0 0 1.5px var(--turquoise); }
   .rp-usd{ display:block; font-size:10.5px; color:var(--text-faint); font-family:var(--mono); margin-top:1px; }
   .rp-b24{ display:block; font-size:10.5px; color:var(--text-muted); margin-top:2px; font-weight:400; }
+  .rp-rs{ display:block; font-size:10px; color:var(--terracotta); font-family:var(--mono); margin-top:1px; white-space:nowrap; }
   .fx-chip{ font-family:var(--mono); font-size:12px; background:var(--turquoise-soft); color:var(--turquoise); border-radius:14px; padding:4px 10px; }
   .sys-btn .badge{
     font-family: var(--mono); font-size: 9.5px; padding: 1px 6px; border-radius:20px;
@@ -1340,6 +1341,23 @@
             Narx <b>kategoriya (xona turi)</b> bo'yicha: jadvalda bitta xonaning katagini o'zgartirsangiz,
             shu kategoriyadagi hamma xonaga qo'llanadi. Yangi narx darhol sayt, Shaxmatka va yangi bronlarda
             qo'llanadi. Mavjud bronlar summasi o'zgarmaydi.
+          </div>
+
+          <!-- CHEKLOVLAR (TZ 10-band, 2026-09-27): Beds24 kalendariga, u yerdan
+               OTA'larga. Sana, hafta kunlari va kategoriyalar — yuqoridagi forma -->
+          <div class="rp-title" style="margin-top:22px;">Cheklovlar — Beds24 orqali OTA'larga</div>
+          <div class="rp-form">
+            <label>Kamida, kecha<input type="number" id="rsMin" class="rp-input num" min="1" max="365" step="1" placeholder="o'zgarmaydi"></label>
+            <label>Ko'pi bilan, kecha<input type="number" id="rsMax" class="rp-input num" min="0" max="364" step="1" placeholder="o'zgarmaydi"></label>
+            <label>Kirish<select id="rsCta" class="rp-input"><option value="">o'zgarmaydi</option><option value="open">ochiq</option><option value="closed">yo'q (CTA)</option></select></label>
+            <label>Chiqish<select id="rsCtd" class="rp-input"><option value="">o'zgarmaydi</option><option value="open">ochiq</option><option value="closed">yo'q (CTD)</option></select></label>
+            <div class="btn-add" id="rsApply" role="button" tabindex="0">Cheklovni qo'llash</div>
+          </div>
+          <div class="rp-hint">
+            Sana, hafta kunlari va kategoriyalar — yuqoridagi formadan. Bo'sh maydon o'zgarmaydi;
+            <b>kamida 1</b> yoki <b>ko'pi bilan 0</b> — cheklovni olib tashlash. Faqat narxi bor kunlarga
+            qo'yiladi. Beds24 panelida butunlay yopilgan kun kirish/chiqish cheklovi bilan ochilmaydi.
+            Sayt va qabulxona bronlari hozircha bu cheklovlarni tekshirmaydi.
           </div>
         </div>
 
@@ -5392,16 +5410,30 @@
       }
     }
 
+    /** Cheklovlar (TZ 10-band): qisqa belgi va to'liq matn */
+    function restrictionInfo(r){
+      if(!r) return { html: '', title: '' };
+      const short = [], full = [];
+      if(r.minStay && r.minStay > 1){ short.push('≥' + r.minStay); full.push('kamida ' + r.minStay + ' kecha'); }
+      if(r.maxStay && r.maxStay > 0){ short.push('≤' + r.maxStay); full.push("ko'pi bilan " + r.maxStay + ' kecha'); }
+      if(r.closedArrival){ short.push('CTA'); full.push("kirish yo'q"); }
+      if(r.closedDeparture){ short.push('CTD'); full.push("chiqish yo'q"); }
+      return short.length
+        ? { html: '<span class="rp-rs">' + short.join(' ') + '</span>', title: ' · Cheklov: ' + full.join(', ') }
+        : { html: '', title: '' };
+    }
+
     function cellHtml(typeId, k, isRoom){
       const r = st.rates[typeId + '|' + k];
-      // $ va Beds24 belgisi faqat kategoriya qatorida — xona qatorlari takrorlamaydi
+      // $, Beds24 belgisi va cheklov faqat kategoriya qatorida — xona qatorlari takrorlamaydi
       const x = isRoom ? { html: '', title: '' } : chExtra(typeId, k);
-      const title = esc(typeLabelOf(typeId)) + ', ' + k + " — bosing va o'zgartiring (kategoriyaning hamma xonasiga)" + esc(x.title);
+      const rs = isRoom ? { html: '', title: '' } : restrictionInfo(r);
+      const title = esc(typeLabelOf(typeId)) + ', ' + k + " — bosing va o'zgartiring (kategoriyaning hamma xonasiga)" + esc(rs.title) + esc(x.title);
       if(!r){
         return '<td class="rp-cell rp-none' + (isRoom ? ' rp-room' : '') + '" data-type="' + esc(typeId) + '" data-day="' + k + '" title="' + title + '">narx yo\'q' + x.html + '</td>';
       }
       return '<td class="rp-cell' + (isRoom ? ' rp-room' : '') + '" data-type="' + esc(typeId) + '" data-day="' + k + '" title="' + title + '">' +
-        som(r.price) + x.html + '</td>';
+        som(r.price) + rs.html + x.html + '</td>';
     }
 
     function render(){
@@ -5516,27 +5548,38 @@
       inp.addEventListener('blur', () => finish(true));
     }
 
-    function applySeason(){
+    const fail = (msg) => openConfirmModal('Xatolik', msg, 'Tushunarli', function(){});
+
+    /** Formadagi tanlov (sana, kategoriya, hafta kunlari) — narx va cheklov uchun umumiy */
+    function readSelection(){
       const from = $('rpFrom') ? $('rpFrom').value : '';
       const to = $('rpTo') ? $('rpTo').value : '';
-      const price = parseMoney($('rpPrice') ? $('rpPrice').value : '');
       const types = st.types.filter((t) => st.selTypes.has(t.id)).map((t) => t.id);
       const weekdays = DOW_ORDER.filter((d) => st.selDays.has(d));
 
-      const fail = (msg) => openConfirmModal('Xatolik', msg, 'Tushunarli', function(){});
-      if(!from || !to) return fail("Sanalarni tanlang (dan va gacha).");
-      if(fromDay(to) < fromDay(from)) return fail("'Gacha' sanasi 'Dan' dan keyin bo'lishi kerak.");
+      if(!from || !to){ fail("Sanalarni tanlang (dan va gacha)."); return null; }
+      if(fromDay(to) < fromDay(from)){ fail("'Gacha' sanasi 'Dan' dan keyin bo'lishi kerak."); return null; }
       const span = Math.round((fromDay(to) - fromDay(from)) / 86400000) + 1;
-      if(span > 366) return fail("Oraliq ko'pi bilan 366 kun bo'lishi mumkin.");
-      if(!(price > 0) || price > MAX_PRICE) return fail("Narxni so'mda kiriting (masalan 600000).");
-      if(types.length === 0) return fail("Kamida bitta kategoriyani tanlang.");
-      if(weekdays.length === 0) return fail("Kamida bitta hafta kunini tanlang.");
+      if(span > 366){ fail("Oraliq ko'pi bilan 366 kun bo'lishi mumkin."); return null; }
+      if(types.length === 0){ fail("Kamida bitta kategoriyani tanlang."); return null; }
+      if(weekdays.length === 0){ fail("Kamida bitta hafta kunini tanlang."); return null; }
 
       let nDays = 0;
       for(let d = fromDay(from); d <= fromDay(to); d = addDays(d, 1)) if(st.selDays.has(d.getDay())) nDays++;
-      if(nDays === 0) return fail("Tanlangan hafta kunlari bu oraliqda yo'q.");
-      const nRooms = st.rooms.filter((r) => st.selTypes.has(r.type)).length;
-      const allDays = weekdays.length === 7;
+      if(nDays === 0){ fail("Tanlangan hafta kunlari bu oraliqda yo'q."); return null; }
+      return {
+        from: from, to: to, types: types, weekdays: weekdays, nDays: nDays,
+        nRooms: st.rooms.filter((r) => st.selTypes.has(r.type)).length,
+        allDays: weekdays.length === 7,
+      };
+    }
+
+    function applySeason(){
+      const price = parseMoney($('rpPrice') ? $('rpPrice').value : '');
+      if(!(price > 0) || price > MAX_PRICE) return fail("Narxni so'mda kiriting (masalan 600000).");
+      const sel = readSelection();
+      if(!sel) return;
+      const { from, to, types, weekdays, nDays, nRooms, allDays } = sel;
 
       openConfirmModal('Narxni qo\'llash',
         types.length + ' ta kategoriya (' + nRooms + ' xona) × ' + nDays + ' kun' +
@@ -5551,6 +5594,64 @@
             await loadRates();
             render();
             done('<b>' + som(price) + " so'm</b> qo'yildi: " + types.length + ' kategoriya × ' + (data.days || nDays) + ' kun (' + esc(from) + ' — ' + esc(to) + ').');
+          }catch(e){
+            fail("Saqlab bo'lmadi: " + String(e.message || e));
+          }
+        });
+    }
+
+    // Cheklovlar (TZ 10-band): PUT /api/rate-plans/restrictions. Bo'sh maydon —
+    // o'zgarmaydi; kamida 1 / ko'pi bilan 0 — cheklovni olib tashlash
+    function applyRestrictions(){
+      const body = {};
+      const minV = $('rsMin') ? $('rsMin').value.trim() : '';
+      const maxV = $('rsMax') ? $('rsMax').value.trim() : '';
+      if(minV !== ''){
+        const n = Number(minV);
+        if(!Number.isInteger(n) || n < 1 || n > 365) return fail('Kamida: 1 dan 365 gacha butun son (1 — cheklovsiz).');
+        body.minStay = n;
+      }
+      if(maxV !== ''){
+        const n = Number(maxV);
+        if(!Number.isInteger(n) || n < 0 || n > 364) return fail("Ko'pi bilan: 0 dan 364 gacha butun son (0 — cheklovsiz).");
+        body.maxStay = n;
+      }
+      if(body.minStay && body.maxStay && body.minStay > body.maxStay) return fail("Kamida kecha soni ko'pi bilandan katta bo'lmasin.");
+      const cta = $('rsCta') ? $('rsCta').value : '';
+      const ctd = $('rsCtd') ? $('rsCtd').value : '';
+      if(cta) body.closedArrival = cta === 'closed';
+      if(ctd) body.closedDeparture = ctd === 'closed';
+      if(Object.keys(body).length === 0) return fail('Kamida bitta cheklovni kiriting.');
+
+      const sel = readSelection();
+      if(!sel) return;
+      const text = [
+        body.minStay !== undefined ? (body.minStay > 1 ? 'kamida ' + body.minStay + ' kecha' : "kamida — cheklovsiz") : null,
+        body.maxStay !== undefined ? (body.maxStay > 0 ? "ko'pi bilan " + body.maxStay + ' kecha' : "ko'pi bilan — cheklovsiz") : null,
+        body.closedArrival !== undefined ? (body.closedArrival ? "kirish yo'q" : 'kirish ochiq') : null,
+        body.closedDeparture !== undefined ? (body.closedDeparture ? "chiqish yo'q" : 'chiqish ochiq') : null,
+      ].filter(Boolean).join(', ');
+
+      openConfirmModal("Cheklovni qo'llash",
+        sel.types.length + ' ta kategoriya × ' + sel.nDays + ' kun' +
+        (sel.allDays ? '' : ' (' + sel.weekdays.map((d) => DOWS[d]).join(', ') + ')') + ': ' + text +
+        ". Beds24 orqali OTA'larga yuboriladi. Davom etasizmi?",
+        "Qo'llash", async function(){
+          const req = Object.assign({ from: sel.from, to: sel.to, roomTypeIds: sel.types }, body);
+          if(!sel.allDays) req.weekdays = sel.weekdays;
+          try{
+            const res = await authFetch(getBackendBase() + '/api/rate-plans/restrictions', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(req),
+            });
+            const data = await res.json().catch(() => ({}));
+            if(res.status === 403) throw new Error("Cheklovni o'zgartirish huquqingiz yo'q");
+            if(!res.ok) throw new Error(data.error || ('status ' + res.status));
+            await loadRates();
+            render();
+            hint('Cheklov qo\'yildi: <b>' + esc(text) + '</b> — ' + data.updated + ' kun' +
+              (data.skipped ? ", narxsiz " + data.skipped + " kun o'tkazildi" : '') + ". Beds24'ga fonda yuboriladi.");
           }catch(e){
             fail("Saqlab bo'lmadi: " + String(e.message || e));
           }
@@ -5587,6 +5688,11 @@
     if(applyBtn){
       applyBtn.addEventListener('click', applySeason);
       applyBtn.addEventListener('keydown', (e) => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); applySeason(); } });
+    }
+    const rsBtn = $('rsApply');
+    if(rsBtn){
+      rsBtn.addEventListener('click', applyRestrictions);
+      rsBtn.addEventListener('keydown', (e) => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); applyRestrictions(); } });
     }
     // Ko'rinib turgan oraliqdagi yuborilmagan / xato narxlar — Beds24'ga darhol
     if($('rpResync')) $('rpResync').addEventListener('click', async () => {
