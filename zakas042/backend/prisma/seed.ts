@@ -63,11 +63,10 @@ async function main() {
   //   P2003 — CleaningTask_roomId_fkey
   // Natijada baza yarim tozalangan holatda qolardi: xonalar va
   // tariflar bor, narxlar esa yo'q — sayt bo'sh ro'yxat qaytarardi.
-  // Kanal kuzatuvi (2026-09-27): ChannelMapping Room/RoomType ga ishora
+  // Beds24: ChannelMapping va ChannelBlock Room/RoomType ga ishora
   // qiladi — xonalardan OLDIN. Ulanish (shifrlangan token) ham tozalanadi
   await prisma.channelMapping.deleteMany();
-  await prisma.channelBooking.deleteMany();
-  await prisma.channelCalendar.deleteMany();
+  await prisma.channelBlock.deleteMany();
   await prisma.webhookEvent.deleteMany();
   await prisma.syncLog.deleteMany();
   await prisma.syncState.deleteMany();

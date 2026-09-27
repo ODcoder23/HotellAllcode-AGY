@@ -10,12 +10,16 @@
  * Endi hamma shu fayldagi funksiyalarni chaqiradi.
  *
  * QOIDALAR
- *   - Valyuta: faqat so'm (2026-09-26 dan — Beds24 va u bilan birga
- *     dollar bronlar olib tashlandi). Summalar 2 xona (tiyin).
- *   - Qo'shish TIYINDA (butun son) — 0.1 + 0.2 kabi float xatosi
+ *   - Valyuta (egasi qarori Q15, 2026-09-27 da qayta tasdiqlandi):
+ *     tizim SO'MDA. Faqat Beds24'dan kelgan bron obyekt valyutasida
+ *     (USD) — bronning barcha summalari o'z valyutasida, so'mga bron
+ *     KELGAN kundagi kurs bilan o'giriladi (`toBase`, `paymentBase`).
+ *     Summalar 2 xona (tiyin / sent).
+ *   - Qo'shish SENTDA (butun son) — 0.1 + 0.2 kabi float xatosi
  *     "qarz 0.00000001" bo'lib to'lovni rad etmasin.
- *   - Kechalik narx 4 xona saqlanadi (sayt: tariflar yig'indisi /
- *     kechalar), jami esa tiyinga yaxlitlanadi.
+ *   - Kechalik narx 4 xona saqlanadi (OTA jami / kechalar, sayt tariflari
+ *     yig'indisi / kechalar), jami esa sentga yaxlitlanadi:
+ *     $100 / 3 kecha -> 33.3333 -> $100.00.
  *   - Bron summasi = xona + nonushta + qo'shimcha xizmatlar.
  *     Bekor qilingan / kelmagan bron summasi = faqat jarima.
  *   - Nonushta narxi BRONDA saqlanadi (`mealPricePerPerson`) —
@@ -215,18 +219,76 @@ export function stayRevenueIn(
 }
 
 // ============================================================
-//  Valyuta va ko'rinish
+//  Valyuta (Q15): so'm — asosiy, dollar — faqat Beds24 broni
 // ============================================================
 
-/** Tizim valyutasi — sayt API javoblarida `currency` maydoni */
-export const CURRENCY = "UZS";
+/** Tizim valyutasi — sayt, Shaxmatka, hisobot, bot, maosh, xarajat */
+export const BASE_CURRENCY = "UZS";
+
+/** Sayt API javoblaridagi `currency` maydoni — tizim valyutasi */
+export const CURRENCY = BASE_CURRENCY;
+
+export function isBaseCurrency(currency: string | null | undefined): boolean {
+  return (currency || BASE_CURRENCY).toUpperCase() === BASE_CURRENCY;
+}
 
 /**
- * Summa matni — xato xabarlari, bot, eksport uchun: "450 000 so'm".
- * Tiyin ko'rsatilmaydi (so'mda amalda ishlatilmaydi).
+ * Bron summasini so'mga o'girish koeffitsienti.
+ *
+ * So'm bron — 1. Dollar bron — bronga yozilgan kurs (bron kelgan kun).
+ * Kurs hali yozilmagan bo'lsa (Markaziy bank javob bermagan) — `fallback`
+ * (joriy kurs); u ham yo'q bo'lsa `null`: summa o'girilmaydi.
  */
-export function formatMoney(v: Num): string {
-  const n = Math.round(round2(v));
-  // ru-RU minglik ajratkichi - bo'linmas bo'shliq (U+00A0 / U+202F)
-  return n.toLocaleString("ru-RU").replace(/[\u00a0\u202f]/g, " ") + " so'm";
+export function baseRate(
+  r: { currency?: string | null; exchangeRate?: Num },
+  fallback?: number | null
+): number | null {
+  if (isBaseCurrency(r.currency)) return 1;
+  const k = num(r.exchangeRate);
+  if (k > 0) return k;
+  return fallback && fallback > 0 ? fallback : null;
+}
+
+/** Bron valyutasidagi summa -> so'm. Kurs noma'lum bo'lsa o'zgarishsiz */
+export function toBase(amount: Num, rate: number | null): number {
+  if (rate === null || rate === 1) return round2(amount);
+  return round2(num(amount) * rate);
+}
+
+/**
+ * To'lovning so'mdagi qiymati (kassa hisoboti).
+ *
+ * So'mda qabul qilingan to'lov — ASL summa (kassaga aynan shu pul
+ * tushgan). Dollarda qabul qilingan — bron kursi bilan.
+ */
+export function paymentBase(
+  p: { amount: Num; originalAmount?: Num; originalCurrency?: string | null },
+  rate: number | null
+): number {
+  if (p.originalCurrency && isBaseCurrency(p.originalCurrency) && p.originalAmount != null) {
+    return round2(p.originalAmount);
+  }
+  return toBase(p.amount, rate);
+}
+
+// ============================================================
+//  Ko'rinish
+// ============================================================
+
+/**
+ * Summa matni — xato xabarlari, bot, eksport uchun.
+ *   UZS: "450 000 so'm" (tiyin ko'rsatilmaydi — so'mda amalda yo'q)
+ *   USD: "$1,234.50" (Beds24 broni)
+ */
+export function formatMoney(v: Num, currency: string = BASE_CURRENCY): string {
+  const n = round2(v);
+  const cur = currency.toUpperCase();
+  if (cur === BASE_CURRENCY) {
+    // ru-RU minglik ajratkichi - bo'linmas bo'shliq (U+00A0 / U+202F)
+    return Math.round(n).toLocaleString("ru-RU").replace(/[\u00a0\u202f]/g, " ") + " so'm";
+  }
+  const abs = Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const sign = n < 0 ? "-" : "";
+  if (cur === "USD") return `${sign}$${abs}`;
+  return `${sign}${abs} ${cur}`;
 }

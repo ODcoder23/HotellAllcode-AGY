@@ -16,13 +16,15 @@
  *
  * NIMA O'CHIRILADI (test bronlari)
  *   bronlar, to'lovlar, qo'shimcha xizmatlar, mehmonlar, xarajatlar,
- *   tozalash topshiriqlari, availability keshi, xona yopilishlari
- *   (STOP faol bo'lsa, davriy vazifa 15 daqiqada qayta yopadi)
+ *   tozalash topshiriqlari, availability keshi, xona yopilishlari va
+ *   ularning Beds24 `black` yozuvlari. Beds24 polling holati tiklanadi —
+ *   Beds24 ulangan bo'lsa keyingi polling u yerdagi haqiqiy bronlarni
+ *   qayta olib keladi (Beds24'dagi bronlarga tegilmaydi)
  *
  * NIMA QOLADI
  *   narxlar (RatePlan, so'mda), xodimlar va maoshlar, sozlamalar
- *   (nonushta narxi, STOP holati), xonalar, qavatlar, xona turlari,
- *   foydalanuvchilar, bot ruxsatlari, audit jurnali
+ *   (nonushta narxi, kurs), xonalar, qavatlar, xona turlari, Beds24
+ *   ulanishi va bog'lanishlari, foydalanuvchilar, bot ruxsatlari, audit
  *
  * NIMA O'ZGARTIRILADI
  *   - xonalar holati -> AVAILABLE (xizmatdan chiqarilganlar qoladi)
@@ -74,6 +76,8 @@ async function main() {
     const reservations = await tx.reservation.deleteMany();
     const guests = await tx.guest.deleteMany();
     const dayStatus = await tx.roomDayStatus.deleteMany();
+    await tx.channelBlock.deleteMany();
+    await tx.syncState.deleteMany({ where: { key: "bookings_pull" } });
     const availability = await tx.availability.deleteMany();
 
     const rooms = await tx.room.updateMany({

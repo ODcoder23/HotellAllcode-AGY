@@ -18,10 +18,7 @@ import {
   getRecentBookings,
   periodRange,
 } from "../services/stats.js";
-import {
-  esc, money, moneyShort, longDate, shortDate, bar,
-  SOURCE_LABEL, STATUS_LABEL, ROOM_STATUS_ICON, ROOM_STATUS_LABEL,
-} from "./format.js";
+import { esc, money, moneyShort, longDate, shortDate, bar, SOURCE_LABEL, STATUS_LABEL, ROOM_STATUS_ICON, ROOM_STATUS_LABEL, moneyOf } from "./format.js";
 
 // ============================================================
 //  1. Dashboard
@@ -174,7 +171,7 @@ export async function screenBookings(limit = 8): Promise<string> {
   for (const b of rows) {
     lines.push(
       `<b>${esc(b.guestName)}</b> · ${b.roomId}-xona`,
-      `${shortDate(b.checkIn)} → ${shortDate(b.checkOut)} (${b.nights} kecha) · ${money(b.total)}`,
+      `${shortDate(b.checkIn)} → ${shortDate(b.checkOut)} (${b.nights} kecha) · ${moneyOf(b.total, b.currency, b.totalBase)}`,
       `${STATUS_LABEL[b.status] ?? b.status} · ${esc(SOURCE_LABEL[b.source] ?? b.source)}`,
       ``
     );
@@ -196,6 +193,9 @@ export function notifyNewBooking(b: {
   checkOut: string;
   nights: number;
   total: number;
+  /** Beds24 dollar broni (Q15); bo'sh — so'm */
+  currency?: string;
+  totalBase?: number | null;
   source: string;
   status: string;
   phone?: string;
@@ -206,7 +206,7 @@ export function notifyNewBooking(b: {
     `👤 <b>${esc(b.guestName)}</b>`,
     `🏠 ${esc(b.roomId)}-xona`,
     `📅 ${longDate(b.checkIn)} → ${longDate(b.checkOut)} (${b.nights} kecha)`,
-    `💰 ${money(b.total)}`,
+    `💰 ${moneyOf(b.total, b.currency ?? "UZS", b.totalBase)}`,
     `📍 ${esc(SOURCE_LABEL[b.source] ?? b.source)}`,
     `${STATUS_LABEL[b.status] ?? b.status}`,
   ];

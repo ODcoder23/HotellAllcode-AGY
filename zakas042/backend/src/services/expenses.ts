@@ -18,7 +18,8 @@ import { Prisma, type ExpenseCategory, type ReservationSource } from "@prisma/cl
 import { prisma } from "../lib/prisma.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
 import { getOtaCommissionPercent } from "./settings.js";
-import { reservationMoney, round2, sumMoney } from "../lib/money.js";
+import { reservationMoney, round2, sumMoney, toBase } from "../lib/money.js";
+import { reportRateResolver } from "./exchangeRate.js";
 
 /**
  * Qaysi bron manbalari komissiya oladi.
@@ -26,8 +27,10 @@ import { reservationMoney, round2, sumMoney } from "../lib/money.js";
  * Komissiya YO'Q: `DIRECT`, `WEBSITE`, `PHONE`, `WALK_IN` —
  * mehmon to'g'ridan-to'g'ri keladi, vositachi yo'q.
  *
- * Komissiya BOR: OTA (Online Travel Agency) kanallari — qabulxona
- * ularning bronini qo'lda kiritadi (manba "Booking.com" va h.k.).
+ * Komissiya BOR: OTA (Online Travel Agency) kanallari — Beds24 orqali
+ * keladi yoki qabulxona qo'lda kiritadi (manba "Booking.com" va h.k.).
+ * Beds24 API komissiyani bermaydi (real bronlarda 0), shuning uchun
+ * sozlamadagi foiz bilan hisoblanadi.
  * `OTHER` bu yerda emas — u noaniq manba, komissiya
  * olinayotganiga ishonch yo'q.
  */
@@ -137,6 +140,7 @@ export async function recalcCommissions(from: Date, toEx: Date): Promise<{
   total: number;
 }> {
   const percent = await getOtaCommissionPercent();
+  const rateOf = await reportRateResolver();
 
   const bookings = await prisma.reservation.findMany({
     where: {
@@ -155,6 +159,8 @@ export async function recalcCommissions(from: Date, toEx: Date): Promise<{
       pricePerNight: true,
       withMeal: true,
       mealPricePerPerson: true,
+      currency: true,
+      exchangeRate: true,
     },
   });
 
@@ -168,7 +174,8 @@ export async function recalcCommissions(from: Date, toEx: Date): Promise<{
   const rows = bookings
     .map((b) => {
       const m = reservationMoney(b);
-      const base = sumMoney([m.roomTotal, m.mealTotal]);
+      // So'mda: dollar bron (Beds24) — bron kelgan kundagi kurs bilan
+      const base = toBase(sumMoney([m.roomTotal, m.mealTotal]), rateOf(b));
       return {
         date: b.checkIn,
         category: "COMMISSION" as ExpenseCategory,

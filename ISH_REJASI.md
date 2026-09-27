@@ -1,11 +1,12 @@
 # Ish rejasi
 
 **Yangilandi:** 2026-09-27. Faqat **ochiq** ishlar. Har band kod bilan
-tekshirilgan — bajarilganlar va Beds24 integratsiyasi bilan birga
-yopilganlar olib tashlandi (tarix: `git log`).
+tekshirilgan — bajarilganlar olib tashlandi (tarix: `git log`).
+Beds24 integratsiyasi 2026-09-27 da qaytdi (Q19), STOP olib tashlandi.
 
 Loyiha logikasi: [PROJECT_LOGIC.md](PROJECT_LOGIC.md) · Server:
-[SERVER.md](SERVER.md) · Beds24: [BEDS24.md](BEDS24.md)
+[SERVER.md](SERVER.md) · Beds24: [BEDS24.md](BEDS24.md) · Channel manager
+TZ va ish tartibi: [CHANNEL_MANAGER_TZ.md](CHANNEL_MANAGER_TZ.md)
 
 Belgilar: **[qaror]** — avval egasining qarori kerak. **[tashqi]** —
 kod tashqarisida (server, Beds24 kabineti).
@@ -20,13 +21,14 @@ kod tashqarisida (server, Beds24 kabineti).
 - [ ] **[qaror]** Repo ochiq: private qilish yoki git tarixini tozalash.
       Tarixda server IP, standart parol va 2 ta tozalash rasmi qolgan
       (fayllar 2026-09-27 da repodan chiqarildi, tarixda bor).
-- [ ] **[tashqi]** Beds24 tomonida ([BEDS24.md](BEDS24.md), 3-bo'lim):
-      Booking.com hali Beds24'ga ulangan; Booking.com broni (101,
-      30.09–03.10) PMS'ga kiritilishi; Beds24'dagi 3 ta sinov bronini
-      bekor qilish; eski API tokenni o'chirish.
-- [ ] **[tashqi]** Channel manager (kuzatuv) ishlashi uchun: serverda
-      `.env` ga `ENCRYPTION_KEY`, ikki migratsiyani qo'llash, egasi yangi
-      invite code bilan ulaydi ([SERVER.md](SERVER.md), 2026-09-27).
+- [ ] **[tashqi]** Beds24'ni real hisobga ulash (egasi invite code
+      bergach, [BEDS24.md](BEDS24.md) 4-bo'lim): serverga chiqarish
+      (zaxira → migratsiya `20260927120000_beds24_restore`), `.env` da
+      `ENCRYPTION_KEY` va `WEBHOOK_URL_TOKEN`; 101-xonadagi qo'lda
+      yopiqni (30.09–03.10) bog'lashdan oldin ochish (egasi roziligi
+      bilan); ulash → bog'lash → import natijasini Bronlar bo'limida
+      tekshirish; Beds24'da webhook URL.
+- [ ] **[tashqi]** Beds24 kabinetida eski API tokenni o'chirish.
 - [ ] **[tashqi]** Sichqoncha bilan surilib ketgan bronlarni topish:
       jonli bazadan (faqat o'qib) oxirgi haftalarda o'zgargan bronlarni
       qabulxona ro'yxati bilan solishtirish, xatolarini "Sanalarni
@@ -38,7 +40,7 @@ kod tashqarisida (server, Beds24 kabineti).
       bo'sh deb biladi (`isRoomFree`, availability) — shaxmatkadagi
       `isRoomAvailable` faqat `cancelled` ni chiqaradi. Natija:
       qabulxona bo'sh xonaga bron qila olmaydi.
-- [ ] **Shaxmatka yopilgan kunlarni ko'rsatmaydi.** Ta'mir/STOP bilan
+- [ ] **Shaxmatka yopilgan kunlarni ko'rsatmaydi.** Ta'mir yoki Beds24 (`black`) bilan
       yopilgan kunlar (`GET /api/rooms/blocks`) jadvalda yo'q — xodim
       yopiq kunga bron qilmoqchi bo'lib, backenddan rad oladi.
 - [ ] **Sana/xona o'zgartirish audit jurnaliga yozilmaydi**

@@ -9,7 +9,7 @@
 <body>
 <div class="wrap">
   <h1>Sinxronizatsiya jurnali</h1>
-  <div class="sub">Beds24 bilan har bir muloqot (faqat o'qish): ulanish, bronlarni o'qish, narx, farq tekshiruvi, webhook, dollar kursi. Faqat egasi uchun.</div>
+  <div class="sub">Beds24 bilan har bir muloqot: bron, yopish va narx yuborish, bronlarni o'qish, narx tortish, farq tekshiruvi, webhook. Qo'lda amallar — egasi va admin.</div>
 
   <nav>
     <a href="/admin/connection.html">Ulanish</a>
@@ -25,12 +25,20 @@
       <div>
         <select id="action">
           <option value="">Hamma amallar</option>
-          <option value="ping">Ulanishni tekshirish</option>
+          <option value="push_reservation">Bron → Beds24</option>
+          <option value="push_room_block">Xona yopildi → Beds24</option>
+          <option value="cancel_room_block">Xona ochildi → Beds24</option>
+          <option value="push_rates">Narx → Beds24</option>
           <option value="poll_bookings">Bronlarni o'qish</option>
-          <option value="pull_rates">Narx va bo'sh joy</option>
+          <option value="poll_needs_action">Bron: qo'lda hal qilish</option>
+          <option value="reservation_relocated">Mehmon boshqa xonaga joylandi</option>
+          <option value="booking_linked">Qo'lda kiritilgan bron bog'landi</option>
+          <option value="pull_rates">Narx ← Beds24</option>
           <option value="drift_check">Farq tekshiruvi</option>
-          <option value="webhook_received">Webhook</option>
-          <option value="fx_refresh">Dollar kursi</option>
+          <option value="drift_detected">Farq topildi</option>
+          <option value="webhook_needs_action">Webhook: qo'lda hal qilish</option>
+          <option value="job_dead_lettered">Vazifa yiqildi</option>
+          <option value="ping">Ulanishni tekshirish</option>
         </select>
         <select id="status">
           <option value="">Hamma holat</option>
@@ -39,14 +47,14 @@
           <option value="SKIPPED">O'tkazildi</option>
         </select>
       </div>
-      <div><button id="pollBtn">Hoziroq tekshirish</button> <button id="driftBtn">Farqni tekshirish</button> <button id="reloadBtn">Yangilash</button></div>
+      <div><button id="pollBtn">Bronlarni hozir o'qish</button> <button id="catchUpBtn">Yuborilmaganlarni yuborish</button> <button id="driftBtn">Farqni tekshirish</button> <button id="reloadBtn">Yangilash</button></div>
     </div>
   </div>
 
   <div class="card">
     <table>
-      <thead><tr><th>Vaqt</th><th>Amal</th><th>Holati</th><th>Natija / xato</th><th>ms</th></tr></thead>
-      <tbody id="rows"><tr><td colspan="5" class="empty">Yuklanmoqda...</td></tr></tbody>
+      <thead><tr><th>Vaqt</th><th>Amal</th><th>Yo'nalish</th><th>Holati</th><th>Natija / xato</th><th>ms</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="6" class="empty">Yuklanmoqda...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -55,13 +63,18 @@
 <script>
 const BADGE = { SUCCESS: "b-ok", FAILED: "b-err", SKIPPED: "b-mute", RETRYING: "b-warn" };
 
+const DIR = { PMS_TO_CHANNEL: "PMS → Beds24", CHANNEL_TO_PMS: "Beds24 → PMS" };
+
 function summary(r) {
-  if (!r) return "";
-  if (r.fetched !== undefined) return r.fetched + " bron: mos " + r.matched + ", farq " + r.mismatch + ", PMS'da yo'q " + r.missingInPms + ", bog'lanmagan " + r.unmapped;
-  if (r.rows !== undefined) return r.days + " kun, " + r.roomTypes + " xona turi";
-  if (r.compared !== undefined) return "ikki marta sotish xavfi " + r.oversellRisk + ", narx farqi " + r.priceDiff + ", narxsiz " + r.priceMissing;
-  if (r.propertyName) return r.propertyName + " (" + r.currency + ")";
-  if (r.rate) return "1 $ = " + r.rate + " so'm";
+  if (!r || typeof r !== "object") return "";
+  if (r.fetched !== undefined) return r.fetched + " bron: yangi " + r.created + ", yangilangan " + r.updated +
+    (r.needsAction ? ", qo'lda " + r.needsAction : "") + (r.full ? " (to'liq)" : "");
+  if (r.changed !== undefined) return "tekshirildi " + r.checked + ", o'zgardi " + r.changed + (r.keptPending ? ", yuborilmagan PMS narxi saqlandi " + r.keptPending : "");
+  if (r.driftDays !== undefined) return (r.checkedDays !== undefined ? r.checkedDays + " kun, " : "") + "farq " + r.driftDays + " kun";
+  if (r.reservations) return "bronlar: yuborildi " + r.reservations.sent + ", xato " + r.reservations.failed + ", rad etildi " + r.reservations.rejected +
+    " · yopiq kunlar: +" + r.blocks.created + " / −" + r.blocks.cancelled;
+  if (r.externalId) return "Beds24 #" + r.externalId + (r.created ? " (yangi)" : "");
+  if (r.detail) return String(r.detail);
   return JSON.stringify(r).slice(0, 120);
 }
 
@@ -71,9 +84,10 @@ async function load() {
   try {
     const rows = await api("/api/admin/sync-log" + q);
     document.getElementById("rows").innerHTML = rows.length ? rows.map(l =>
-      "<tr><td class=\"mono\">" + when(l.createdAt) + "</td><td>" + esc(l.action) + '</td><td><span class="badge ' + (BADGE[l.status] || "b-mute") + '">' + esc(l.status) + "</span></td>" +
+      "<tr><td class=\"mono\">" + when(l.createdAt) + "</td><td>" + esc(l.action) + "</td><td>" + esc(DIR[l.direction] || l.direction || "") +
+      '</td><td><span class="badge ' + (BADGE[l.status] || "b-mute") + '">' + esc(l.status) + "</span></td>" +
       "<td>" + esc(l.errorMessage || summary(l.response)) + '</td><td class="mono">' + (l.durationMs ?? "") + "</td></tr>").join("")
-      : '<tr><td colspan="5" class="empty">Yozuv yo\'q</td></tr>';
+      : '<tr><td colspan="6" class="empty">Yozuv yo\'q</td></tr>';
   } catch (e) { msg(e.message, true); }
 }
 async function run(path) {
@@ -84,6 +98,7 @@ document.getElementById("action").onchange = load;
 document.getElementById("status").onchange = load;
 document.getElementById("reloadBtn").onclick = load;
 document.getElementById("pollBtn").onclick = () => run("/api/admin/maintenance/poll");
+document.getElementById("catchUpBtn").onclick = () => run("/api/admin/maintenance/catch-up");
 document.getElementById("driftBtn").onclick = () => run("/api/admin/maintenance/drift");
 load();
 </script>

@@ -57,10 +57,10 @@ services:
       AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
       RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-false}
       PENDING_PAYMENT_TIMEOUT_HOURS: ${PENDING_PAYMENT_TIMEOUT_HOURS:-24}
-      # Channel manager (Beds24 kuzatuvi, faqat egasi) — ixtiyoriy
+      # Channel manager (Beds24, ikki tomonlama) — ulash uchun ENCRYPTION_KEY shart
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       WEBHOOK_URL_TOKEN: ${WEBHOOK_URL_TOKEN:-}
-      CHANNEL_MONITOR_MINUTES: ${CHANNEL_MONITOR_MINUTES:-60}
+      POLL_INTERVAL_MINUTES: ${POLL_INTERVAL_MINUTES:-15}
     ports:
       - "3000:3000"
     command: sh -c "npx prisma migrate deploy && node dist/server.js"

@@ -147,7 +147,7 @@ describe("Narxlar va to'lov (TZ 7, 14-band)", () => {
       expect(put.status).toBe(400);
     });
 
-    it("GET faqat narxni qaytaradi — Beds24 sinxron maydonlari yo'q", async () => {
+    it("GET narx bilan Beds24 holatini qaytaradi — admin o'zgartirgani 'kutmoqda'", async () => {
       await api("/api/rate-plans", {
         method: "PUT",
         body: JSON.stringify({ from: "2031-03-20", to: "2031-03-20", prices: { [TYPES.b]: 600_000 } }),
@@ -157,8 +157,9 @@ describe("Narxlar va to'lov (TZ 7, 14-band)", () => {
       const row = res.body.find((r: any) => r.roomTypeId === TYPES.b);
       expect(row).toBeTruthy();
       expect(row.price).toBe(600_000);
-      expect(row.syncStatus).toBeUndefined();
-      expect(row.source).toBeUndefined();
+      expect(row.syncStatus).toBe("pending");
+      expect(row.source).toBe("pms");
+      expect(row.channelPrice).toBeNull();
     });
 
     it("narx audit jurnaliga yoziladi", async () => {

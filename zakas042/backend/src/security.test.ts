@@ -90,45 +90,69 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
     }
   });
 
-  // --- 1. Beds24 olib tashlangan (2026-09-26) -----------------
-  describe("1. Tashqi integratsiya yuzasi — faqat egasi, faqat o'qish", () => {
+  // --- 1. Beds24 (channel manager) yuzasi --------------------
+  describe("1. Beds24 — ruxsatlar va tashqi yuza", () => {
     /**
-     * 2026-09-26: Beds24 integratsiyasi olib tashlandi. 2026-09-27, egasi
-     * qarori: Channel manager egasi uchun KUZATUV rejimida qaytdi
-     * (channel.test.ts). Yozish tomoni (PMS -> Beds24, avtomatik import,
-     * "asosiy manba" sozlamalari, yiqilgan job'lar) qaytmagan — 404.
+     * 2026-09-27, egasi qarori: integratsiya avvalgidek qaytdi.
+     * Ulash va bog'lash — FOUNDER, ADMIN; holat va jurnal — MANAGER ham;
+     * qabulxona (STAFF) Channel manager'ni ko'rmaydi, lekin bron ichidagi
+     * dollar summasini ko'radi. STOP olib tashlangan.
      */
-    it("Beds24'ga yozadigan va PMS'ni o'zgartiradigan endpoint'lar yo'q (404)", async () => {
+    it("webhook: tokensiz yoki noto'g'ri token — 404 (endpoint oshkor qilinmaydi)", async () => {
+      for (const path of ["/api/webhooks/beds24", "/api/webhooks/beds24/dev-webhook-token"]) {
+        const res = await api(path, { method: "POST", body: "{}" });
+        expect(res.status, path).toBe(404);
+      }
+    });
+
+    it("olib tashlangan endpoint'lar yo'q (404): STOP, qo'lda OTA raqami, kuzatuv nusxalari", async () => {
       const paths: Array<[string, string]> = [
-        ["POST", "/api/webhooks/beds24"],
-        ["GET", "/api/admin/settings"],
-        ["GET", "/api/admin/dead-letters"],
-        ["POST", "/api/rate-plans/resync"],
-        ["POST", "/api/admin/maintenance/catch-up"],
-        ["POST", "/api/admin/maintenance/sync-blocks"],
-        ["POST", "/api/admin/webhook-events/x/reprocess"],
+        ["GET", "/api/admin/sales-stop"],
+        ["POST", "/api/admin/sales-stop"],
+        ["POST", "/api/admin/sales-stop/release"],
+        ["PUT", "/api/reservations/x/external-ref"],
+        ["GET", "/api/admin/channel/bookings"],
+        ["GET", "/api/admin/rates"],
         ["POST", "/api/admin/cleaning/x/reassign"],
       ];
       for (const [method, path] of paths) {
-        const res = await api(path, { method, headers: founderAuth, ...(method === "POST" ? { body: "{}" } : {}) });
+        const res = await api(path, { method, headers: founderAuth, ...(method !== "GET" ? { body: "{}" } : {}) });
         expect(res.status, `${method} ${path}`).toBe(404);
       }
     });
 
-    it("webhook: noto'g'ri token — 404 (endpoint borligi ham oshkor qilinmaydi)", async () => {
-      const res = await api("/api/webhooks/beds24/dev-webhook-token", { method: "POST", body: "{}" });
-      expect(res.status).toBe(404);
-    });
-
-    it("kanal kuzatuvi endpoint'lari ADMIN'ga yopiq (403)", async () => {
+    it("Channel manager: STAFF yopiq, MANAGER faqat o'qiydi, ADMIN boshqaradi", async () => {
       if (!adminAuth.Authorization) return;   // AUTH o'chiq — rol tekshirilmaydi
-      for (const [method, path] of [
-        ["GET", "/api/admin/mapping"], ["GET", "/api/admin/connection"], ["GET", "/api/admin/sync-log"],
-        ["GET", "/api/admin/webhook-events"], ["GET", "/api/admin/fx"], ["POST", "/api/admin/maintenance/poll"],
-      ] as const) {
-        const res = await api(path, { method, headers: adminAuth, ...(method === "POST" ? { body: "{}" } : {}) });
-        expect(res.status, `${method} ${path}`).toBe(403);
+      const tokenOf = async (email: string) => {
+        const res = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password: "admin12345" }) });
+        return { Authorization: `Bearer ${res.body?.token}` };
+      };
+      const manager = await tokenOf("manager@imron.local");
+      const staff = await tokenOf("staff@imron.local");
+
+      const reads = ["/api/admin/connection", "/api/admin/status", "/api/admin/sync-log", "/api/admin/webhook-events"];
+      for (const path of reads) {
+        expect((await api(path, { headers: staff })).status, `STAFF ${path}`).toBe(403);
+        expect((await api(path, { headers: manager })).status, `MANAGER ${path}`).toBe(200);
+        expect((await api(path, { headers: adminAuth })).status, `ADMIN ${path}`).toBe(200);
       }
+
+      const writes: Array<[string, string, unknown]> = [
+        ["POST", "/api/admin/connection", { inviteCode: "XXXX-YYYY" }],
+        ["PUT", "/api/admin/mapping", { externalRoomTypeId: "1", roomTypeId: "comfort3" }],
+        ["POST", "/api/admin/maintenance/poll", {}],
+        ["PUT", "/api/admin/fx", { rate: 12000 }],
+      ];
+      for (const [method, path, body] of writes) {
+        const res = await api(path, { method, headers: manager, body: JSON.stringify(body) });
+        expect(res.status, `MANAGER ${method} ${path}`).toBe(403);
+      }
+      // ADMIN'ga ochiq: ulanmagan bo'lsa ham xato 403 emas
+      const poll = await api("/api/admin/maintenance/poll", { method: "POST", headers: adminAuth, body: "{}" });
+      expect(poll.status).toBe(200);
+
+      // Bugungi kurs Shaxmatka uchun — qabulxonaga ham
+      expect((await api("/api/reservations/fx-rate", { headers: staff })).status).toBe(200);
     });
 
     it("/admin/*.html sahifalari faqat qobiq — ma'lumotsiz, token talab qiladi", async () => {
@@ -140,13 +164,24 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       }
     });
 
-    it("bron javobida kanal/valyuta maydonlari yo'q", async () => {
+    it("bron javobida valyuta va Beds24 holati bor, token/kalit yo'q", async () => {
       const res = await api("/api/reservations", { headers: adminAuth });
       expect(res.status).toBe(200);
+      expect(res.body.length).toBeGreaterThan(0);
+      for (const key of ["currency", "syncStatus", "channelOwned", "externalReference", "base"]) {
+        expect(res.body[0], key).toHaveProperty(key);
+      }
       const text = res.raw.toLowerCase();
-      for (const key of ["channelid", "externalreservationid", "syncstatus", "channelowned", "exchangerate"]) {
+      for (const key of ["refreshtoken", "accesstoken", "passwordhash"]) {
         expect(text, key).not.toContain(key);
       }
+    });
+
+    it("ulanish holatida token hech qachon qaytmaydi", async () => {
+      const res = await api("/api/admin/connection", { headers: adminAuth });
+      expect(res.status).toBe(200);
+      expect(res.raw.toLowerCase()).not.toContain("refreshtoken");
+      expect(res.raw.toLowerCase()).not.toMatch(/"accesstoken"/);
     });
   });
 
@@ -277,10 +312,9 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       expect(can("ADMIN", "report.read")).toBe(false);   // daromad, foyda
       expect(can("ADMIN", "user.manage")).toBe(false);   // adminlarni nazorat
 
-      // Qolgan hammasi ochiq — egasiga xos bo'limlardan tashqari
-      // (Channel manager / dollar kursi, 2026-09-27)
+      // Qolgan hammasi ochiq (Channel manager ham — "avvalgidek", 2026-09-27)
       for (const p of Object.keys(PERMISSIONS)) {
-        if (p === "report.read" || p === "user.manage" || p.startsWith("channel.")) continue;
+        if (p === "report.read" || p === "user.manage") continue;
         expect(can("ADMIN", p as never), `ADMIN uchun ${p} yopiq`).toBe(true);
       }
     });
@@ -314,7 +348,11 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       expect(can("MANAGER", "audit.read")).toBe(true);
     });
 
-    it("Beds24 huquqlari matritsada qolmagan", () => {
+    it("Channel manager: yozish — egasi va admin, o'qish — menejer ham", () => {
+      expect(can("ADMIN", "channel.write")).toBe(true);
+      expect(can("MANAGER", "channel.write")).toBe(false);
+      expect(can("MANAGER", "channel.read")).toBe(true);
+      // Eski nomlar bitta juftlikka birlashgan
       for (const p of ["channel.connect", "mapping.write", "synclog.read"]) {
         expect(Object.keys(PERMISSIONS), p).not.toContain(p);
       }
@@ -327,11 +365,9 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       // Pulni qaytarish — qabulxonada yo'q (2026-09-27)
       expect(can("STAFF", "payment.refund")).toBe(false);
       expect(can("MANAGER", "payment.refund")).toBe(true);
-      // Channel manager (Beds24 kuzatuvi) — faqat egasi
-      for (const role of ["ADMIN", "MANAGER", "STAFF"] as const) {
-        expect(can(role, "channel.read"), role).toBe(false);
-        expect(can(role, "channel.write"), role).toBe(false);
-      }
+      // Channel manager — qabulxonada yo'q (dollar summasi bron ichida ko'rinadi)
+      expect(can("STAFF", "channel.read")).toBe(false);
+      expect(can("STAFF", "channel.write")).toBe(false);
 
       // Narxga va bekor qilishga tegmaydi
       expect(can("STAFF", "rate.write")).toBe(false);
@@ -490,13 +526,16 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       ]) {
         expect(AUDIT_ACTIONS as readonly string[]).toContain(a);
       }
-      // Eski Beds24 yozish amallari qolmagan
-      for (const a of ["mapping.created", "webhook.reprocessed", "fx.manual"]) {
-        expect(AUDIT_ACTIONS as readonly string[]).not.toContain(a);
-      }
-      // Kanal kuzatuvi (faqat egasi, 2026-09-27) — ulanish va kurs jurnalda
-      for (const a of ["channel.connected", "channel.disconnected", "mapping.updated", "fx.changed"]) {
+      // Beds24 (2026-09-27): ulanish, bog'lash, qo'lda amallar, kurs jurnalda
+      for (const a of [
+        "channel.connected", "channel.disconnected", "channel.maintenance", "mapping.created",
+        "mapping.updated", "mapping.deleted", "webhook.reprocessed", "reservation.sync_retry", "fx.changed",
+      ]) {
         expect(AUDIT_ACTIONS as readonly string[]).toContain(a);
+      }
+      // STOP olib tashlangan
+      for (const a of ["system.sales_stop", "system.sales_resume", "reservation.external_ref"]) {
+        expect(AUDIT_ACTIONS as readonly string[]).not.toContain(a);
       }
     });
   });

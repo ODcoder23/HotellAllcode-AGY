@@ -86,7 +86,7 @@
   .sys-btn[data-sys="shaxmatka"].active::after{ background: var(--gold); }
   .sys-btn[data-sys="channel"].active::after{ background: var(--terracotta); }
 
-  /* Channel manager (Beds24 kuzatuvi, faqat FOUNDER) */
+  /* Channel manager (Beds24): ko'rish — egasi, admin, menejer; boshqarish — egasi, admin */
   .sys-channel .nav-item.active{ background: var(--terracotta-soft); }
   .ch-note{ font-size:12.5px; color:var(--text-muted); background:var(--gold-soft); border-radius:8px; padding:10px 14px; margin-bottom:18px; }
   .ch-empty{ text-align:center; color:var(--text-faint); padding:24px !important; }
@@ -104,6 +104,7 @@
   .ch-dot.diff{ background:var(--gold); }
   .ch-dot.closed{ background:var(--terracotta); }
   .ch-dot.none{ background:var(--border); }
+  .ch-dot.b24{ background:transparent; box-shadow:inset 0 0 0 1.5px var(--turquoise); }
   .rp-usd{ display:block; font-size:10.5px; color:var(--text-faint); font-family:var(--mono); margin-top:1px; }
   .rp-b24{ display:block; font-size:10.5px; color:var(--text-muted); margin-top:2px; font-weight:400; }
   .fx-chip{ font-family:var(--mono); font-size:12px; background:var(--turquoise-soft); color:var(--turquoise); border-radius:14px; padding:4px 10px; }
@@ -429,33 +430,6 @@
   .rp-cell.rp-none{ color:var(--terracotta); font-family:var(--sans); font-size:11.5px; }
   .rp-cell input{ width:88px; font-family:var(--mono); font-size:12.5px; padding:4px 6px; border:1.5px solid var(--turquoise); border-radius:4px; text-align:right; }
 
-  /* ---------- Tizim nazorati: STOP (2026-09-26) ---------- */
-  .stop-card{ border-left:4px solid var(--turquoise); max-width:980px; }
-  .stop-card.on{ border-left-color:var(--terracotta); background:linear-gradient(0deg, var(--terracotta-soft), var(--terracotta-soft)), var(--surface); }
-  .stop-head{ display:flex; justify-content:space-between; gap:16px; align-items:flex-start; margin-bottom:18px; flex-wrap:wrap; }
-  .stop-title{ font-size:15px; font-weight:600; color:var(--text); margin-bottom:4px; }
-  .stop-sub{ font-size:12.5px; color:var(--text-muted); max-width:620px; line-height:1.55; }
-  .stop-state{ font-size:12px; font-weight:700; padding:6px 13px; border-radius:16px; white-space:nowrap; letter-spacing:.03em; }
-  .stop-state.idle{ color:var(--turquoise); background:var(--turquoise-soft); }
-  .stop-state.on{ color:#fff; background:var(--terracotta); }
-  .stop-btn{ font:inherit; font-size:15px; font-weight:700; letter-spacing:.08em; color:#fff; background:var(--terracotta); border:none; border-radius:10px; padding:14px 36px; cursor:pointer; }
-  .stop-btn:hover, .stop-confirm:hover:not(:disabled), .stop-release:hover{ filter:brightness(.92); }
-  .stop-all{ display:flex; align-items:center; gap:10px; font-size:14px; padding:11px 13px; border:1.5px solid var(--terracotta); border-radius:var(--radius-s); background:var(--terracotta-soft); cursor:pointer; margin-bottom:12px; }
-  .stop-all input, .stop-room input{ width:16px; height:16px; accent-color:var(--terracotta); }
-  .stop-rooms{ display:grid; grid-template-columns:repeat(auto-fill, minmax(165px, 1fr)); gap:6px; margin-bottom:16px; }
-  .stop-room{ display:flex; align-items:center; gap:8px; font-size:12.5px; padding:7px 9px; border:1px solid var(--border); border-radius:var(--radius-s); cursor:pointer; background:var(--surface); min-width:0; }
-  .stop-room b{ font-family:var(--mono); }
-  .stop-room span{ color:var(--text-faint); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .stop-reason{ display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--text-muted); max-width:380px; margin-bottom:14px; }
-  .stop-list{ margin:0 0 18px 18px; padding:0; font-size:12.5px; color:var(--text-muted); line-height:1.75; }
-  .stop-actions{ display:flex; gap:10px; flex-wrap:wrap; }
-  .stop-cancel{ font:inherit; font-size:13px; padding:10px 18px; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); cursor:pointer; }
-  .stop-confirm{ font:inherit; font-size:13.5px; font-weight:700; padding:11px 20px; border-radius:8px; border:none; background:var(--terracotta); color:#fff; cursor:pointer; }
-  .stop-confirm:disabled{ opacity:.45; cursor:not-allowed; }
-  .stop-info{ font-size:13px; line-height:1.8; margin-bottom:18px; color:var(--text); }
-  .stop-info .muted{ color:var(--text-muted); }
-  .stop-release{ font:inherit; font-size:14px; font-weight:700; padding:12px 28px; border-radius:10px; border:none; background:var(--turquoise); color:#fff; cursor:pointer; }
-  .stop-pill{ font-size:11.5px; font-weight:700; color:#fff; background:var(--terracotta); border:none; border-radius:14px; padding:6px 12px; margin-right:10px; cursor:pointer; letter-spacing:.04em; font-family:inherit; }
 
   /* ---------- Coming-soon system placeholders ---------- */
   .sys-shaxmatka .sidebar-label{ opacity:.8; }
@@ -675,15 +649,13 @@
       <svg width="16" height="16" viewBox="0 0 17 17" fill="none"><rect x="1.5" y="1.5" width="4" height="4" fill="currentColor"/><rect x="6.5" y="1.5" width="4" height="4" stroke="currentColor" stroke-width="1.2"/><rect x="11.5" y="1.5" width="4" height="4" fill="currentColor"/><rect x="1.5" y="6.5" width="4" height="4" stroke="currentColor" stroke-width="1.2"/><rect x="6.5" y="6.5" width="4" height="4" fill="currentColor"/><rect x="11.5" y="6.5" width="4" height="4" stroke="currentColor" stroke-width="1.2"/><rect x="1.5" y="11.5" width="4" height="4" fill="currentColor"/><rect x="6.5" y="11.5" width="4" height="4" stroke="currentColor" stroke-width="1.2"/><rect x="11.5" y="11.5" width="4" height="4" fill="currentColor"/></svg>
       Shaxmatka
     </button>
-    <!-- Faqat FOUNDER: Beds24 kuzatuvi (2026-09-27) -->
-    <button class="sys-btn founder-only" data-sys="channel" style="display:none;">
+    <!-- Channel manager (Beds24): egasi, admin boshqaradi; menejer ko'radi -->
+    <button class="sys-btn channel-read" data-sys="channel" style="display:none;">
       <svg width="16" height="16" viewBox="0 0 17 17" fill="none"><circle cx="3" cy="3.5" r="2" stroke="currentColor" stroke-width="1.3"/><circle cx="14" cy="3.5" r="2" stroke="currentColor" stroke-width="1.3"/><circle cx="3" cy="13.5" r="2" stroke="currentColor" stroke-width="1.3"/><circle cx="14" cy="13.5" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M8.5 8.5L4.5 4.7M8.5 8.5L12.5 4.7M8.5 8.5L4.5 12.3M8.5 8.5L12.5 12.3" stroke="currentColor" stroke-width="1.2"/><circle cx="8.5" cy="8.5" r="1.6" fill="currentColor"/></svg>
       <span>Channel manager</span>
     </button>
 
     <div class="top-right">
-      <!-- STOP faol bo'lsa hamma sahifada ko'rinadi (Tizim nazorati) -->
-      <button class="stop-pill" id="stopPill" type="button" hidden title="Sotuv vaqtincha to'xtatilgan — Shaxmatka → Sozlamalar">⛔ STOP</button>
       <div class="top-avatar">A</div>
     </div>
   </div>
@@ -938,27 +910,28 @@
         </div>
 
 
-        <!-- DOLLAR KURSI — faqat FOUNDER (2026-09-27). Faqat ko'rsatish uchun:
-             pul tizimda so'mda saqlanadi, kurs Narxlar va Shaxmatkada $ ni
-             ko'rsatadi va Beds24 narxini (USD) PMS narxi bilan solishtiradi. -->
-        <div class="section-head founder-only" style="display:none;"><h2>Dollar kursi</h2><span class="muted">faqat egasi ko'radi</span></div>
-        <div class="card founder-only" id="fxCard" style="display:none;">
+        <!-- DOLLAR KURSI (Q15, 2026-09-27). Pul tizimda so'mda; Beds24 bronlari
+             dollarda keladi va bron kelgan kundagi kurs bronga yoziladi (qotadi).
+             PMS narxi Beds24'ga shu kurs bilan $ bo'lib ketadi. Ko'rish — egasi,
+             admin, menejer; o'zgartirish — egasi va admin (backend: channel.write). -->
+        <div class="section-head channel-read" style="display:none;"><h2>Dollar kursi</h2><span class="muted">Beds24 narxi va dollar bronlar uchun</span></div>
+        <div class="card channel-read" id="fxCard" style="display:none;">
           <div class="grid g3" style="align-items:center;">
             <div>
               <div class="stat-label" style="font-size:12.5px;color:var(--text-muted);">1 $ =</div>
               <div id="fxValue" style="font-family:var(--serif);font-size:28px;font-weight:600;">—</div>
               <div class="ch-sub" id="fxMeta">Yuklanmoqda…</div>
             </div>
-            <div>
+            <div class="channel-write">
               <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:6px;">Qo'lda kurs, so'm</label>
               <div style="display:flex;gap:8px;">
                 <input type="number" id="fxInput" class="av-date-input" min="1000" max="100000" step="0.01" placeholder="12500" style="max-width:150px;">
                 <div class="btn-add" id="fxSave" role="button" tabindex="0">Saqlash</div>
               </div>
             </div>
-            <div style="text-align:right;">
+            <div class="channel-write" style="text-align:right;">
               <div class="btn-outline" id="fxCbu" style="cursor:pointer;display:inline-block;">Markaziy bankdan olish</div>
-              <div class="ch-sub" style="margin-top:8px;">Avtomatik: har 3 soatda (qo'lda qo'yilgan kurs saqlanadi)</div>
+              <div class="ch-sub" style="margin-top:8px;">Avtomatik: har 3 soatda (qo'lda qo'yilgan kurs saqlanadi). Mavjud dollar bronlarning kursi o'zgarmaydi</div>
             </div>
           </div>
         </div>
@@ -1183,8 +1156,8 @@
           <div class="table-wrap"><table id="repStaff"></table></div>
         </div>
 
-        <!-- Kanal (Beds24) — kuzatuv xulosasi (2026-09-27, faqat egasi) -->
-        <div class="section-head"><h2>Kanal (Beds24)</h2><span class="muted">faqat kuzatuv</span></div>
+        <!-- Kanal (Beds24) — davr bo'yicha: kelgan bronlar, summasi (so'mda), yetmaganlar -->
+        <div class="section-head"><h2>Kanal (Beds24)</h2><span class="muted">davr bo'yicha, so'mda</span></div>
         <div class="card" id="repChannel"><div class="ch-sub">Yuklanmoqda…</div></div>
 
       </section>
@@ -1210,10 +1183,10 @@
 
         <div class="card" style="margin-top:18px;">
           <div class="card-title">Rollar nima qila oladi</div>
-          <div class="kpi-row"><span class="k">FOUNDER</span><span class="v">Hammasi + umumiy hisobot + foydalanuvchilar + Channel manager (Beds24 kuzatuvi) + dollar kursi</span></div>
-          <div class="kpi-row"><span class="k">ADMIN</span><span class="v">Menejer huquqlari + sozlamalar, xodimlar (kadrlar), STOP, tozalash</span></div>
-          <div class="kpi-row"><span class="k">MANAGER</span><span class="v">Bron, bekor qilish, narx, xona yopish, to'lovni qaytarish, audit jurnali</span></div>
-          <div class="kpi-row"><span class="k">STAFF</span><span class="v">Check-in/out, to'lov qabul qilish (qaytarish — yo'q), bron ko'rish</span></div>
+          <div class="kpi-row"><span class="k">FOUNDER</span><span class="v">Hammasi + umumiy hisobot + foydalanuvchilar</span></div>
+          <div class="kpi-row"><span class="k">ADMIN</span><span class="v">Menejer huquqlari + sozlamalar, xodimlar (kadrlar), tozalash, Channel manager (Beds24 ulash, bog'lash) va dollar kursi</span></div>
+          <div class="kpi-row"><span class="k">MANAGER</span><span class="v">Bron, bekor qilish, narx, xona yopish, to'lovni qaytarish, audit jurnali, Channel manager (faqat ko'rish)</span></div>
+          <div class="kpi-row"><span class="k">STAFF</span><span class="v">Check-in/out, to'lov qabul qilish (qaytarish — yo'q), bron ko'rish ($ bronda so'mda ham)</span></div>
         </div>
       </section>
 
@@ -1311,10 +1284,6 @@
           <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M1.5 15.5H15.5" stroke="currentColor" stroke-width="1.4"/><rect x="3" y="9.5" width="2.6" height="6" stroke="currentColor" stroke-width="1.3"/><rect x="7.2" y="6" width="2.6" height="9.5" stroke="currentColor" stroke-width="1.3"/><rect x="11.4" y="3" width="2.6" height="12.5" stroke="currentColor" stroke-width="1.3"/></svg>
           Narxlar
         </button>
-        <button class="nav-item" data-target="sx-settings">
-          <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><circle cx="8.5" cy="8.5" r="2.6" stroke="currentColor" stroke-width="1.3"/><path d="M8.5 1.5V4M8.5 13V15.5M1.5 8.5H4M13 8.5H15.5M3.5 3.5L5.2 5.2M11.8 11.8L13.5 13.5M3.5 13.5L5.2 11.8M11.8 5.2L13.5 3.5" stroke="currentColor" stroke-width="1.2"/></svg>
-          Sozlamalar
-        </button>
       </nav>
       <div class="sidebar-foot">
         <div class="avatar-sm">A</div>
@@ -1385,66 +1354,19 @@
               <button data-days="14" class="on">14 kun</button>
               <button data-days="30">30 kun</button>
             </div>
-            <!-- Faqat egasi: kurs va Beds24 belgilari (kuzatuv) -->
-            <span class="fx-chip founder-only" id="rpFx" style="display:none;">1 $ = …</span>
-            <span class="av-legend founder-only" id="rpChLegend" style="display:none;">
-              <span class="av-legend-item"><span class="ch-dot ok"></span>Beds24 bilan mos</span>
-              <span class="av-legend-item"><span class="ch-dot diff"></span>farq</span>
-              <span class="av-legend-item"><span class="ch-dot closed"></span>Beds24'da yopiq</span>
-              <span class="av-legend-item"><span class="ch-dot none"></span>ma'lumot yo'q</span>
+            <!-- Beds24 ulangan bo'lsa: kurs, $ narx va Beds24'ga yuborilish holati
+                 (narx belgilaydiganlar — egasi, admin, menejer) -->
+            <span class="fx-chip" id="rpFx" style="display:none;">1 $ = …</span>
+            <span class="av-legend" id="rpChLegend" style="display:none;">
+              <span class="av-legend-item"><span class="ch-dot ok"></span>Beds24'ga yuborilgan</span>
+              <span class="av-legend-item"><span class="ch-dot diff"></span>yuborilmagan</span>
+              <span class="av-legend-item"><span class="ch-dot closed"></span>xato</span>
+              <span class="av-legend-item"><span class="ch-dot b24"></span>Beds24'dan olingan</span>
             </span>
+            <div class="btn-outline" id="rpResync" style="display:none;cursor:pointer;" title="Ko'rinib turgan kunlardagi yuborilmagan va xato narxlar Beds24'ga">↻ Beds24'ga yuborish</div>
           </div>
           <div class="av-scroll" style="max-height:calc(100vh - 420px); min-height:320px;">
             <table class="av-table rp-table" id="rpTable"><tbody><tr><td style="padding:24px;color:var(--text-muted);">Yuklanmoqda…</td></tr></tbody></table>
-          </div>
-        </div>
-      </section>
-      <!-- SOZLAMALAR -> TIZIM NAZORATI (2026-09-26, egasi talabi):
-           STOP — mehmonxona dam olsa / ishlamasa sayt va qabulxona
-           yangi bron qabul qilmaydi.
-           Backend: services/salesStop.ts, /api/admin/sales-stop -->
-      <section class="section" id="sx-settings">
-        <div class="topline"><div><div class="page-title">Sozlamalar</div><div class="page-sub">Tizim nazorati</div></div></div>
-
-        <div class="card stop-card" id="stopCard">
-          <div class="stop-head">
-            <div>
-              <div class="stop-title">Sotuvni vaqtincha to'xtatish (STOP)</div>
-              <div class="stop-sub">Dam olish yoki ishlamaydigan kunlar uchun. To'xtatilgan xonalarga sayt va qabulxona
-                yangi bron qabul qilmaydi — "band" ko'rinadi. Booking.com va boshqa tashqi saytlar
-                bu tizimga ulanmagan — ularni o'z kabinetida alohida yopish kerak.</div>
-            </div>
-            <div class="stop-state idle" id="stopState">Yuklanmoqda…</div>
-          </div>
-
-          <div id="stopIdle" hidden>
-            <button class="stop-btn" id="stopOpen" type="button">⏹ STOP</button>
-          </div>
-
-          <div id="stopForm" hidden>
-            <label class="stop-all"><input type="checkbox" id="stopAll"> <b>Barcha xonalar</b></label>
-            <div class="stop-rooms" id="stopRooms"></div>
-            <label class="stop-reason">Sabab (ixtiyoriy)
-              <input id="stopReason" class="rp-input" maxlength="120" placeholder="Masalan: dam olish kunlari">
-            </label>
-            <ul class="stop-list">
-              <li>Sayt: tanlangan xonalar "band" ko'rinadi, bron qilib bo'lmaydi</li>
-              <li>Booking.com va boshqa tashqi saytlar tizimga ulanmagan — ular bu yerdan yopilmaydi</li>
-              <li>Shaxmatka xiralashadi, yangi bron qo'shib bo'lmaydi</li>
-              <li>Mavjud bronlar saqlanadi — mehmon kirishi, chiqishi va to'lovi ishlaydi</li>
-              <li>STOP turgan paytda <b>hech qaysi sanaga</b> bron qilib bo'lmaydi — bugunga ham, keyingi oyga ham
-                (shuning uchun sotiladigan barcha kunlar, 1 yil oldinga, yopiladi)</li>
-              <li>"Stopdan chiqarish" bosilganda hammasi darhol qayta ochiladi — 1 kunlik dam olish bo'lsa, ertasi kuni chiqarasiz</li>
-            </ul>
-            <div class="stop-actions">
-              <button class="stop-cancel" id="stopCancel" type="button">Bekor qilish</button>
-              <button class="stop-confirm" id="stopConfirm" type="button" disabled>Vaqtincha to'xtatishni tasdiqlash</button>
-            </div>
-          </div>
-
-          <div id="stopActive" hidden>
-            <div class="stop-info" id="stopInfo"></div>
-            <button class="stop-release" id="stopRelease" type="button">▶ Stopdan chiqarish</button>
           </div>
         </div>
       </section>
@@ -1452,12 +1374,14 @@
   </div>
   </div>
   <!-- ============================================================ -->
-  <!-- SYSTEM 3 — CHANNEL MANAGER (Beds24 KUZATUVI) — FAQAT FOUNDER  -->
+  <!-- SYSTEM 3 — CHANNEL MANAGER (Beds24, ikki tomonlama)           -->
   <!--                                                              -->
-  <!-- 2026-09-27, egasi qarori: Beds24 integratsiyasi olib tashlangan -->
-  <!-- va shunday qoladi. Bu bo'lim egasiga Beds24 holatini ko'rsatadi: -->
-  <!-- PMS Beds24'dan faqat O'QIYDI va solishtiradi, hech narsa        -->
-  <!-- yozmaydi. Himoya backendda: channel.read/write = ["FOUNDER"].   -->
+  <!-- 2026-09-27, egasi qarori: integratsiya avvalgidek qaytdi       -->
+  <!-- (BEDS24.md). Beds24 bronlari PMS'ga tushadi; PMS bronlari,     -->
+  <!-- narxlari va yopiq kunlari Beds24'ga yuboriladi.                -->
+  <!-- Ko'rish: egasi, admin, menejer (channel.read). Ulash, bog'lash  -->
+  <!-- va qo'lda amallar: egasi va admin (channel.write). Himoya      -->
+  <!-- backendda (403) — bu yerda faqat ko'rinish.                    -->
   <!-- ============================================================ -->
   <div class="system sys-channel" id="system-channel">
   <div class="app">
@@ -1474,7 +1398,7 @@
         </button>
         <button class="nav-item" data-target="ch-log">
           <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="2" y="2" width="13" height="13" rx="2" stroke="currentColor" stroke-width="1.3"/><path d="M4.5 6H12.5M4.5 8.7H12.5M4.5 11.4H9" stroke="currentColor" stroke-width="1.2"/></svg>
-          Bronlar jurnali
+          Bronlar
         </button>
       </nav>
       <div class="sidebar-foot">
@@ -1487,72 +1411,87 @@
       <!-- 1. ULANGAN KANALLAR -->
       <section class="section active" id="ch-channels">
         <div class="topline">
-          <div><div class="page-title">Channel manager</div><div class="page-sub">Beds24 holati — faqat kuzatuv: PMS o'qiydi va solishtiradi, hech narsa yozmaydi</div></div>
+          <div><div class="page-title">Channel manager</div><div class="page-sub">Beds24 — bronlar, narxlar va yopiq kunlar ikki tomonlama</div></div>
           <div class="row-actions">
             <div class="btn-outline" id="chPingBtn" style="cursor:pointer;">↻ Ulanishni tekshirish</div>
-            <div class="btn-outline" id="chConnectBtn" style="cursor:pointer;">Ulash</div>
+            <div class="btn-outline channel-write" id="chConnectBtn" style="cursor:pointer;">Ulash</div>
             <div class="btn-outline ch-danger" id="chDisconnectBtn" style="cursor:pointer; display:none;">Uzish</div>
           </div>
         </div>
-        <div class="ch-note">Faqat o'qish rejimi: Booking.com va boshqa OTA bronlarini qabulxona avvalgidek qo'lda kiritadi. Bu yerda Beds24'dagi holat PMS bilan solishtiriladi.</div>
+        <div class="ch-note">Beds24 ustuvor: Booking.com va boshqa OTA bronlari Beds24 orqali o'zi keladi — ularning sanasi, narxi va bekor qilinishi OTA'da o'zgartiriladi. Qabulxona broni, narxlar va xona yopilishi Beds24'ga avtomatik yuboriladi. Beds24'dan kelgan dollar bron Shaxmatkada $ va so'mda (bron kelgan kun kursi) ko'rinadi, to'lov so'mda qabul qilinadi.</div>
         <div id="chConnCards" class="grid g3"><div class="card stat-card"><div class="stat-label">Yuklanmoqda…</div></div></div>
 
         <div class="section-head"><h2>Xona bog'lash (mapping)</h2>
           <div class="row-actions">
             <a class="btn-outline" href="/admin/mapping.html" target="_blank" style="text-decoration:none;">Alohida sahifa ↗</a>
-            <div class="btn-outline" id="chAutoUnitsBtn" style="cursor:pointer;">Unit'larni avtomatik bog'lash</div>
+            <div class="btn-outline channel-write" id="chAutoUnitsBtn" style="cursor:pointer;">Unit'larni avtomatik bog'lash</div>
           </div>
         </div>
+        <div class="ch-sub" style="margin:-6px 0 10px;">Bog'langandan keyin Beds24 bronlari avtomatik import qilinadi, PMS bronlari va yopiq kunlar Beds24'ga yuboriladi. Bog'lanmagan xona Beds24 bilan sinxronlanmaydi.</div>
         <div id="chMappingCard" class="card"></div>
       </section>
 
       <!-- 2. SINXRONIZATSIYA -->
       <section class="section" id="ch-sync">
         <div class="topline">
-          <div><div class="page-title">Sinxronizatsiya</div><div class="page-sub">Beds24 bilan har bir muloqot jurnali va PMS bilan farqlar</div></div>
-          <div class="row-actions">
-            <div class="btn-outline" id="chPollBtn" style="cursor:pointer;">Hoziroq tekshirish</div>
-            <div class="btn-outline" id="chRatesBtn" style="cursor:pointer;">Narx va bo'sh joyni o'qish</div>
+          <div><div class="page-title">Sinxronizatsiya</div><div class="page-sub">Beds24 bilan har bir muloqot, bo'sh joy farqi va yiqilgan vazifalar</div></div>
+          <div class="row-actions channel-write" style="flex-wrap:wrap;">
+            <div class="btn-outline" id="chPollBtn" style="cursor:pointer;">Bronlarni hozir o'qish</div>
+            <div class="btn-outline" id="chPollFullBtn" style="cursor:pointer;">To'liq qayta o'qish</div>
+            <div class="btn-outline" id="chCatchUpBtn" style="cursor:pointer;">Yuborilmaganlarni yuborish</div>
+            <div class="btn-outline" id="chBlocksBtn" style="cursor:pointer;">Yopiq kunlarni yuborish</div>
+            <div class="btn-outline" id="chRatesBtn" style="cursor:pointer;">Narxni Beds24'dan olish</div>
             <div class="btn-outline" id="chDriftBtn" style="cursor:pointer;">Farqni tekshirish</div>
           </div>
         </div>
         <div id="chDriftCard" class="card" style="margin-bottom:18px;"></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Amal</th><th>Holati</th><th>Natija</th><th>Davomiyligi</th><th>Vaqt</th></tr></thead>
-            <tbody id="chSyncTbody"><tr><td colspan="5" class="ch-empty">Yuklanmoqda…</td></tr></tbody>
+            <thead><tr><th>Amal</th><th>Yo'nalish</th><th>Holati</th><th>Natija</th><th>Davomiyligi</th><th>Vaqt</th></tr></thead>
+            <tbody id="chSyncTbody"><tr><td colspan="6" class="ch-empty">Yuklanmoqda…</td></tr></tbody>
           </table>
         </div>
         <div style="margin-top:10px;"><a href="/admin/sync-log.html" target="_blank" class="ch-link">Jurnal alohida sahifada ↗</a></div>
+
+        <div class="section-head"><h2>Yiqilgan vazifalar</h2>
+          <div class="row-actions channel-write">
+            <div class="btn-outline" id="chDlRequeueBtn" style="cursor:pointer;">Hammasini qayta navbatga</div>
+            <div class="btn-outline ch-danger" id="chDlClearBtn" style="cursor:pointer;">Tozalash</div>
+          </div>
+        </div>
+        <div class="ch-sub" style="margin:-6px 0 10px;">Bir necha urinishdan keyin ham bajarilmagan vazifalar. Sabab tuzatilgach (bog'lash, Beds24 qaytdi) qayta navbatga qo'ying.</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Navbat</th><th>Vazifa</th><th>Sabab</th><th>Urinish</th><th>Vaqt</th></tr></thead>
+            <tbody id="chDlTbody"><tr><td colspan="5" class="ch-empty">Yuklanmoqda…</td></tr></tbody>
+          </table>
+        </div>
       </section>
 
-      <!-- 3. BRONLAR JURNALI -->
+      <!-- 3. BRONLAR -->
       <section class="section" id="ch-log">
         <div class="topline">
-          <div><div class="page-title">Bronlar jurnali</div><div class="page-sub">Beds24'dagi bronlar va webhook hodisalari — PMS bilan solishtirilgan</div></div>
+          <div><div class="page-title">Bronlar</div><div class="page-sub">Beds24'dan kelgan va Beds24'ga yetmagan bronlar, webhook hodisalari</div></div>
           <div class="row-actions">
-            <select id="chMatchFilter" class="av-date-input" style="min-width:170px;">
-              <option value="">Hammasi</option>
-              <option value="MISSING_IN_PMS">PMS'da yo'q</option>
-              <option value="MISMATCH">Farq bor</option>
-              <option value="MATCHED">Mos</option>
-              <option value="UNMAPPED">Bog'lanmagan</option>
-              <option value="INACTIVE">Bekor / bron emas</option>
+            <select id="chResFilter" class="av-date-input" style="min-width:220px;">
+              <option value="problems">Muammoli: rad etilgan, xato, kutmoqda</option>
+              <option value="channel">Beds24'dan kelgan</option>
+              <option value="all">Hammasi (Beds24 bilan bog'liq)</option>
             </select>
           </div>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Beds24 #</th><th>Mehmon</th><th>Manba / OTA #</th><th>Sanalar</th><th>Xona</th><th>Summa</th><th>Beds24 holati</th><th>PMS bilan</th></tr></thead>
-            <tbody id="chBookingsTbody"><tr><td colspan="8" class="ch-empty">Yuklanmoqda…</td></tr></tbody>
+            <thead><tr><th>Mehmon</th><th>Manba / OTA #</th><th>Sanalar</th><th>Xona</th><th>Summa</th><th>Beds24</th><th></th></tr></thead>
+            <tbody id="chResTbody"><tr><td colspan="7" class="ch-empty">Yuklanmoqda…</td></tr></tbody>
           </table>
         </div>
 
         <div class="section-head"><h2>Webhook hodisalari</h2><span class="muted" id="chWebhookStats"></span></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Turi</th><th>Beds24 #</th><th>Holati</th><th>Xato</th><th>Vaqt</th></tr></thead>
-            <tbody id="chWebhookTbody"><tr><td colspan="5" class="ch-empty">Yuklanmoqda…</td></tr></tbody>
+            <thead><tr><th>Turi</th><th>Beds24 #</th><th>Holati</th><th>Xato</th><th>Vaqt</th><th></th></tr></thead>
+            <tbody id="chWebhookTbody"><tr><td colspan="6" class="ch-empty">Yuklanmoqda…</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -1597,6 +1536,14 @@
 
   /** Joriy foydalanuvchi - login'dan keyin to'ldiriladi */
   let APP_USER = null;
+
+  /**
+   * Channel manager (Beds24) — backend PERMISSIONS bilan bir xil:
+   * channel.read (holat, jurnal) va channel.write (ulash, bog'lash,
+   * qo'lda amallar). Bu faqat ko'rinish — himoya backendda (403).
+   */
+  const CHANNEL_READ_ROLES = ['FOUNDER', 'ADMIN', 'MANAGER'];
+  const CHANNEL_WRITE_ROLES = ['FOUNDER', 'ADMIN'];
 
   const ROLE_LABEL = {
     FOUNDER: 'Egasi',
@@ -1654,8 +1601,6 @@
   function showApp(){
     loginScreen.style.display = 'none';
     appRoot.style.display = 'block';
-    // STOP holati — yuqoridagi belgi (Tizim nazorati)
-    if(typeof window.loadSalesStop === 'function') window.loadSalesStop();
 
     const fullName = (APP_USER && APP_USER.fullName) || 'Foydalanuvchi';
     const role = (APP_USER && ROLE_LABEL[APP_USER.role]) || '';
@@ -1679,6 +1624,15 @@
     const isFounder = APP_USER && APP_USER.role === 'FOUNDER';
     document.querySelectorAll('.founder-only').forEach(el => {
       el.style.display = isFounder ? '' : 'none';
+    });
+
+    // Channel manager (Beds24): ko'rish — egasi, admin, menejer; boshqarish — egasi, admin
+    const userRole = APP_USER && APP_USER.role;
+    document.querySelectorAll('.channel-read').forEach(el => {
+      el.style.display = CHANNEL_READ_ROLES.includes(userRole) ? '' : 'none';
+    });
+    document.querySelectorAll('.channel-write').forEach(el => {
+      el.style.display = CHANNEL_WRITE_ROLES.includes(userRole) ? '' : 'none';
     });
 
     passTokenToFrame();
@@ -4097,6 +4051,25 @@
         '</td><td class="num">' + esc(fmtMoney(d.staff.monthlySalary)) + '</td></tr>' +
         '</tbody>';
     }
+
+    // --- Kanal (Beds24) — davrda kirgan Beds24 bronlari, so'mda (bron kursi bilan) ---
+    const chBox = document.getElementById('repChannel');
+    if(chBox && d.channel){
+      const c = d.channel;
+      const kv = (k, v, warn) => '<div class="ch-kv"><span class="k">' + k + '</span><span class="v"' +
+        (warn ? ' style="color:var(--terracotta);"' : '') + '>' + v + '</span></div>';
+      chBox.innerHTML = !c.connected && c.bookings === 0
+        ? '<div class="ch-sub">Beds24 ulanmagan. Channel manager → Ulangan kanallar → Ulash.</div>'
+        : '<div class="grid g4">' +
+            kv('Ulanish', c.connected ? 'ulangan' : 'uzilgan', !c.connected) +
+            kv("Beds24'dan bronlar", c.bookings + (c.usdBookings ? ' (' + c.usdBookings + ' tasi $)' : '')) +
+            kv('Summasi', esc(fmtMoney(c.revenue))) +
+            kv("Beds24'ga yetmagan", (c.rejected + c.failed) + (c.rejected ? ' (rad etilgan ' + c.rejected + ')' : ''), c.rejected + c.failed > 0) +
+          '</div>' +
+          '<div class="ch-sub" style="margin-top:8px;">Sinxron xatolari (davrda): ' + c.syncErrors +
+          " · qo'lda hal qilinadigan webhook: " + c.needsAction +
+          ". Dollar bronlar bron kelgan kundagi kurs bilan so'mga o'girilgan.</div>";
+    }
   }
 
   // Davr o'zgarsa qayta yuklaymiz
@@ -5257,8 +5230,11 @@
           if(msg.type.startsWith('reservation.') || msg.type === 'payment.updated'){
             if(typeof loadBron === 'function') loadBron();
             if(typeof loadRoomsFromBackend === 'function') loadRoomsFromBackend();
-            if(typeof loadFinance === 'function') loadFinance();
+            // Moliya — faqat egasi (report.read); boshqa rolga har event'da 403 so'ramasin
+            if(typeof loadFinance === 'function' && APP_USER && APP_USER.role === 'FOUNDER') loadFinance();
             if(typeof renderDashboardFromBackend === 'function') renderDashboardFromBackend();
+          } else if(msg.type === 'sync.failed' || msg.type === 'webhook.needs_attention' || msg.type === 'rate.sync.updated'){
+            if(typeof window.onChannelEvent === 'function') window.onChannelEvent(msg);
           } else if(msg.type === 'room.status.changed' || msg.type.startsWith('cleaning.')){
             if(typeof loadRoomsFromBackend === 'function') loadRoomsFromBackend();
             if(typeof loadCleaning === 'function') loadCleaning();
@@ -5293,186 +5269,6 @@
     }
   });
 
-  // ================= TIZIM NAZORATI: STOP (2026-09-26) =================
-  //
-  //  Egasi talabi: mehmonxona dam olsa / to'xtasa STOP bosiladi, "Barcha
-  //  xonalar" belgilanadi, "Vaqtincha to'xtatishni tasdiqlash". Shaxmatka
-  //  xiralashadi (WebSocket `system.sales_stop`), sayt "band" ko'radi.
-  //  Tashqi saytlar (Booking.com) bu tizimga ulanmagan — o'zida yopiladi. Faqat "Stopdan chiqarish" qayta faollashtiradi.
-  (function(){
-    const $ = (id) => document.getElementById(id);
-    let status = null;
-    let rooms = [];
-    let typeLabels = {};
-
-    async function getJson(path){
-      const res = await authFetch(getBackendBase() + path);
-      if(!res.ok) throw new Error(path + ': ' + res.status);
-      return res.json();
-    }
-
-    async function postJson(path, body){
-      const res = await authFetch(getBackendBase() + path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body || {}),
-      });
-      const data = await res.json().catch(() => ({}));
-      if(res.status === 403) throw new Error("Bu amal uchun huquqingiz yo'q (faqat sozlamalar huquqi borlar).");
-      if(!res.ok) throw new Error(data.error || ('status ' + res.status));
-      return data;
-    }
-
-    function fmtSince(iso){
-      if(!iso) return '—';
-      const d = new Date(iso);
-      const p = (n) => String(n).padStart(2, '0');
-      return p(d.getDate()) + '.' + p(d.getMonth() + 1) + '.' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
-    }
-
-    function renderPill(){
-      const pill = $('stopPill');
-      if(pill) pill.hidden = !(status && status.active);
-    }
-
-    function render(){
-      renderPill();
-      const card = $('stopCard');
-      if(!card || !status) return;
-      const on = !!status.active;
-      card.classList.toggle('on', on);
-      const st = $('stopState');
-      st.className = 'stop-state ' + (on ? 'on' : 'idle');
-      st.textContent = on ? "⛔ TO'XTATILGAN" : '● Ishlayapti';
-
-      $('stopActive').hidden = !on;
-      if(on){
-        $('stopForm').hidden = true;
-        $('stopIdle').hidden = true;
-        const list = status.allRooms
-          ? '<b>Barcha xonalar</b> (' + status.stoppedRooms.length + ' ta)'
-          : '<b>' + status.stoppedRooms.length + ' ta xona:</b> ' + status.stoppedRooms.map(esc).join(', ');
-        $('stopInfo').innerHTML =
-          list + '<br>' +
-          (status.reason ? '<span class="muted">Sabab:</span> ' + esc(status.reason) + '<br>' : '') +
-          '<span class="muted">Qachondan:</span> ' + esc(fmtSince(status.since)) + (status.by ? ' · ' + esc(status.by) : '') + '<br>' +
-          '<span class="muted">Davomiyligi:</span> <b>"Stopdan chiqarish" bosilguncha</b><br>' +
-          (status.blockedUntil
-            ? '<span class="muted">Yopilgan sanalar:</span> bugundan ' + esc(status.blockedUntil) +
-              " gacha — sotuvga chiqadigan barcha kunlar (sayt 1 yil oldinga sotadi). " +
-              "Stopdan chiqarilganda hammasi darhol ochiladi.<br>"
-            : '') +
-          '<span class="muted">Mavjud bronlar saqlangan:</span> ' + (status.keptBookings || 0) + ' ta';
-      } else if($('stopForm').hidden){
-        $('stopIdle').hidden = false;
-      }
-    }
-
-    function renderRooms(){
-      const box = $('stopRooms');
-      if(!box) return;
-      const all = $('stopAll') && $('stopAll').checked;
-      box.innerHTML = rooms.map((r) =>
-        '<label class="stop-room"><input type="checkbox" value="' + esc(r.id) + '"' + (all ? ' checked disabled' : '') + '>' +
-        '<b>' + esc(r.number) + '</b><span>' + esc(typeLabels[r.type] || r.type) + '</span></label>').join('');
-      updateConfirm();
-    }
-
-    function selectedRooms(){
-      return [...document.querySelectorAll('#stopRooms input:checked')].map((i) => i.value);
-    }
-
-    function updateConfirm(){
-      const btn = $('stopConfirm');
-      if(!btn) return;
-      const all = $('stopAll') && $('stopAll').checked;
-      btn.disabled = !(all || selectedRooms().length > 0);
-    }
-
-    async function load(){
-      try{
-        status = await getJson('/api/admin/sales-stop');
-        render();
-      }catch(e){
-        const st = $('stopState');
-        if(st) st.textContent = "Holatni yuklab bo'lmadi";
-      }
-    }
-    window.loadSalesStop = load;
-
-    async function openForm(){
-      try{
-        const [rs, ts] = await Promise.all([getJson('/api/rooms'), getJson('/api/rooms/types')]);
-        rooms = rs.filter((r) => r.isActive !== false)
-          .sort((a, b) => String(a.number).localeCompare(String(b.number), undefined, { numeric: true }));
-        typeLabels = {};
-        ts.forEach((t) => { typeLabels[t.id] = t.label; });
-      }catch(e){
-        openConfirmModal('Xatolik', "Xonalarni yuklab bo'lmadi: " + String(e.message || e), 'Tushunarli', function(){});
-        return;
-      }
-      $('stopAll').checked = false;
-      $('stopReason').value = '';
-      renderRooms();
-      $('stopIdle').hidden = true;
-      $('stopForm').hidden = false;
-    }
-
-    async function confirmStop(){
-      const allRooms = $('stopAll').checked;
-      const roomIds = allRooms ? [] : selectedRooms();
-      if(!allRooms && roomIds.length === 0) return;
-      const btn = $('stopConfirm');
-      btn.disabled = true;
-      try{
-        const data = await postJson('/api/admin/sales-stop', {
-          allRooms: allRooms, roomIds: roomIds, reason: $('stopReason').value.trim() || undefined,
-        });
-        status = data.status;
-        $('stopForm').hidden = true;
-        render();
-        openConfirmModal("Tizim to'xtatildi",
-          (allRooms ? 'Barcha xonalar' : data.rooms + ' ta xona') + " uchun sotuv to'xtatildi. " +
-          "Sayt va qabulxona yangi bron qabul qilmaydi, Shaxmatka xiralashdi. Booking.com'ni o'z kabinetida alohida yoping." +
-          (data.keptBookings > 0 ? ' Mavjud ' + data.keptBookings + ' ta bron saqlandi.' : ''),
-          'Tushunarli', function(){});
-      }catch(e){
-        updateConfirm();
-        openConfirmModal('Xatolik', String(e.message || e), 'Tushunarli', function(){});
-      }
-    }
-
-    function confirmRelease(){
-      openConfirmModal('Stopdan chiqarish',
-        "Sotuv qayta ochiladi: sayt va qabulxona yana bron qabul qiladi, Shaxmatka faollashadi. Davom etasizmi?",
-        'Stopdan chiqarish', async function(){
-          try{
-            const data = await postJson('/api/admin/sales-stop/release', {});
-            status = data.status;
-            render();
-            openConfirmModal('Tizim ishlayapti', "Sotuv qayta ochildi (" + data.rooms + " ta xona).", 'Yaxshi', function(){});
-          }catch(e){
-            openConfirmModal('Xatolik', String(e.message || e), 'Tushunarli', function(){});
-          }
-        });
-    }
-
-    // --- Hodisalar ---
-    if($('stopOpen')) $('stopOpen').addEventListener('click', openForm);
-    if($('stopCancel')) $('stopCancel').addEventListener('click', () => { $('stopForm').hidden = true; render(); });
-    if($('stopAll')) $('stopAll').addEventListener('change', renderRooms);
-    if($('stopRooms')) $('stopRooms').addEventListener('change', updateConfirm);
-    if($('stopConfirm')) $('stopConfirm').addEventListener('click', confirmStop);
-    if($('stopRelease')) $('stopRelease').addEventListener('click', confirmRelease);
-    if($('stopPill')) $('stopPill').addEventListener('click', () => {
-      const sys = document.querySelector('.sys-btn[data-sys="shaxmatka"]');
-      if(sys) sys.click();
-      const nav = document.querySelector('#system-shaxmatka .nav-item[data-target="sx-settings"]');
-      if(nav) nav.click();
-    });
-    document.querySelectorAll('.nav-item[data-target="sx-settings"]').forEach((btn) => btn.addEventListener('click', load));
-  })();
-
   // ================= NARXLAR: mavsumiy va kunlik narx (2026-09-26) =================
   //
   //  Egasi talabi: har xona raqami, ID'si va kategoriyasi ko'rinsin, shu
@@ -5498,8 +5294,8 @@
     const st = {
       start: todayLocal(), days: 14,
       types: [], rooms: [], rates: {},
-      // Faqat egasi: PMS narxi + $ + Beds24 narxi (GET /api/admin/rates)
-      ch: null,
+      // Beds24 ulangan va foydalanuvchi narx belgilay olsa: { rate, manual, mapped:Set }
+      sync: null,
       selTypes: new Set(), selDays: new Set(DOW_ORDER),
     };
 
@@ -5529,35 +5325,51 @@
       st.rates = {};
       rows.forEach((r) => { st.rates[r.roomTypeId + '|' + r.date] = r; });
 
-      // Kanal kuzatuvi — faqat egasi. Xato bo'lsa narxlar baribir ko'rinadi
-      st.ch = null;
-      if(APP_USER && APP_USER.role === 'FOUNDER'){
+      // Beds24 — narx belgilaydiganlarga (egasi, admin, menejer) ulangan bo'lsa.
+      // Xato bo'lsa narxlar baribir ko'rinadi
+      st.sync = null;
+      if(APP_USER && CHANNEL_READ_ROLES.includes(APP_USER.role)){
         try{
-          const ch = await getJson('/api/admin/rates?from=' + from + '&to=' + to);
-          st.ch = {};
-          ch.types.forEach((t) => { st.ch[t.roomTypeId] = t; });
-          st.chFx = ch.fx;
-          const fx = $('rpFx');
-          if(fx) fx.textContent = ch.fx
-            ? '1 $ = ' + Number(ch.fx.rate).toLocaleString('ru-RU').replace(/\u00a0/g, ' ') + " so'm" + (ch.fx.source === 'manual' ? ' (qo\'lda)' : '')
-            : 'Kurs kiritilmagan';
-        }catch(e){ st.ch = null; }
+          const fx = await getJson('/api/reservations/fx-rate');
+          if(fx.channelConnected){
+            const m = await getJson('/api/admin/mapping');
+            st.sync = {
+              rate: fx.rate, manual: fx.source === 'manual',
+              // Tarif Beds24'ga bog'langanmi (tur yoki xonasi orqali) — aks holda narx yuborilmaydi
+              mapped: new Set((m.mappings || []).map((x) => x.roomTypeId).filter(Boolean)),
+            };
+          }
+        }catch(e){ st.sync = null; }
       }
+      const on = !!st.sync;
+      if($('rpFx')){
+        $('rpFx').style.display = on ? '' : 'none';
+        if(on) $('rpFx').textContent = st.sync.rate
+          ? '1 $ = ' + som(st.sync.rate) + " so'm" + (st.sync.manual ? " (qo'lda)" : '')
+          : "Kurs noma'lum — narx Beds24'ga yuborilmaydi";
+      }
+      if($('rpChLegend')) $('rpChLegend').style.display = on ? '' : 'none';
+      if($('rpResync')) $('rpResync').style.display = on ? '' : 'none';
     }
 
-    const CH_TITLE = { ok: 'Beds24 narxi mos', diff: 'Beds24 narxi farq qiladi', closed: "Beds24'da narx yo'q — OTA'da yopiq", none: "Beds24 ma'lumoti yo'q" };
+    const SYNC_TITLE = {
+      synced: "Beds24'ga yuborilgan", pending: "Beds24'ga hali yuborilmagan", error: "Beds24'ga yuborilmadi",
+    };
 
-    /** Egasi uchun: katak ostida $ va Beds24 holati nuqtasi */
+    /** Beds24 ulangan bo'lsa: katak ostida $ narx va yuborilish holati */
     function chExtra(typeId, k){
-      if(!st.ch || !st.ch[typeId]) return { html: '', title: '' };
-      const c = st.ch[typeId].days[k];
-      if(!c) return { html: '', title: '' };
-      const usd = c.usd === null ? '' : '$' + c.usd.toFixed(2);
-      let title = ' · ' + (CH_TITLE[c.status] || '');
-      if(c.beds24 !== null) title += ': Beds24 $' + c.beds24 + (c.beds24Uzs !== null ? ' ≈ ' + som(c.beds24Uzs) + " so'm" : '') +
-        (c.beds24Avail !== null ? ', bo\'sh: ' + c.beds24Avail : '');
+      if(!st.sync || !st.sync.mapped.has(typeId)) return { html: '', title: '' };
+      const r = st.rates[typeId + '|' + k];
+      if(!r) return { html: '', title: '' };
+      const fromB24 = r.source === 'beds24' && r.syncStatus === 'synced';
+      const dot = r.syncStatus === 'error' ? 'closed' : r.syncStatus === 'pending' ? 'diff' : fromB24 ? 'b24' : 'ok';
+      const price = r.channelPrice !== null && r.channelPrice !== undefined
+        ? r.channelPrice
+        : (st.sync.rate ? Math.round(r.price / st.sync.rate * 100) / 100 : null);
+      let title = ' · ' + (fromB24 ? 'Beds24 panelidan olingan' : (SYNC_TITLE[r.syncStatus] || ''));
+      if(r.syncError) title += ': ' + r.syncError;
       return {
-        html: '<span class="rp-usd"><span class="ch-dot ' + c.status + '"></span>' + usd + '</span>',
+        html: '<span class="rp-usd"><span class="ch-dot ' + dot + '"></span>' + (price === null ? '' : '$' + Number(price).toFixed(2)) + '</span>',
         title: title,
       };
     }
@@ -5609,11 +5421,8 @@
 
       st.types.forEach((t) => {
         const rooms = st.rooms.filter((r) => r.type === t.id);
-        const b24 = st.ch && st.ch[t.id] ? st.ch[t.id].beds24 : [];
-        const b24Lbl = st.ch
-          ? '<span class="rp-b24">' + (b24.length
-              ? 'Beds24: tur ' + b24.map((b) => esc(b.name) + ' #' + esc(b.externalRoomTypeId) + (b.includesMeal ? ' (nonushta bilan)' : '')).join(', ')
-              : "Beds24: bog'lanmagan") + '</span>'
+        const b24Lbl = st.sync && !st.sync.mapped.has(t.id)
+          ? "<span class=\"rp-b24\">Beds24: bog'lanmagan — narx yuborilmaydi</span>"
           : '';
         h += '<tr class="rp-grp"><td class="rp-fix rp-grp-lbl" colspan="3">' + esc(t.label) +
           '<span class="sub">ID: ' + esc(t.id) + ' · ' + rooms.length + ' xona</span>' + b24Lbl + '</td>';
@@ -5779,6 +5588,32 @@
       applyBtn.addEventListener('click', applySeason);
       applyBtn.addEventListener('keydown', (e) => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); applySeason(); } });
     }
+    // Ko'rinib turgan oraliqdagi yuborilmagan / xato narxlar — Beds24'ga darhol
+    if($('rpResync')) $('rpResync').addEventListener('click', async () => {
+      const btn = $('rpResync');
+      if(!st.sync || btn.dataset.busy) return;
+      const ids = st.types.map((t) => t.id).filter((id) => st.sync.mapped.has(id));
+      if(ids.length === 0) return openConfirmModal('Beds24', "Birorta tarif Beds24'ga bog'lanmagan (Channel manager → Xona bog'lash).", 'Tushunarli', function(){});
+      btn.dataset.busy = '1'; btn.style.opacity = '.6';
+      try{
+        const res = await authFetch(getBackendBase() + '/api/rate-plans/resync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ roomTypeIds: ids, from: dayKey(st.start), to: dayKey(addDays(st.start, st.days - 1)) }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if(res.status === 403) throw new Error("Narxni o'zgartirish huquqingiz yo'q");
+        if(!res.ok) throw new Error(data.error || ('status ' + res.status));
+        await loadRates(); render();
+        hint("Beds24'ga yuborildi: " + (data.sent || 0) + ' tarif' + (data.failed ? ', xato: ' + data.failed : '') +
+          (data.skipped ? ", o'zgarishsiz: " + data.skipped : '') + '.');
+      }catch(e){
+        openConfirmModal('Xatolik', String(e.message || e), 'Tushunarli', function(){});
+      }finally{
+        delete btn.dataset.busy; btn.style.opacity = '';
+      }
+    });
+
     if($('rpPrev')) $('rpPrev').addEventListener('click', () => { st.start = addDays(st.start, -7); load(); });
     if($('rpNext')) $('rpNext').addEventListener('click', () => { st.start = addDays(st.start, 7); load(); });
     if($('rpStart')) $('rpStart').addEventListener('change', (e) => { if(e.target.value){ st.start = fromDay(e.target.value); load(); } });
@@ -5928,19 +5763,20 @@
 </script>
 <script>
   // ============================================================
-  //  CHANNEL MANAGER — Beds24 KUZATUVI (faqat FOUNDER, 2026-09-27)
+  //  CHANNEL MANAGER — Beds24, ikki tomonlama (2026-09-27)
   //
-  //  Egasi qarori: Beds24 integratsiyasi olib tashlangan va shunday
-  //  qoladi — qabulxona OTA bronlarini qo'lda kiritadi. Bu bo'lim
-  //  egasiga Beds24'dagi holatni ko'rsatadi: PMS Beds24'dan O'QIYDI va
-  //  o'zidagi ma'lumot bilan SOLISHTIRADI. Hech narsa yozilmaydi.
+  //  Egasi qarori: integratsiya avvalgidek qaytdi (BEDS24.md). Beds24
+  //  bronlari PMS'ga tushadi, PMS bronlari, narxlari va yopiq kunlari
+  //  Beds24'ga yuboriladi.
   //
-  //  Ko'rinish `.founder-only` bilan boshqariladi, haqiqiy himoya
-  //  backendda: channel.read / channel.write = ["FOUNDER"] (403).
+  //  Ko'rish — egasi, admin, menejer (channel.read); ulash, bog'lash va
+  //  qo'lda amallar — egasi va admin (channel.write). Ko'rinish
+  //  `.channel-read` / `.channel-write` bilan, haqiqiy himoya backendda (403).
   // ============================================================
   (function(){
     const $ = (id) => document.getElementById(id);
-    const isFounder = () => !!(APP_USER && APP_USER.role === 'FOUNDER');
+    const canRead = () => !!(APP_USER && CHANNEL_READ_ROLES.includes(APP_USER.role));
+    const canWrite = () => !!(APP_USER && CHANNEL_WRITE_ROLES.includes(APP_USER.role));
     const som = (n) => Math.round(Number(n) || 0).toLocaleString('ru-RU').replace(/ /g, ' ');
     const when = (iso) => {
       if(!iso) return '—';
@@ -5950,6 +5786,7 @@
       return p(t.getUTCDate()) + '.' + p(t.getUTCMonth() + 1) + ' ' + p(t.getUTCHours()) + ':' + p(t.getUTCMinutes());
     };
     const fail = (msg) => openConfirmModal('Xatolik', msg, 'Tushunarli', function(){});
+    const info = (title, msg) => openConfirmModal(title, msg, 'Yaxshi', function(){});
 
     async function api(path, opts){
       const o = Object.assign({ headers: {} }, opts || {});
@@ -5959,8 +5796,12 @@
       }
       const res = await authFetch(getBackendBase() + path, o);
       const data = await res.json().catch(() => ({}));
-      if(res.status === 403) throw new Error('Bu bo\'lim faqat egasi uchun');
-      if(!res.ok) throw new Error(data.error || ('status ' + res.status));
+      if(res.status === 403) throw new Error("Bu amal uchun huquqingiz yo'q (Channel manager: egasi va admin)");
+      if(!res.ok){
+        const err = new Error(data.error || ('status ' + res.status));
+        err.code = data.code;
+        throw err;
+      }
       return data;
     }
 
@@ -5970,66 +5811,93 @@
       else { btn.textContent = btn.dataset.label || btn.textContent; btn.style.pointerEvents = ''; btn.style.opacity = ''; }
     }
 
-    const MATCH_UI = {
-      MATCHED:        { label: 'Mos', cls: 'ok' },
-      MISMATCH:       { label: 'Farq bor', cls: 'wait' },
-      MISSING_IN_PMS: { label: "PMS'da yo'q", cls: 'busy' },
-      UNMAPPED:       { label: "Bog'lanmagan", cls: 'free' },
-      INACTIVE:       { label: 'Bron emas', cls: 'free' },
+    const pill = (ui) => '<span class="pill ' + ui.cls + '"><span class="dot"></span>' + esc(ui.label) + '</span>';
+    const kv = (k, v, warn) => '<div class="ch-kv"><span class="k">' + k + '</span><span class="v"' +
+      (warn ? ' style="color:var(--terracotta);"' : '') + '>' + v + '</span></div>';
+
+    const SYNC_UI = {
+      synced: { label: 'Yuborilgan', cls: 'ok' }, pending: { label: 'Kutmoqda', cls: 'wait' },
+      syncing: { label: 'Yuborilmoqda', cls: 'wait' }, failed: { label: 'Xato', cls: 'busy' },
+      rejected: { label: 'Rad etildi', cls: 'busy' }, not_applicable: { label: 'Yuborilmaydi', cls: 'free' },
     };
     const ACTION_UI = {
-      ping: 'Ulanishni tekshirish', poll_bookings: "Bronlarni o'qish", pull_rates: "Narx va bo'sh joy",
-      drift_check: 'Farqni tekshirish', webhook_received: 'Webhook', fx_refresh: 'Dollar kursi',
-      connect: 'Ulash', disconnect: 'Uzish',
+      ping: 'Ulanishni tekshirish', poll_bookings: "Bronlarni o'qish", poll_needs_action: "Bron: qo'lda hal qilish",
+      push_reservation: "Bron → Beds24", push_room_block: 'Xona yopildi → Beds24', cancel_room_block: 'Xona ochildi → Beds24',
+      push_rates: 'Narx → Beds24', pull_rates: "Narx ← Beds24", drift_check: 'Farq tekshiruvi', drift_detected: 'Farq topildi',
+      booking_linked: "Qo'lda kiritilgan bron bog'landi", reservation_relocated: 'Mehmon boshqa xonaga joylandi',
+      webhook_needs_action: "Webhook: qo'lda hal qilish", webhook_failed: 'Webhook xatosi',
+      webhook_echo_skipped: "Webhook: o'zimizning o'zgarish", job_dead_lettered: 'Vazifa yiqildi',
     };
+    const DIR_UI = { PMS_TO_CHANNEL: 'PMS → Beds24', CHANNEL_TO_PMS: 'Beds24 → PMS' };
     const STATUS_UI = {
       SUCCESS: { label: 'Muvaffaqiyatli', cls: 'ok' }, FAILED: { label: 'Xato', cls: 'busy' },
       SKIPPED: { label: "O'tkazildi", cls: 'free' }, RETRYING: { label: 'Qayta', cls: 'wait' },
       PROCESSED: { label: 'Qayta ishlandi', cls: 'ok' }, IGNORED_DUPLICATE: { label: 'Takror', cls: 'free' },
       NEEDS_MANUAL_ACTION: { label: "Qo'lda", cls: 'wait' }, RECEIVED: { label: 'Qabul qilindi', cls: 'wait' },
+      QUEUED: { label: 'Navbatda', cls: 'wait' },
     };
-    const pill = (ui) => '<span class="pill ' + ui.cls + '"><span class="dot"></span>' + esc(ui.label) + '</span>';
+    const SOURCE_UI = {
+      booking_com: 'Booking.com', airbnb: 'Airbnb', expedia: 'Expedia', ostrovok: 'Ostrovok',
+      direct: "To'g'ridan-to'g'ri", website: 'Sayt', phone: 'Telefon', walk_in: 'Qabulxona', other: 'Boshqa',
+    };
 
     // --------------------------------------------------------
     //  1. Ulangan kanallar
     // --------------------------------------------------------
     let pmsRooms = [], pmsTypes = [];
 
+    /** Token Beds24'ga YOZA oladimi — yo'q bo'lsa bronlar va narx yuborilmaydi */
+    function scopeWarning(c){
+      const scopes = c.scopes || [];
+      if(!c.connected || scopes.length === 0) return '';
+      const w = (area) => scopes.some((x) => x === 'all:' + area || x === 'write:' + area);
+      const missing = ['bookings', 'inventory'].filter((a) => !w(a));
+      return missing.length
+        ? "Token Beds24'ga yoza olmaydi (" + missing.join(', ') + "): bronlar, narx va yopiq kunlar yuborilmaydi. " +
+          "Beds24'da yozish huquqli invite code yarating va qayta ulang."
+        : '';
+    }
+
     async function loadChannels(){
-      if(!isFounder()) return;
+      if(!canRead()) return;
       const cards = $('chConnCards');
       try{
         const s = await api('/api/admin/status');
-        const c = s.connection;
+        const c = s.connection, r = s.reservations;
         $('chConnectBtn').textContent = c.connected ? 'Qayta ulash' : 'Ulash';
-        $('chDisconnectBtn').style.display = c.connected ? '' : 'none';
+        $('chDisconnectBtn').style.display = c.connected && canWrite() ? '' : 'none';
 
         const connState = !c.connected
           ? pill({ label: 'Ulanmagan', cls: 'free' })
           : c.lastCheckOk === false ? pill({ label: 'Xato', cls: 'busy' })
           : c.lastCheckOk ? pill({ label: 'Ishlayapti', cls: 'ok' }) : pill({ label: 'Tekshirilmagan', cls: 'wait' });
-        const b = s.bookings;
+        const warn = scopeWarning(c);
+        const red = (t) => '<div class="ch-sub" style="color:var(--terracotta);margin-top:8px;">' + esc(t) + '</div>';
         cards.innerHTML =
           '<div class="card"><div class="card-title">Beds24 ulanishi</div>' +
-            '<div class="ch-kv"><span class="k">Holati</span><span class="v">' + connState + '</span></div>' +
-            '<div class="ch-kv"><span class="k">Obyekt ID</span><span class="v">' + esc(c.propertyId || '—') + '</span></div>' +
-            '<div class="ch-kv"><span class="k">Oxirgi tekshiruv</span><span class="v">' + when(c.lastCheckedAt) + '</span></div>' +
-            '<div class="ch-kv"><span class="k">Kredit (5 daq.)</span><span class="v">' + (c.credits.remaining === null ? '—' : c.credits.remaining) + '</span></div>' +
-            (c.lastError ? '<div class="ch-sub" style="color:var(--terracotta);margin-top:8px;">' + esc(c.lastError) + '</div>' : '') +
-            (!c.encryptionKeySet ? '<div class="ch-sub" style="color:var(--terracotta);margin-top:8px;">Serverda ENCRYPTION_KEY yo\'q — ulab bo\'lmaydi (SERVER.md)</div>' : '') +
+            kv('Holati', connState) +
+            kv('Obyekt ID', esc(c.propertyId || '—')) +
+            kv('Valyuta', esc((c.currency && c.currency.channel) || '—') + (c.fx ? ' · 1 $ = ' + som(c.fx.rate) + " so'm" : '')) +
+            kv('Oxirgi tekshiruv', when(c.lastCheckedAt)) +
+            kv('Kredit (5 daq.)', c.credits.remaining === null ? '—' : c.credits.remaining, c.credits.isLow) +
+            (c.lastError ? red(c.lastError) : '') +
+            (warn ? red(warn) : '') +
+            (!c.encryptionKeySet ? red("Serverda ENCRYPTION_KEY yo'q — ulab bo'lmaydi (SERVER.md). Invite code ishlatilmaydi.") : '') +
           '</div>' +
-          '<div class="card"><div class="card-title">Beds24 bronlari (hozirgi va kelgusi)</div>' +
-            '<div class="ch-kv"><span class="k">Faol</span><span class="v">' + b.activeTotal + '</span></div>' +
-            '<div class="ch-kv"><span class="k">PMS bilan mos</span><span class="v">' + b.matched + '</span></div>' +
-            '<div class="ch-kv"><span class="k">Farq bor</span><span class="v">' + b.mismatch + '</span></div>' +
-            '<div class="ch-kv"><span class="k" style="color:var(--terracotta);">PMS\'da yo\'q</span><span class="v" style="color:var(--terracotta);">' + b.missingInPms + '</span></div>' +
-            '<div class="ch-sub">Oxirgi o\'qish: ' + when(b.lastPollAt) + '</div>' +
+          '<div class="card"><div class="card-title">Bronlar (hozirgi va kelgusi)</div>' +
+            kv("Beds24'dan kelgan", r.fromChannel) +
+            kv("Beds24'ga yuborilgan", r.synced) +
+            kv('Kutmoqda', r.pending) +
+            kv('Xato', r.failed, r.failed > 0) +
+            kv('Rad etilgan', r.rejected, r.rejected > 0) +
+            '<div class="ch-sub">Muammolilar — "Bronlar" bo\'limida; rad etilgan bron avtomatik qayta yuborilmaydi</div>' +
           '</div>' +
-          '<div class="card"><div class="card-title">Kuzatuv</div>' +
-            '<div class="ch-kv"><span class="k">Rejim</span><span class="v">faqat o\'qish</span></div>' +
-            '<div class="ch-kv"><span class="k">Avtomatik tekshiruv</span><span class="v">' + (c.monitorMinutes > 0 ? 'har ' + c.monitorMinutes + ' daq.' : "o'chiq") + '</span></div>' +
-            '<div class="ch-kv"><span class="k">Webhook</span><span class="v">' + (c.webhookConfigured ? 'sozlangan' : "yo'q") + ' · 24 soatda ' + s.webhooks24h + '</span></div>' +
-            '<div class="ch-kv"><span class="k">Xatolar (24 soat)</span><span class="v">' + s.failed24h + '</span></div>' +
+          '<div class="card"><div class="card-title">Avtomatika</div>' +
+            kv('Polling', c.pollIntervalMinutes > 0 ? 'har ' + c.pollIntervalMinutes + ' daq.' : "o'chiq") +
+            kv("Oxirgi o'qish", when(s.lastPollAt)) +
+            kv('Webhook', (c.webhookConfigured ? 'sozlangan' : "yo'q") + ' · 24 soatda ' + s.webhooks24h) +
+            kv("Qo'lda hal qilish", s.needsAction, s.needsAction > 0) +
+            kv('Xatolar (24 soat)', s.failed24h, s.failed24h > 0) +
             '<div class="ch-sub"><a class="ch-link" href="/admin/connection.html" target="_blank">Ulanish sahifasi ↗</a></div>' +
           '</div>';
         await loadMapping(c.connected);
@@ -6040,6 +5908,7 @@
 
     async function loadMapping(connected){
       const box = $('chMappingCard');
+      const w = canWrite();
       try{
         const [m, rooms, types] = await Promise.all([
           api('/api/admin/mapping'),
@@ -6051,30 +5920,34 @@
         if(connected){ try{ ext = (await api('/api/admin/mapping/external')).property; }catch(e){ ext = null; } }
 
         const h = m.health;
-        let html = '<div class="ch-kv"><span class="k">Bog\'langan PMS xonalari</span><span class="v">' + h.roomsMapped + ' / ' + h.roomsTotal +
-          (h.isComplete ? ' ' + pill({ label: "To'liq", cls: 'ok' }) : '') + '</span></div>';
+        let html = kv("Bog'langan PMS xonalari", h.roomsMapped + ' / ' + h.roomsTotal +
+          (h.isComplete ? ' ' + pill({ label: "To'liq", cls: 'ok' }) : ''));
         if(!ext){
           html += '<div class="ch-sub" style="margin-top:8px;">' + (connected ? "Beds24 xonalarini o'qib bo'lmadi." : 'Beds24 ulanmagan.') + '</div>';
         } else {
+          const link = (attrs, text, danger) => w
+            ? '<span class="ch-link" style="cursor:pointer;' + (danger ? 'color:var(--terracotta);' : '') + '" ' + attrs + '>' + text + '</span>'
+            : '';
           html += '<div class="table-wrap" style="margin-top:12px;"><table><thead><tr><th>Beds24 xona turi</th><th>Unit</th><th>PMS</th><th>Nonushta</th><th></th></tr></thead><tbody>';
           ext.roomTypes.forEach((rt) => {
             const typeMap = m.mappings.find((x) => x.level === 'type' && x.externalRoomTypeId === rt.id);
             html += '<tr><td><b>' + esc(rt.name) + '</b><div class="ch-sub">#' + esc(rt.id) + ' · ' + rt.qty + ' ta</div></td><td>—</td>' +
               '<td>' + (typeMap ? esc(typeMap.roomTypeLabel || typeMap.roomTypeId) : '<span class="ch-sub">tarif bog\'lanmagan</span>') + '</td>' +
               '<td>' + (typeMap ? (typeMap.includesMeal ? 'bilan' : 'siz') : '') + '</td>' +
-              '<td><span class="ch-link" style="cursor:pointer;" data-map-type="' + esc(rt.id) + '" data-name="' + esc(rt.name) + '">' + (typeMap ? "o'zgartirish" : "tarifga bog'lash") + '</span></td></tr>';
+              '<td>' + link('data-map-type="' + esc(rt.id) + '" data-name="' + esc(rt.name) + '"', typeMap ? "o'zgartirish" : "tarifga bog'lash") +
+              (typeMap ? link('data-unmap="' + esc(typeMap.id) + '"', ' · olib tashlash', true) : '') + '</td></tr>';
             rt.units.forEach((u) => {
               const um = m.mappings.find((x) => x.level === 'unit' && x.externalRoomTypeId === rt.id && x.externalUnitId === u.id);
               html += '<tr><td class="ch-sub" style="padding-left:24px;">↳ ' + esc(rt.name) + '</td><td>' + esc(u.name) + ' <span class="ch-sub">#' + esc(u.id) + '</span></td>' +
                 '<td>' + (um ? esc(um.roomNumber || um.roomId) + '-xona' : '<span class="ch-sub" style="color:var(--terracotta);">bog\'lanmagan</span>') + '</td><td></td>' +
-                '<td><span class="ch-link" style="cursor:pointer;" data-map-unit="' + esc(u.id) + '" data-rt="' + esc(rt.id) + '" data-name="' + esc(rt.name + ' / ' + u.name) + '">' + (um ? "o'zgartirish" : "xonaga bog'lash") + '</span>' +
-                (um ? ' · <span class="ch-link" style="cursor:pointer;color:var(--terracotta);" data-unmap="' + esc(um.id) + '">olib tashlash</span>' : '') + '</td></tr>';
+                '<td>' + link('data-map-unit="' + esc(u.id) + '" data-rt="' + esc(rt.id) + '" data-name="' + esc(rt.name + ' / ' + u.name) + '"', um ? "o'zgartirish" : "xonaga bog'lash") +
+                (um ? link('data-unmap="' + esc(um.id) + '"', ' · olib tashlash', true) : '') + '</td></tr>';
             });
           });
           html += '</tbody></table></div>';
         }
         if(h.unmappedRooms.length){
-          html += '<div class="ch-sub" style="margin-top:10px;">Bog\'lanmagan PMS xonalari: ' + h.unmappedRooms.map(esc).join(', ') + '</div>';
+          html += '<div class="ch-sub" style="margin-top:10px;">Bog\'lanmagan PMS xonalari (Beds24 bilan sinxronlanmaydi): ' + h.unmappedRooms.map(esc).join(', ') + '</div>';
         }
         box.innerHTML = html;
       }catch(e){
@@ -6108,6 +5981,18 @@
       });
     }
 
+    async function unmap(id, force){
+      try{
+        await api('/api/admin/mapping/' + encodeURIComponent(id) + (force ? '?force=1' : ''), { method: 'DELETE' });
+        loadChannels();
+      }catch(err){
+        // Faol Beds24 bronlari bor — ogohlantirib, egasi xohlasa majburan
+        if(err.code === 'MAPPING_HAS_ACTIVE_RESERVATIONS' && !force){
+          openConfirmModal("Faol bronlar bor", err.message, "Baribir olib tashlash", () => unmap(id, true), true);
+        } else fail(err.message);
+      }
+    }
+
     const mapBox = $('chMappingCard');
     if(mapBox) mapBox.addEventListener('click', (e) => {
       const t = e.target.closest('[data-map-type]');
@@ -6115,28 +6000,31 @@
       const u = e.target.closest('[data-map-unit]');
       if(u) return mapUnit(u.dataset.rt, u.dataset.mapUnit, u.dataset.name);
       const d = e.target.closest('[data-unmap]');
-      if(d) openConfirmModal("Bog'lanishni olib tashlash", "Bu unit endi PMS xonasi bilan solishtirilmaydi. Davom etasizmi?", 'Olib tashlash', async () => {
-        try{ await api('/api/admin/mapping/' + encodeURIComponent(d.dataset.unmap), { method: 'DELETE' }); loadChannels(); }
-        catch(err){ fail(err.message); }
-      }, true);
+      if(d) openConfirmModal("Bog'lanishni olib tashlash",
+        "Bu xona endi Beds24 bilan sinxronlanmaydi: bronlari va yopiq kunlari yuborilmaydi, Beds24 bronlari unga tushmaydi. Davom etasizmi?",
+        'Olib tashlash', () => unmap(d.dataset.unmap, false), true);
     });
 
     function connectForm(){
-      openFormModal('Beds24 ga ulash (faqat o\'qish)', [
-        { label: 'Invite code (Beds24 → Settings → Marketplace → API)', key: 'invite', value: '', placeholder: 'bir martalik kod' },
+      openFormModal("Beds24'ga ulash", [
+        { label: "Invite code (Beds24 → Settings → Marketplace → API → Invite code; bookings va inventory uchun yozish huquqi)", key: 'invite', value: '', placeholder: 'bir martalik kod' },
         { label: 'YOKI refresh token', key: 'refresh', type: 'password', value: '' },
-        { label: "Obyekt ID (bo'sh — birinchi obyekt)", key: 'propertyId', value: '' },
+        { label: "Obyekt ID (bo'sh — hisobdagi birinchi obyekt)", key: 'propertyId', value: '' },
       ], 'Ulash', async (v) => {
         const body = {};
-        if(v.invite) body.inviteCode = v.invite;
-        if(v.refresh) body.refreshToken = v.refresh;
-        if(v.propertyId) body.propertyId = v.propertyId;
-        if(!!body.inviteCode === !!body.refreshToken) return fail('Invite code YOKI refresh token kiriting (bittasini).');
+        if(v.invite) body.inviteCode = v.invite.trim();
+        if(v.refresh) body.refreshToken = v.refresh.trim();
+        if(v.propertyId) body.propertyId = v.propertyId.trim();
+        // Forma oynasi callback'dan keyin yopiladi — xabar undan keyin chiqsin
+        if(!!body.inviteCode === !!body.refreshToken) return setTimeout(() => fail('Invite code YOKI refresh token kiriting (bittasini).'), 0);
         try{
           const r = await api('/api/admin/connection', { method: 'POST', body });
-          openConfirmModal('Ulandi', r.ping && r.ping.ok
-            ? 'Obyekt: ' + r.ping.propertyName + ' (' + r.ping.currency + '), ' + r.ping.roomTypes + ' xona turi, ' + r.ping.units + ' unit.'
-            : 'Ulandi, lekin tekshiruv xato berdi: ' + ((r.ping && r.ping.error) || ''), 'Yaxshi', function(){});
+          const warn = scopeWarning(Object.assign({}, r.connection, { scopes: (r.ping && r.ping.scopes) || r.connection.scopes }));
+          info('Ulandi', (r.ping && r.ping.ok
+            ? 'Beds24: ' + (r.ping.detail || 'ishlayapti') + '. '
+            : 'Ulandi, lekin tekshiruv xato berdi: ' + ((r.ping && r.ping.detail) || '') + '. ') +
+            (warn ? warn + ' ' : '') +
+            "Xonalar hali bog'lanmagan bo'lsa — \"Unit'larni avtomatik bog'lash\": shundan keyin Beds24 bronlari import qilinadi. Bog'langan bo'lsa import va yuborish fonda boshlandi.");
           loadChannels();
         }catch(e){ fail(e.message); }
       });
@@ -6144,135 +6032,228 @@
 
     if($('chConnectBtn')) $('chConnectBtn').addEventListener('click', connectForm);
     if($('chDisconnectBtn')) $('chDisconnectBtn').addEventListener('click', () => {
-      openConfirmModal('Beds24 ulanishini uzish', "Token bazadan o'chiriladi, kuzatuv to'xtaydi. Jurnal va bog'lanishlar saqlanadi.", 'Uzish', async () => {
-        try{ await api('/api/admin/connection', { method: 'DELETE' }); loadChannels(); }catch(e){ fail(e.message); }
-      }, true);
+      openConfirmModal('Beds24 ulanishini uzish',
+        "Token bazadan o'chiriladi, sinxron to'xtaydi: bronlar va narxlar Beds24'ga yuborilmaydi, Beds24 bronlari kelmaydi. Bog'lanishlar va jurnal saqlanadi.",
+        'Uzish', async () => {
+          try{ await api('/api/admin/connection', { method: 'DELETE' }); loadChannels(); }catch(e){ fail(e.message); }
+        }, true);
     });
     if($('chPingBtn')) $('chPingBtn').addEventListener('click', async () => {
       const btn = $('chPingBtn'); busy(btn, true, 'Tekshirilmoqda…');
       try{
         const r = await api('/api/admin/connection/ping', { method: 'POST' });
-        openConfirmModal(r.ok ? 'Ulanish ishlayapti' : 'Ulanishda xato', r.ok
-          ? r.propertyName + ' · ' + r.currency + ' · ' + r.roomTypes + ' xona turi, ' + r.units + ' unit · kredit: ' + (r.credits.remaining ?? '—')
-          : r.error, 'Tushunarli', function(){});
+        openConfirmModal(r.ok ? 'Ulanish ishlayapti' : 'Ulanishda xato', r.detail || '', 'Tushunarli', function(){});
         loadChannels();
       }catch(e){ fail(e.message); }
       finally{ busy(btn, false); }
     });
     if($('chAutoUnitsBtn')) $('chAutoUnitsBtn').addEventListener('click', async () => {
+      const btn = $('chAutoUnitsBtn'); busy(btn, true, "Bog'lanmoqda…");
       try{
         const r = await api('/api/admin/mapping/auto-units', { method: 'POST' });
-        openConfirmModal('Avtomatik bog\'lash', r.mapped.length + " ta unit bog'landi (unit nomi = xona raqami)." +
-          (r.skipped.length ? ' Topilmadi: ' + r.skipped.map((x) => x.unitName).join(', ') + '.' : ''), 'Yaxshi', function(){});
+        info("Avtomatik bog'lash", r.mapped.length + " ta unit bog'landi (unit nomi = xona raqami)." +
+          (r.skipped.length ? ' PMS\'da topilmadi: ' + r.skipped.map((x) => x.unitName).join(', ') + '.' : '') +
+          (r.mapped.length ? " Beds24 bronlari fonda import qilinmoqda — natija Sinxronizatsiya jurnalida." : ''));
         loadChannels();
       }catch(e){ fail(e.message); }
+      finally{ busy(btn, false); }
     });
 
     // --------------------------------------------------------
     //  2. Sinxronizatsiya
     // --------------------------------------------------------
-    const KIND_UI = {
-      OVERSELL_RISK: { label: 'Ikki marta sotish xavfi', cls: 'busy' },
-      UNDERSELL: { label: 'OTA kam sotmoqda', cls: 'wait' },
-      PRICE_DIFF: { label: 'Narx farqi', cls: 'wait' },
-      PRICE_MISSING: { label: "Beds24'da narx yo'q", cls: 'free' },
-    };
-
-    function syncSummary(r){
-      if(!r) return '';
-      if(r.fetched !== undefined) return r.fetched + ' bron · mos ' + r.matched + ' · farq ' + r.mismatch + ' · PMS\'da yo\'q ' + r.missingInPms;
-      if(r.rows !== undefined) return r.days + ' kun, ' + r.roomTypes + ' tur';
-      if(r.compared !== undefined) return 'xavf ' + r.oversellRisk + ' · narx farqi ' + r.priceDiff + ' · narxsiz ' + r.priceMissing;
-      if(r.propertyName) return r.propertyName + ' · ' + r.currency;
-      if(r.rate) return '1 $ = ' + som(r.rate) + " so'm";
+    function syncSummary(l){
+      const r = l.response;
+      if(!r || typeof r !== 'object') return '';
+      if(r.fetched !== undefined) return r.fetched + ' bron · yangi ' + r.created + ' · yangilangan ' + r.updated +
+        (r.needsAction ? " · qo'lda " + r.needsAction : '') + (r.full ? ' (to\'liq)' : '');
+      if(r.changed !== undefined) return 'tekshirildi ' + r.checked + ' · o\'zgardi ' + r.changed + (r.keptPending ? ' · yuborilmagan PMS narxi saqlandi ' + r.keptPending : '');
+      if(r.driftDays !== undefined) return r.checkedDays !== undefined ? r.checkedDays + ' kun, farq ' + r.driftDays : 'farq ' + r.driftDays + ' kun';
+      if(r.externalId) return 'Beds24 #' + r.externalId + (r.created ? ' (yangi)' : '');
+      if(r.detail) return String(r.detail);
       return '';
     }
 
     async function loadSync(){
-      if(!isFounder()) return;
+      if(!canRead()) return;
       const tb = $('chSyncTbody');
       try{
         const [logs, drift] = await Promise.all([api('/api/admin/sync-log?limit=50'), api('/api/admin/channel/drift')]);
         tb.innerHTML = logs.length ? logs.map((l) =>
-          '<tr><td>' + esc(ACTION_UI[l.action] || l.action) + '</td><td>' + pill(STATUS_UI[l.status] || { label: l.status, cls: 'free' }) + '</td>' +
-          '<td>' + esc(l.errorMessage || syncSummary(l.response)) + '</td><td class="num">' + (l.durationMs ? l.durationMs + ' ms' : '—') + '</td>' +
+          '<tr><td>' + esc(ACTION_UI[l.action] || l.action) + '</td><td class="ch-sub">' + esc(DIR_UI[l.direction] || l.direction || '') + '</td>' +
+          '<td>' + pill(STATUS_UI[l.status] || { label: l.status, cls: 'free' }) + '</td>' +
+          '<td>' + esc(l.errorMessage || syncSummary(l)) + '</td><td class="num">' + (l.durationMs ? l.durationMs + ' ms' : '—') + '</td>' +
           '<td class="num">' + when(l.createdAt) + '</td></tr>').join('')
-          : '<tr><td colspan="5" class="ch-empty">Hali muloqot bo\'lmagan</td></tr>';
+          : '<tr><td colspan="6" class="ch-empty">Hali muloqot bo\'lmagan</td></tr>';
         renderDrift(drift);
       }catch(e){
-        tb.innerHTML = '<tr><td colspan="5" class="ch-empty" style="color:var(--terracotta);">' + esc(e.message) + '</td></tr>';
+        tb.innerHTML = '<tr><td colspan="6" class="ch-empty" style="color:var(--terracotta);">' + esc(e.message) + '</td></tr>';
       }
+      loadDeadLetters();
     }
 
     function renderDrift(d){
       const box = $('chDriftCard');
       if(!box) return;
-      if(!d){ box.innerHTML = '<div class="ch-sub">Farq hali tekshirilmagan. Avval "Narx va bo\'sh joyni o\'qish", keyin "Farqni tekshirish".</div>'; return; }
-      box.innerHTML = '<div class="card-title">Oxirgi farq tekshiruvi — ' + when(d.checkedAt) + ' (' + d.horizonDays + ' kun oldinga' +
-        (d.fx ? ', 1 $ = ' + som(d.fx.rate) + " so'm" : '') + ')</div>' +
-        '<div class="grid g4">' +
-          '<div class="ch-kv"><span class="k">Ikki marta sotish xavfi</span><span class="v" style="color:var(--terracotta);">' + d.oversellRisk + '</span></div>' +
-          '<div class="ch-kv"><span class="k">OTA kam sotmoqda</span><span class="v">' + d.undersell + '</span></div>' +
-          '<div class="ch-kv"><span class="k">Narx farqi</span><span class="v">' + d.priceDiff + '</span></div>' +
-          '<div class="ch-kv"><span class="k">Beds24\'da narx yo\'q</span><span class="v">' + d.priceMissing + '</span></div>' +
-        '</div>' +
-        (d.notes && d.notes.length ? '<div class="ch-sub" style="margin-top:8px;">' + d.notes.map(esc).join('<br>') + '</div>' : '') +
-        (d.issues.length ? '<div class="ch-issues"><table><tbody>' + d.issues.map((i) =>
-          '<tr><td class="num">' + esc(i.date) + '</td><td>' + esc(i.label) + '</td><td>' + pill(KIND_UI[i.kind]) + '</td><td>' + esc(i.note) + '</td></tr>').join('') +
-          '</tbody></table></div>' : '<div class="ch-sub" style="margin-top:8px;">Farq topilmadi — Beds24 va PMS bir xil.</div>');
+      if(!d){ box.innerHTML = '<div class="ch-sub">Bo\'sh joy farqi hali tekshirilmagan (avtomatik — har kuni 04:00).</div>'; return; }
+      const r = d.response || {};
+      const sample = r.sample || [];
+      box.innerHTML = '<div class="card-title">Oxirgi farq tekshiruvi — ' + when(d.at) + '</div>' +
+        (d.ok
+          ? '<div class="ch-sub">Farq yo\'q — PMS va Beds24 bo\'sh joyi bir xil' + (r.checkedDays ? ' (' + r.checkedDays + ' kun)' : '') + '.</div>'
+          : '<div class="ch-sub" style="color:var(--terracotta);">' + esc(d.error || ((r.driftDays || 0) + ' kunda farq')) +
+            '. Faqat qayd etiladi — tuzatish: "Yopiq kunlarni yuborish" / "Yuborilmaganlarni yuborish".</div>' +
+            (sample.length ? '<div class="ch-issues"><table><thead><tr><th>Sana</th><th>Tarif</th><th>PMS bo\'sh</th><th>Beds24 bo\'sh</th></tr></thead><tbody>' +
+              sample.map((i) => '<tr><td class="num">' + esc(i.date) + '</td><td>' + esc(i.roomTypeId) + '</td><td class="num">' + i.pms + '</td><td class="num">' + i.beds24 + '</td></tr>').join('') +
+              '</tbody></table></div>' : ''));
     }
 
-    function runBtn(id, path, label){
+    async function loadDeadLetters(){
+      const tb = $('chDlTbody');
+      if(!tb) return;
+      try{
+        const list = await api('/api/admin/dead-letters?limit=50');
+        tb.dataset.ids = JSON.stringify(list.map((x) => x.id));
+        tb.innerHTML = list.length ? list.map((j) =>
+          '<tr><td class="ch-sub">' + esc(j.sourceQueue) + '</td><td>' + esc(j.jobName) + '</td><td>' + esc(j.failedReason) + '</td>' +
+          '<td class="num">' + j.attempts + '</td><td class="num">' + when(j.failedAt) + '</td></tr>').join('')
+          : '<tr><td colspan="5" class="ch-empty">Yiqilgan vazifa yo\'q</td></tr>';
+      }catch(e){
+        tb.innerHTML = '<tr><td colspan="5" class="ch-empty" style="color:var(--terracotta);">' + esc(e.message) + '</td></tr>';
+      }
+    }
+
+    function runBtn(id, path, label, report){
       const btn = $(id);
       if(!btn) return;
       btn.addEventListener('click', async () => {
         busy(btn, true, label);
-        try{ await api(path, { method: 'POST' }); }
+        try{
+          const r = await api(path, { method: 'POST' });
+          if(report) info(btn.dataset.label || 'Bajarildi', report(r));
+        }
         catch(e){ fail(e.message); }
-        finally{ busy(btn, false); loadSync(); loadBookings(); }
+        finally{ busy(btn, false); loadSync(); }
       });
     }
-    runBtn('chPollBtn', '/api/admin/maintenance/poll', "O'qilmoqda…");
-    runBtn('chRatesBtn', '/api/admin/maintenance/pull-rates', "O'qilmoqda…");
-    runBtn('chDriftBtn', '/api/admin/maintenance/drift', 'Tekshirilmoqda…');
+    runBtn('chPollBtn', '/api/admin/maintenance/poll', "O'qilmoqda…",
+      (r) => r.fetched + ' bron o\'qildi: yangi ' + r.created + ', yangilangan ' + r.updated + (r.needsAction ? ", qo'lda hal qilish " + r.needsAction : '') + '.');
+    runBtn('chPollFullBtn', '/api/admin/maintenance/poll?full=1', "O'qilmoqda…",
+      (r) => "Beds24'dagi barcha faol bronlar: " + r.fetched + ' ta; yangi ' + r.created + ', yangilangan ' + r.updated + (r.needsAction ? ", qo'lda hal qilish " + r.needsAction : '') + '.');
+    runBtn('chCatchUpBtn', '/api/admin/maintenance/catch-up', 'Yuborilmoqda…',
+      (r) => 'Bronlar: ' + r.reservations.sent + ' yuborildi' + (r.reservations.failed ? ', xato ' + r.reservations.failed : '') +
+        (r.reservations.rejected ? ', rad etildi ' + r.reservations.rejected : '') + '. Yopiq kunlar: +' + r.blocks.created + ' / −' + r.blocks.cancelled +
+        (r.webhooks ? '. Webhook: ' + r.webhooks : '') + '.');
+    runBtn('chBlocksBtn', '/api/admin/maintenance/sync-blocks', 'Yuborilmoqda…',
+      (r) => r.rooms + ' xona tekshirildi: yangi ' + r.created + ', bekor ' + r.cancelled + (r.failed ? ', xato ' + r.failed : '') + '.');
+    runBtn('chRatesBtn', '/api/admin/maintenance/pull-rates', "O'qilmoqda…",
+      (r) => r.status === 'applied'
+        ? r.checked + ' kun tekshirildi, ' + r.changed + ' narx yangilandi' + (r.keptPending ? ', ' + r.keptPending + " kun PMS narxi (hali yuborilmagan) saqlandi" : '') + '.'
+        : (r.detail || r.status));
+    runBtn('chDriftBtn', '/api/admin/maintenance/drift', 'Tekshirilmoqda…',
+      (r) => r.checkedDays + ' kun tekshirildi: ' + (r.driftDays ? r.driftDays + ' kunda bo\'sh joy farq qiladi.' : 'farq yo\'q.'));
+
+    if($('chDlRequeueBtn')) $('chDlRequeueBtn').addEventListener('click', async () => {
+      const ids = JSON.parse(($('chDlTbody') && $('chDlTbody').dataset.ids) || '[]');
+      if(ids.length === 0) return;
+      try{
+        const r = await api('/api/admin/dead-letters/requeue', { method: 'POST', body: { ids } });
+        info('Qayta navbatga', r.requeued + ' ta vazifa qayta navbatga qo\'yildi' + (r.notFound ? ', topilmadi: ' + r.notFound : '') + '.');
+      }catch(e){ fail(e.message); }
+      loadSync();
+    });
+    if($('chDlClearBtn')) $('chDlClearBtn').addEventListener('click', () => {
+      openConfirmModal('Yiqilgan vazifalarni tozalash', "Ro'yxat o'chiriladi (qayta yuborilmaydi). Davom etasizmi?", 'Tozalash', async () => {
+        try{ await api('/api/admin/dead-letters', { method: 'DELETE' }); }catch(e){ fail(e.message); }
+        loadSync();
+      }, true);
+    });
 
     // --------------------------------------------------------
-    //  3. Bronlar jurnali
+    //  3. Bronlar
     // --------------------------------------------------------
-    async function loadBookings(){
-      if(!isFounder()) return;
-      const tb = $('chBookingsTbody');
-      const f = $('chMatchFilter') ? $('chMatchFilter').value : '';
+    function moneyCell(r){
+      if(r.currency === 'USD'){
+        return '$' + Number(r.totalPrice).toFixed(2) + (r.base ? '<div class="ch-sub">' + som(r.base.total) + " so'm · kurs " + som(r.exchangeRate) + '</div>' : '');
+      }
+      return som(r.totalPrice) + " so'm";
+    }
+
+    async function loadReservations(){
+      if(!canRead()) return;
+      const tb = $('chResTbody');
+      const f = $('chResFilter') ? $('chResFilter').value : 'problems';
+      const w = canWrite();
       try{
-        const [list, events, stats] = await Promise.all([
-          api('/api/admin/channel/bookings' + (f ? '?match=' + encodeURIComponent(f) : '')),
+        const list = await api('/api/admin/channel/reservations?filter=' + encodeURIComponent(f));
+        tb.innerHTML = list.length ? list.map((r) => {
+          // Beds24'dan kelgan bron "yuborilgan" emas — Beds24 bilan sinxron
+          const ui = r.origin === 'channel' && r.syncStatus === 'synced'
+            ? { label: 'Sinxron', cls: 'ok' }
+            : SYNC_UI[r.syncStatus] || { label: r.syncStatus, cls: 'free' };
+          const retry = w && ['failed', 'rejected', 'pending', 'not_applicable'].includes(r.syncStatus) && r.status !== 'cancelled'
+            ? '<span class="ch-link" style="cursor:pointer;" data-resync="' + esc(r.id) + '">qayta yuborish</span>' : '';
+          return '<tr><td>' + esc(r.guestName) + '<div class="ch-sub">' + r.adults + ' katta' + (r.children ? ', ' + r.children + ' bola' : '') +
+              (r.origin === 'channel' ? " · Beds24'dan" : '') + '</div></td>' +
+            '<td>' + esc(SOURCE_UI[r.source] || r.source) + (r.externalReference ? '<div class="ch-sub">#' + esc(r.externalReference) + '</div>' : '') +
+              (r.externalReservationId ? '<div class="ch-sub">Beds24 #' + esc(r.externalReservationId) + '</div>' : '') + '</td>' +
+            '<td class="num" style="white-space:nowrap;">' + esc(r.checkIn) + '<br>' + esc(r.checkOut) + '</td>' +
+            '<td>' + esc(r.roomId) + '</td>' +
+            '<td class="num">' + moneyCell(r) + '</td>' +
+            '<td>' + pill(ui) + (r.syncError ? '<div class="ch-sub" style="max-width:320px;">' + esc(r.syncError) + '</div>' : '') + '</td>' +
+            '<td>' + retry + '</td></tr>';
+        }).join('') : '<tr><td colspan="7" class="ch-empty">' + (f === 'problems' ? "Muammoli bron yo'q" : "Bron yo'q") + '</td></tr>';
+      }catch(e){
+        tb.innerHTML = '<tr><td colspan="7" class="ch-empty" style="color:var(--terracotta);">' + esc(e.message) + '</td></tr>';
+      }
+      loadWebhooks();
+    }
+
+    async function loadWebhooks(){
+      const w = canWrite();
+      try{
+        const [events, stats] = await Promise.all([
           api('/api/admin/webhook-events?limit=50'),
           api('/api/admin/webhook-events/stats'),
         ]);
-        tb.innerHTML = list.length ? list.map((b) => {
-          const ui = MATCH_UI[b.matchStatus] || { label: b.matchStatus, cls: 'free' };
-          return '<tr><td class="num">' + esc(b.externalId) + '</td>' +
-            '<td>' + esc(b.guestName) + '<div class="ch-sub">' + b.numAdult + ' katta' + (b.numChild ? ', ' + b.numChild + ' bola' : '') + '</div></td>' +
-            '<td>' + esc(b.source || '—') + (b.apiReference ? '<div class="ch-sub">#' + esc(b.apiReference) + '</div>' : '') + '</td>' +
-            '<td class="num" style="white-space:nowrap;">' + esc(b.arrival) + '<br>' + esc(b.departure) + '</td>' +
-            '<td>#' + esc(b.externalRoomTypeId) + (b.externalUnitId ? '/' + esc(b.externalUnitId) : '') + '</td>' +
-            '<td class="num">' + esc(b.price) + ' ' + esc(b.currency) + (b.priceUzs !== null && b.currency !== 'UZS' ? '<div class="ch-sub">≈ ' + som(b.priceUzs) + " so'm</div>" : '') + '</td>' +
-            '<td>' + esc(b.status) + (b.subStatus ? '<div class="ch-sub">' + esc(b.subStatus) + '</div>' : '') + '</td>' +
-            '<td>' + pill(ui) + (b.matchNote ? '<div class="ch-sub">' + esc(b.matchNote) + '</div>' : '') + '</td></tr>';
-        }).join('') : '<tr><td colspan="8" class="ch-empty">Bron yo\'q (yoki hali o\'qilmagan — Sinxronizatsiya → Hoziroq tekshirish)</td></tr>';
-
         $('chWebhookStats').textContent = stats.configured
           ? 'jami ' + stats.total + (stats.lastAt ? ' · oxirgisi ' + when(stats.lastAt) : '')
-          : 'webhook sozlanmagan (WEBHOOK_URL_TOKEN) — bronlar davriy tekshiruvda o\'qiladi';
+          : "webhook sozlanmagan (WEBHOOK_URL_TOKEN) — bronlar polling bilan keladi";
         $('chWebhookTbody').innerHTML = events.length ? events.map((e) =>
           '<tr><td>' + esc(e.eventType) + '</td><td class="num">' + esc(e.externalId || '—') + '</td><td>' + pill(STATUS_UI[e.status] || { label: e.status, cls: 'free' }) + '</td>' +
-          '<td>' + esc(e.errorMessage || '') + '</td><td class="num">' + when(e.createdAt) + '</td></tr>').join('')
-          : '<tr><td colspan="5" class="ch-empty">Webhook hodisasi yo\'q</td></tr>';
+          '<td>' + esc(e.errorMessage || '') + '</td><td class="num">' + when(e.createdAt) + '</td>' +
+          '<td>' + (w && (e.status === 'NEEDS_MANUAL_ACTION' || e.status === 'FAILED')
+            ? '<span class="ch-link" style="cursor:pointer;" data-reprocess="' + esc(e.id) + '">qayta ishlash</span>' : '') + '</td></tr>').join('')
+          : '<tr><td colspan="6" class="ch-empty">Webhook hodisasi yo\'q</td></tr>';
       }catch(e){
-        tb.innerHTML = '<tr><td colspan="8" class="ch-empty" style="color:var(--terracotta);">' + esc(e.message) + '</td></tr>';
+        $('chWebhookTbody').innerHTML = '<tr><td colspan="6" class="ch-empty" style="color:var(--terracotta);">' + esc(e.message) + '</td></tr>';
       }
     }
-    if($('chMatchFilter')) $('chMatchFilter').addEventListener('change', loadBookings);
+
+    if($('chResFilter')) $('chResFilter').addEventListener('change', loadReservations);
+    if($('chResTbody')) $('chResTbody').addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-resync]');
+      if(!b || b.dataset.busy) return;
+      b.dataset.busy = '1'; b.textContent = 'yuborilmoqda…';
+      try{
+        const r = await api('/api/reservations/' + encodeURIComponent(b.dataset.resync) + '/resync', { method: 'POST' });
+        const o = r.outcome || {};
+        info("Beds24'ga qayta yuborish", o.status === 'sent' ? "Yuborildi" + (o.externalId ? ' (Beds24 #' + o.externalId + ')' : '') + '.'
+          : o.status === 'skipped' ? "Yuborilmadi: " + o.reason
+          : (o.status === 'rejected' ? 'Beds24 yana rad etdi: ' : 'Xato: ') + (o.error || ''));
+      }catch(err){ fail(err.message); }
+      loadReservations();
+    });
+    if($('chWebhookTbody')) $('chWebhookTbody').addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-reprocess]');
+      if(!b || b.dataset.busy) return;
+      b.dataset.busy = '1'; b.textContent = 'ishlanmoqda…';
+      try{
+        const r = await api('/api/admin/webhook-events/' + encodeURIComponent(b.dataset.reprocess) + '/reprocess', { method: 'POST' });
+        info('Webhook qayta ishlandi', 'Holati: ' + ((STATUS_UI[r.status] || {}).label || r.status) + '.');
+      }catch(err){ fail(err.message); }
+      loadWebhooks();
+    });
 
     // Bo'limlar ochilganda yuklanadi
     const sysBtn = document.querySelector('.sys-btn[data-sys="channel"]');
@@ -6281,11 +6262,11 @@
       const t = btn.dataset.target;
       if(t === 'ch-channels') loadChannels();
       if(t === 'ch-sync') loadSync();
-      if(t === 'ch-log') loadBookings();
+      if(t === 'ch-log') loadReservations();
     }));
 
     // --------------------------------------------------------
-    //  Dollar kursi (Xona turlari) — faqat egasi
+    //  Dollar kursi (Xona turlari) — ko'rish: channel.read, o'zgartirish: channel.write
     // --------------------------------------------------------
     function renderFx(fx){
       if(!$('fxValue')) return;
@@ -6295,7 +6276,7 @@
         (fx.date ? ' · ' + fx.date : '') + ' · yangilangan ' + when(fx.updatedAt);
     }
     async function loadFx(){
-      if(!isFounder()) return;
+      if(!canRead()) return;
       try{ renderFx((await api('/api/admin/fx')).fx); }catch(e){ if($('fxMeta')) $('fxMeta').textContent = e.message; }
     }
     if($('fxSave')) $('fxSave').addEventListener('click', async () => {
@@ -6311,39 +6292,14 @@
     });
     document.querySelectorAll('.nav-item[data-target="room-types"]').forEach((b) => b.addEventListener('click', loadFx));
 
-    // --------------------------------------------------------
-    //  Umumiy hisobot -> "Kanal (Beds24)" kartasi
-    // --------------------------------------------------------
-    async function loadReportChannel(){
-      const box = $('repChannel');
-      if(!box || !isFounder()) return;
-      try{
-        const s = await api('/api/admin/status');
-        const c = s.connection, b = s.bookings, d = s.drift;
-        if(!c.connected && b.activeTotal === 0){
-          box.innerHTML = '<div class="ch-sub">Beds24 ulanmagan. Channel manager → Ulangan kanallar → Ulash (faqat o\'qish).</div>';
-          return;
-        }
-        box.innerHTML =
-          '<div class="grid g4">' +
-            '<div class="ch-kv"><span class="k">Ulanish</span><span class="v">' + (c.connected ? (c.lastCheckOk === false ? 'xato' : 'ishlayapti') : "uzilgan") + '</span></div>' +
-            '<div class="ch-kv"><span class="k">Beds24 faol bronlar</span><span class="v">' + b.activeTotal + '</span></div>' +
-            '<div class="ch-kv"><span class="k" style="color:var(--terracotta);">PMS\'da yo\'q</span><span class="v" style="color:var(--terracotta);">' + b.missingInPms + '</span></div>' +
-            '<div class="ch-kv"><span class="k">Farq bor</span><span class="v">' + b.mismatch + '</span></div>' +
-          '</div>' +
-          (d ? '<div class="ch-sub" style="margin-top:8px;">Farq tekshiruvi ' + when(d.checkedAt) + ': ikki marta sotish xavfi ' + d.oversellRisk +
-            ' kun, narx farqi ' + d.priceDiff + ', Beds24\'da narxsiz ' + d.priceMissing + '.</div>' : '') +
-          (b.missing.length ? '<div class="table-wrap" style="margin-top:10px;"><table><thead><tr><th>Beds24 #</th><th>Mehmon</th><th>Manba</th><th>Sanalar</th></tr></thead><tbody>' +
-            b.missing.map((x) => '<tr><td class="num">' + esc(x.externalId) + '</td><td>' + esc(x.guestName) + '</td><td>' + esc(x.source || '—') +
-              (x.apiReference ? ' #' + esc(x.apiReference) : '') + '</td><td class="num">' + esc(x.arrival) + ' — ' + esc(x.departure) + '</td></tr>').join('') +
-            '</tbody></table></div>' : '') +
-          '<div class="ch-sub" style="margin-top:8px;">Oxirgi o\'qish: ' + when(b.lastPollAt) + (s.fx ? ' · 1 $ = ' + som(s.fx.rate) + " so'm" : '') + '</div>';
-      }catch(e){
-        box.innerHTML = '<div class="ch-sub" style="color:var(--terracotta);">' + esc(e.message) + '</div>';
-      }
-    }
-    document.querySelectorAll('.nav-item[data-target="report"]').forEach((b) => b.addEventListener('click', loadReportChannel));
-    if($('repRefresh')) $('repRefresh').addEventListener('click', loadReportChannel);
+    // Beds24 ogohlantirishlari (WebSocket) — ochiq bo'limni yangilaydi
+    window.onChannelEvent = function(msg){
+      if(!canRead()) return;
+      const open = (id) => { const el = $(id); return el && el.classList.contains('active'); };
+      if(open('ch-sync')) loadSync();
+      if(open('ch-log')) loadReservations();
+      if(open('ch-channels') && msg.type !== 'rate.sync.updated') loadChannels();
+    };
   })();
 </script>
 </body>

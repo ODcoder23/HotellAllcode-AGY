@@ -6,23 +6,29 @@
  *   08-RESERVATION-STATUS-VA-TOLOV.md   — statuslar, to'lov
  *
  * Har amal bitta DB tranzaksiyasi: muvaffaqiyatli bo'lsa — bajarilgan.
- * Keyin availability keshi yangilanadi va ochiq oynalarga WebSocket
- * xabari ketadi. Tashqi tizim kutilmaydi (Beds24 2026-09-26 da olib
- * tashlangan).
+ * Keyin availability keshi yangilanadi, ochiq oynalarga WebSocket xabari
+ * va Beds24'ga navbat ketadi (`onReservationChanged`).
+ *
+ * MUHIM (TZ 17, 19-band): hech bir amal Beds24 javobini KUTMAYDI —
+ * Beds24 o'chiq bo'lsa ham bron, check-in, to'lov ishlaydi; sinxron
+ * holati `syncStatus` da, navbat va catch-up keyin yuboradi.
  */
 
 import { Prisma, type ReservationStatus, type ReservationSource } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { NotFoundError, RoomUnavailableError, ValidationError } from "../lib/errors.js";
+import { AppError, NotFoundError, RoomUnavailableError, ValidationError } from "../lib/errors.js";
 import { fromDateKey, toDateKey, serializeReservation } from "../lib/serialize.js";
 import { serializableTx } from "../lib/tx.js";
 import { hotelToday } from "../lib/hotelTime.js";
+import { isChannelOwned } from "../lib/channelOwnership.js";
 import { onAvailabilityChanged } from "./availability.js";
 import { recalcRoomStatus } from "./roomStatus.js";
+import { onReservationChanged } from "./reservationSync.js";
+import { rateFor } from "./exchangeRate.js";
 import {
-  formatMoney, mealTotalFor, nightsBetween, roomTotalFor, round2, stayPriceFromRates, toCents,
+  BASE_CURRENCY, baseRate, formatMoney, isBaseCurrency, mealTotalFor, nightsBetween,
+  roomTotalFor, round2, stayPriceFromRates, toCents,
 } from "../lib/money.js";
-import { assertSalesOpen } from "./salesStop.js";
 import {
   notifyReservation, notifyPayment, notifyRoomStatus,
 } from "../realtime/notify.js";
@@ -96,6 +102,41 @@ function assertMovable(status: ReservationStatus): void {
   if (MOVABLE_STATUSES.includes(status)) return;
   throw new ValidationError(
     `Bron "${STATUS_LABEL[status]}" holatida — xona yoki sanani o'zgartirib bo'lmaydi`
+  );
+}
+
+const SOURCE_LABEL: Partial<Record<ReservationSource, string>> = {
+  BOOKING_COM: "Booking.com",
+  AIRBNB: "Airbnb",
+  EXPEDIA: "Expedia",
+  OSTROVOK: "Ostrovok",
+};
+
+/**
+ * OTA bronini PMS o'zgartira olmaydigan amallar (mijoz qarori Q9:
+ * "Beds24 tanlovi doim ustuvor").
+ *
+ * Booking.com'dan kelgan bronning sanasi, narxi, mehmon soni va
+ * bekor qilinishi OTA'niki. PMS buni Beds24'ga yubormaydi (adapter
+ * `ota` rejimi) — yuborsa Beds24 xonani bo'shatardi, Booking.com'da esa
+ * bron turaverardi (overbooking). Yubormasa keyingi webhook yoki polling
+ * Beds24 qiymatini qaytarib yozadi va xodimning o'zgarishi jim yo'qoladi.
+ * Shuning uchun aniq rad etiladi.
+ *
+ * Ruxsat etilgan: check-in/out, kelmadi (belgi bilan), xonani SHU TUR
+ * ichida almashtirish, to'lov, izoh, ovqat.
+ */
+function assertChannelAllows(
+  res: { origin: string; source: ReservationSource; channelId: string | null; externalReservationId: string | null },
+  action: string
+): void {
+  if (!isChannelOwned(res)) return;
+  const ota = SOURCE_LABEL[res.source] ?? "OTA";
+  throw new AppError(
+    409,
+    `Bu bron ${ota} orqali kelgan: ${action} ${ota} extranet'ida (yoki Beds24'da) qilinadi. ` +
+    `O'zgarish Beds24 orqali PMS'ga o'zi keladi.`,
+    "CHANNEL_OWNED"
   );
 }
 
@@ -281,10 +322,6 @@ export async function createReservation(input: CreateInput) {
     throw new ValidationError("Chiqish sanasi kirish sanasidan keyin bo'lishi kerak.");
   }
 
-  // STOP (Sozlamalar -> Tizim nazorati): to'xtatilgan xonaga yangi bron
-  // yo'q. Kunlar ham yopiq, lekin xabar aniq bo'lsin ("xona band" emas)
-  await assertSalesOpen(input.roomId, (input.source ?? "").toUpperCase() === "WEBSITE" ? "guest" : "staff");
-
   // Transaction ichida emas: mavjudlik tekshiruvi tashqarida
   // bajarilsa transaction qulfini ushlab turmaydi
   const payerId = await resolveUserId(input.userId);
@@ -346,6 +383,8 @@ export async function createReservation(input: CreateInput) {
         adults: input.adults ?? 1,
         children: input.children ?? 0,
         source: (input.source?.toUpperCase() ?? "DIRECT") as ReservationSource,
+        // PMS broni (sayt, qabulxona) — so'mda (Q15). Dollar faqat Beds24'dan
+        currency: BASE_CURRENCY,
         // 4 xona: sayt narxi tariflar yig'indisi / kechalar (lib/money.ts)
         pricePerNight: new Prisma.Decimal(input.pricePerNight.toFixed(4)),
         priceReason: input.priceReason?.trim() || null,
@@ -381,6 +420,9 @@ export async function createReservation(input: CreateInput) {
   await notifyReservation("reservation.created", result.reservation.id);
   await notifyRoomStatus(result.reservation.roomId);
 
+  // TZ 2-band 1-amal: Beds24'ga yangi bron (checkAvailability bilan)
+  await onReservationChanged(result.reservation.id, "created");
+
   return result.reservation;
 }
 
@@ -398,7 +440,7 @@ export async function updateReservation(id: string, patch: UpdatePatch) {
    * `mealPricePerPerson` bo'sh qolardi — oshxona mehmonni sanardi,
    * lekin bron summasiga nonushta qo'shilmasdi (bepul ovqat).
    */
-  const mealPriceNow = patch.withMeal === true ? await getMealPrice() : null;
+  let mealPriceNow = patch.withMeal === true ? await getMealPrice() : null;
 
   const result = await prisma.$transaction(async (tx) => {
     const existing = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
@@ -408,6 +450,21 @@ export async function updateReservation(id: string, patch: UpdatePatch) {
     // o'zgartirganda ham narxni qaytaradi (4 xona bilan solishtiriladi)
     const priceChanged = patch.pricePerNight !== undefined
       && Math.round(patch.pricePerNight * 10_000) !== Math.round(Number(existing.pricePerNight) * 10_000);
+    const guestsChanged =
+      (patch.adults !== undefined && patch.adults !== existing.adults) ||
+      (patch.children !== undefined && patch.children !== existing.children);
+
+    // OTA broni: narx va mehmon soni OTA'niki (Q9)
+    if (priceChanged || guestsChanged) {
+      assertChannelAllows(existing, "narx va mehmon sonini o'zgartirish");
+    }
+
+    // Sozlama so'mda; dollar bronga (Beds24) bron kursi bilan o'giriladi —
+    // "tagida so'm" satrida nonushta aynan sozlamadagi narx bo'lib chiqsin
+    if (mealPriceNow !== null && !isBaseCurrency(existing.currency)) {
+      const rate = baseRate(existing, await rateFor(existing.currency));
+      mealPriceNow = rate ? mealPriceNow / rate : null;
+    }
 
     /**
      * Tarifdan past narx — sabab bilan (S4), yaratishdagi qoida bilan bir xil.
@@ -415,8 +472,9 @@ export async function updateReservation(id: string, patch: UpdatePatch) {
      * 2026-09-26 TUZATISH: tahrirda tekshiruv yo'q edi — bronni tarif
      * narxida yaratib, keyin narxni sababsiz 1 so'mga tushirish mumkin
      * edi. `priceReason` route'da qabul qilinardi, lekin yozilmasdi.
+     * Tarif so'mda — faqat so'm bronida solishtiriladi.
      */
-    if (priceChanged) {
+    if (priceChanged && isBaseCurrency(existing.currency)) {
       assertPriceOk(
         patch.pricePerNight!,
         nightsBetween(existing.checkIn, existing.checkOut),
@@ -455,6 +513,10 @@ export async function updateReservation(id: string, patch: UpdatePatch) {
   });
 
   await notifyReservation("reservation.updated", result.id);
+
+  // TZ 2-band: mehmon soni / narx / izoh — worker DB'dagi joriy holatni
+  // to'liq yuboradi (OTA bronida faqat xona va belgi)
+  await onReservationChanged(result.id, "updated");
   return result;
 }
 
@@ -469,6 +531,30 @@ export async function changeRoom(id: string, newRoomId: string) {
     if (!newRoom) throw new NotFoundError(`Xona ${newRoomId}`);
     if (!newRoom.isActive) throw new ValidationError(`Xona ${newRoomId} inventardan chiqarilgan`);
     if (newRoomId === res.roomId) throw new ValidationError("Bron allaqachon shu xonada");
+
+    // Shu tur ichida — mumkin (Beds24'da faqat unit o'zgaradi).
+    // Boshqa turga — OTA sotgan xona turi o'zgaradi, bu OTA'niki (Q9)
+    if (newRoom.roomTypeId !== res.room.roomTypeId) {
+      assertChannelAllows(res, "boshqa xona turiga ko'chirish");
+    }
+
+    // Beds24'dagi bron Beds24'da yo'q xonaga ko'chirilmaydi: u Beds24'da
+    // eski xonada qolardi va keyingi sinxron bronni jimgina qaytarardi
+    if (res.externalReservationId) {
+      const mapped = await tx.channelMapping.findFirst({
+        where: {
+          isActive: true,
+          OR: [{ roomId: newRoomId }, { roomTypeId: newRoom.roomTypeId, roomId: null }],
+        },
+        select: { id: true },
+      });
+      if (!mapped) {
+        throw new ValidationError(
+          `Xona ${newRoomId} Beds24 bilan bog'lanmagan — Beds24'dagi bronni unga ko'chirib bo'lmaydi ` +
+          `(Channel manager -> Xonalarni bog'lash)`
+        );
+      }
+    }
 
     // Xonadagi mehmonni ta'mirdagi yoki iflos xonaga ko'chirib bo'lmaydi
     if (res.status === "CHECKED_IN" && newRoom.status !== "AVAILABLE" && newRoom.status !== "RESERVED") {
@@ -503,6 +589,9 @@ export async function changeRoom(id: string, newRoomId: string) {
   await notifyReservation("reservation.updated", r.updated.id);
   await notifyRoomStatus(r.oldRoomId);
   await notifyRoomStatus(r.updated.roomId);
+
+  // TZ 2-band 3-amal (mijoz qarori Q6): Beds24'da ham ko'rinadi
+  await onReservationChanged(r.updated.id, "room_changed", { previousState: { roomId: r.oldRoomId } });
   return r.updated;
 }
 
@@ -519,6 +608,7 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
     if (!res) throw new NotFoundError("Bron");
     assertMovable(res.status);
+    assertChannelAllows(res, "sanani o'zgartirish");
 
     // Xonadagi mehmonning kirish sanasi — o'tgan fakt, uni o'zgartirib
     // bo'lmaydi; faqat chiqish sanasi (uzaytirish / qisqartirish)
@@ -542,12 +632,19 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
     const from = res.checkIn < checkIn ? res.checkIn : checkIn;
     const to = res.checkOut > checkOut ? res.checkOut : checkOut;
 
-    return { updated, roomTypeId: res.room.roomTypeId, from, to };
+    return {
+      updated, roomTypeId: res.room.roomTypeId, from, to,
+      previous: { checkIn: toDateKey(res.checkIn) ?? undefined, checkOut: toDateKey(res.checkOut) ?? undefined },
+    };
   }, "changeDates");
 
   await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "dates_changed");
   await notifyReservation("reservation.updated", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
+
+  // TZ 2-band 4-amal. Beds24 yangi sanada joy bo'lmasa rad etadi —
+  // bron REJECTED bo'ladi, Shaxmatka ogohlantiradi
+  await onReservationChanged(r.updated.id, "dates_changed", { previousState: r.previous });
   return r.updated;
 }
 
@@ -581,6 +678,9 @@ export async function confirmReservation(id: string) {
 
   await notifyReservation("reservation.updated", r.id);
   await notifyRoomStatus(r.roomId);
+
+  // Beds24'da status request -> confirmed
+  await onReservationChanged(r.id, "updated");
   return r;
 }
 
@@ -662,6 +762,9 @@ export async function checkIn(id: string) {
 
   await notifyReservation("reservation.updated", r.id);
   await notifyRoomStatus(r.roomId);
+
+  // TZ 2-band 8-amal (Q7): Beds24'da "Checked-in" belgisi
+  await onReservationChanged(r.id, "checked_in");
   return r;
 }
 
@@ -695,6 +798,9 @@ export async function checkOut(id: string) {
   await createOnCheckout(r.updated.roomId);
   await notifyReservation("reservation.updated", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
+
+  // TZ 2-band 8-amal: Beds24'da "Checked-out" belgisi (Q7)
+  await onReservationChanged(r.updated.id, "checked_out");
   return r.updated;
 }
 
@@ -709,11 +815,18 @@ export async function checkOut(id: string) {
  * NEGA JARIMA DAROMAD: xona band turgan va boshqa mehmonga
  * sotilmagan. Hisobotda "bekor qilingan = 0 daromad" ko'rsatish
  * haqiqatni buzardi.
+ *
+ * Beds24'dan kelgan bronga jarima QO'LLANMAYDI: OTA o'z siyosatini
+ * yuritadi. Bron qayerda tug'ilgani qaraladi (`origin`), `channelId`
+ * emas — PMS broni Beds24'ga yuborilgach unga ham `channelId` yoziladi.
  */
 async function cancellationFeeFor(res: {
   checkIn: Date;
   pricePerNight: Prisma.Decimal;
+  origin: string;
 }): Promise<number> {
+  if (res.origin === "CHANNEL") return 0;
+
   const [freeHours, feeNights] = await Promise.all([
     getFreeCancelHours(),
     getCancelFeeNights(),
@@ -734,9 +847,13 @@ export async function cancelReservation(id: string) {
   // o'qish qulfni ushlab turmasin
   const before = await prisma.reservation.findUnique({
     where: { id },
-    select: { checkIn: true, pricePerNight: true },
+    select: {
+      checkIn: true, pricePerNight: true, origin: true,
+      source: true, channelId: true, externalReservationId: true,
+    },
   });
   if (!before) throw new NotFoundError("Bron");
+  assertChannelAllows(before, "bekor qilish");
 
   const fee = await cancellationFeeFor(before);
 
@@ -770,6 +887,9 @@ export async function cancelReservation(id: string) {
   }
   await notifyReservation("reservation.cancelled", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
+
+  // TZ 2-band 7-amal: Beds24'da status=cancelled
+  await onReservationChanged(r.updated.id, "cancelled");
   return r.updated;
 }
 
@@ -787,7 +907,7 @@ export async function previewCancellation(id: string): Promise<{
 }> {
   const res = await prisma.reservation.findUnique({
     where: { id },
-    select: { checkIn: true, pricePerNight: true },
+    select: { checkIn: true, pricePerNight: true, origin: true },
   });
   if (!res) throw new NotFoundError("Bron");
 
@@ -828,6 +948,10 @@ export async function markNoShow(id: string) {
   await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "no_show");
   await notifyReservation("reservation.cancelled", r.updated.id);
   await notifyRoomStatus(r.updated.roomId);
+
+  // Beds24'da: PMS broni -> cancelled + noShow; OTA broni -> faqat
+  // "No-show" belgisi, statusni OTA hal qiladi (statusMap.ts)
+  await onReservationChanged(r.updated.id, "no_show");
   return r.updated;
 }
 
@@ -910,19 +1034,59 @@ async function lockReservation(tx: Prisma.TransactionClient, reservationId: stri
  *   2. Manfiy to'lov (qaytarish) to'langandan oshmasin — aks holda
  *      balans manfiyga tushib, mehmonxona mehmondan qarzdor
  *      bo'lib qolardi
+ *
+ * VALYUTA (Q15): summa bron valyutasida. Dollar bronda (Beds24) xodim
+ * valyutani tanlaydi: mehmon so'mda to'lasa `currency: "UZS"` — BRON
+ * KURSI bilan (bron kelgan kun, 2026-09-27 egasi qarori) dollarga
+ * o'giriladi va qarzdan ayriladi. Shaxmatkadagi "tagida so'm" qarz
+ * aynan shu kurs bilan — mehmon ko'rgan so'm summasini to'lasa qarz
+ * nolga tushadi. Asl so'm summasi va kurs to'lovda saqlanadi (kassa
+ * hisoboti aynan tushgan so'mni ko'radi).
  */
 export async function addPayment(
   reservationId: string,
   amount: number,
   method: string,
   note?: string,
-  userId?: string
+  userId?: string,
+  currency?: string
 ) {
-  // Tiyingacha: 12.345 kabi qiymat bazada yarim tiyin bo'lib qolmasin
+  const res = await prisma.reservation.findUnique({
+    where: { id: reservationId },
+    select: { currency: true, exchangeRate: true },
+  });
+  if (!res) throw new NotFoundError("Bron");
+
+  const resCurrency = (res.currency || BASE_CURRENCY).toUpperCase();
+  const payCurrency = (currency || resCurrency).toUpperCase();
+
+  // Boshqa valyutadagi to'lov: faqat dollar bronga so'm
+  let original: { amount: number; currency: string; rate: number } | null = null;
+  if (payCurrency !== resCurrency) {
+    if (!isBaseCurrency(payCurrency) || isBaseCurrency(resCurrency)) {
+      throw new ValidationError(`Bu bronga to'lov ${resCurrency} yoki so'mda qabul qilinadi (${payCurrency} emas)`);
+    }
+    const rate = baseRate(res, await rateFor(resCurrency));
+    if (!rate) {
+      throw new ValidationError(
+        `${resCurrency} kursi noma'lum (Markaziy bank javob bermadi) — to'lovni ${resCurrency} da kiriting`
+      );
+    }
+    original = { amount: round2(amount), currency: BASE_CURRENCY, rate };
+    amount = amount / rate;
+  }
+
+  // Sentgacha: 12.345 kabi qiymat bazada yarim sent bo'lib qolmasin
   amount = round2(amount);
   if (amount === 0) {
     throw new ValidationError("To'lov summasi noldan farqli bo'lishi kerak");
   }
+
+  // Xabar bron valyutasida; so'mda kiritilgan bo'lsa so'm qiymati ham
+  const m = (n: number) =>
+    original
+      ? `${formatMoney(n, resCurrency)} (${formatMoney(n * original.rate)})`
+      : formatMoney(n, resCurrency);
 
   const payerId = await resolveUserId(userId);
 
@@ -930,19 +1094,18 @@ export async function addPayment(
     await lockReservation(tx, reservationId);
     const { paid, due } = await currentBalance(reservationId, tx);
 
-    // Solishtirish tiyinda — float qoldig'i to'liq to'lovni rad etmasin
+    // Solishtirish sentda — float qoldig'i to'liq to'lovni rad etmasin
     if (amount > 0 && toCents(amount) > toCents(due)) {
       throw new ValidationError(
         due <= 0
           ? "Bron to'liq to'langan — qo'shimcha to'lov qabul qilinmaydi"
-          : `To'lov qarzdan oshib ketdi: qarz ${formatMoney(due)}, kiritilgan ${formatMoney(amount)}`
+          : `To'lov qarzdan oshib ketdi: qarz ${m(due)}, kiritilgan ${m(amount)}`
       );
     }
 
     if (amount < 0 && toCents(-amount) > toCents(paid)) {
       throw new ValidationError(
-        `Qaytarish summasi to'langandan ko'p: to'langan ${formatMoney(paid)}, ` +
-        `qaytarilmoqchi ${formatMoney(-amount)}`
+        `Qaytarish summasi to'langandan ko'p: to'langan ${m(paid)}, qaytarilmoqchi ${m(-amount)}`
       );
     }
 
@@ -954,6 +1117,13 @@ export async function addPayment(
         paymentDate: hotelToday(),
         note,
         userId: payerId,
+        ...(original
+          ? {
+              originalAmount: new Prisma.Decimal(original.amount),
+              originalCurrency: original.currency,
+              exchangeRate: new Prisma.Decimal(original.rate),
+            }
+          : {}),
       },
     });
   });
@@ -970,7 +1140,9 @@ export async function addPayment(
  * To'lovni qaytarish — manfiy summa sifatida yoziladi.
  *
  * Asl to'lov o'chirilmaydi: audit uchun "qabul qilindi, keyin
- * qaytarildi" ikkalasi ham ko'rinib tursin.
+ * qaytarildi" ikkalasi ham ko'rinib tursin. So'mda qabul qilingan
+ * to'lov (dollar bronda) — aynan o'sha so'm qaytariladi: kassa
+ * hisobotida to'lov va qaytarish bir-birini yopadi.
  */
 export async function reversePayment(
   reservationId: string,
@@ -1006,14 +1178,18 @@ export async function reversePayment(
       throw new ValidationError("Bu to'lov allaqachon qaytarilgan");
     }
 
+    const res = await tx.reservation.findUniqueOrThrow({ where: { id: reservationId }, select: { currency: true } });
+
     // Balansni manfiyga tushirmaslik (S2): qo'lda manfiy to'lov kiritilgan
     // yoki eski (bog'lanishsiz) qaytarish bo'lsa to'sadi
     const { paid } = await currentBalance(reservationId, tx);
     if (toCents(amount) > toCents(paid)) {
       throw new ValidationError(
-        `Bu to'lov allaqachon qaytarilgan (to'langan qoldiq ${formatMoney(paid)})`
+        `Bu to'lov allaqachon qaytarilgan (to'langan qoldiq ${formatMoney(paid, res.currency)})`
       );
     }
+
+    const paidInOther = payment.originalAmount !== null && payment.originalCurrency;
 
     await tx.payment.create({
       data: {
@@ -1021,9 +1197,18 @@ export async function reversePayment(
         amount: new Prisma.Decimal(-amount),
         method: payment.method,
         paymentDate: hotelToday(),
-        note: `Qaytarildi: ${formatMoney(amount)} (${payment.method})`,
+        note: paidInOther
+          ? `Qaytarildi: ${formatMoney(Number(payment.originalAmount), payment.originalCurrency!)} (${payment.method})`
+          : `Qaytarildi: ${formatMoney(amount, res.currency)} (${payment.method})`,
         userId: payerId,
         reversedPaymentId: paymentId,
+        ...(paidInOther
+          ? {
+              originalAmount: payment.originalAmount!.negated(),
+              originalCurrency: payment.originalCurrency,
+              exchangeRate: payment.exchangeRate,
+            }
+          : {}),
       },
     });
   });
@@ -1070,22 +1255,6 @@ export async function addCharge(reservationId: string, label: string, amount: nu
 }
 
 // --- O'qish -------------------------------------------------
-
-/**
- * OTA bron raqami — faqat kanal kuzatuvi uchun (2026-09-27, founder).
- * Pul, sana, holatga tegmaydi; boshqa bron qoidalari o'zgarmaydi.
- */
-export async function setExternalReference(id: string, externalReference: string | null) {
-  const exists = await prisma.reservation.findUnique({ where: { id }, select: { id: true } });
-  if (!exists) throw new NotFoundError("Bron");
-  const updated = await prisma.reservation.update({
-    where: { id },
-    data: { externalReference },
-    include: reservationInclude,
-  });
-  await notifyReservation("reservation.updated", id);
-  return updated;
-}
 
 export async function listReservations(from?: string, to?: string) {
   const where: Prisma.ReservationWhereInput = {};

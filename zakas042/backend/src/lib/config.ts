@@ -124,24 +124,29 @@ export const config = {
   /**
    * Beds24 tokenlarini shifrlash kaliti (AES-256-GCM, 64 hex belgi).
    *
-   * Faqat kanal kuzatuvi uchun kerak (2026-09-27). Bo'sh bo'lsa server
-   * ishlayveradi — faqat Beds24'ga ulanib bo'lmaydi va founder aniq
-   * xabar oladi.
+   * Bo'sh bo'lsa server ishlayveradi — faqat Beds24'ga ulanib bo'lmaydi
+   * va admin aniq xabar oladi (invite code ishlatilmasdan oldin).
    */
   encryptionKey: process.env.ENCRYPTION_KEY ?? "",
 
   /**
-   * Kanal kuzatuvi — Beds24 (FAQAT O'QISH, FAQAT FOUNDER).
+   * Beds24 — channel manager (TZ 1-13-band, 2026-09-27 da qaytdi).
    *
-   * PMS Beds24'dan bronlar, kalendar va narxni o'qib o'zi bilan
-   * solishtiradi. Beds24'ga ham, PMS bronlariga ham yozmaydi.
+   * Ulanish admin paneldan (Channel manager -> Ulash) qilinadi, token
+   * bazada shifrlangan saqlanadi. Ulanish bo'lmasa hamma sinxron vazifa
+   * jim o'tkazib yuboriladi — PMS mustaqil ishlayveradi (TZ 17-band).
    */
   beds24: {
     baseUrl: (process.env.BEDS24_BASE_URL ?? "https://beds24.com/api/v2").replace(/\/$/, ""),
-    /** Davriy tekshiruv oralig'i, daqiqa. 0 — o'chiq (faqat tugma bilan) */
-    monitorMinutes: num("CHANNEL_MONITOR_MINUTES", 60),
-    /** Bo'sh joy va narx necha kun oldinga solishtiriladi */
-    horizonDays: num("CHANNEL_HORIZON_DAYS", 60),
+    /** 5 daqiqalik kredit limiti (Beds24 standarti ~100) */
+    creditLimit: num("BEDS24_CREDIT_LIMIT", 100),
+    /** Shundan kam qolsa ogohlantiriladi */
+    creditSafetyThreshold: num("BEDS24_CREDIT_SAFETY_THRESHOLD", 10),
+    /**
+     * Polling (webhook zaxirasi) va catch-up oralig'i, daqiqa.
+     * 0 — o'chiq (faqat tugma bilan; testlar)
+     */
+    pollIntervalMinutes: num("POLL_INTERVAL_MINUTES", 15),
     /**
      * Webhook URL'idagi maxfiy token: `/api/webhooks/beds24/<token>`.
      * Bo'sh bo'lsa webhook qabul qilinmaydi (404). Beds24 webhook'ida
@@ -150,9 +155,12 @@ export const config = {
     webhookUrlToken: process.env.WEBHOOK_URL_TOKEN ?? "",
   },
 
-  /** Dollar kursi manbai — O'zbekiston Markaziy banki */
+  /**
+   * Dollar kursi manbai — O'zbekiston Markaziy banki. Bo'sh bo'lsa
+   * `https://cbu.uz/uz/arkhiv-kursov-valyut/json/<VALYUTA>/`
+   */
   fx: {
-    cbuUrl: process.env.FX_CBU_URL ?? "https://cbu.uz/uz/arkhiv-kursov-valyut/json/USD/",
+    cbuUrl: process.env.FX_CBU_URL ?? "",
   },
 
   pendingPaymentTimeoutHours: num("PENDING_PAYMENT_TIMEOUT_HOURS", 24),

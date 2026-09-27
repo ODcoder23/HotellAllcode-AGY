@@ -1,82 +1,126 @@
-# Beds24 — faqat egasi uchun KUZATUV
+# Beds24 — ikki tomonlama integratsiya
 
-**Holat (2026-09-27).** PMS Beds24 bilan **integratsiya qilinmaydi**:
-2026-09-26 da egasi qarori bilan olib tashlangan (avtomatik import, PMS →
-Beds24 yozish, "Beds24 ustuvor" qoidasi, `CHANNEL_OWNED` qulfi, $ to'lov).
-Booking.com va boshqa OTA bronlarini qabulxona qo'lda kiritadi.
+**Holat (2026-09-27, egasi qarori Q19).** Beds24 integratsiyasi
+**avvalgidek qaytdi**: Beds24 bronlari PMS'ga tushadi; PMS bronlari,
+narxlari va yopiq kunlari Beds24'ga yuboriladi. 2026-09-26 dagi olib
+tashlash (Q18) va 2026-09-27 ertalabki "faqat kuzatuv" rejimi bekor.
+STOP (Q17) butunlay olib tashlandi — sotuvni to'xtatish Beds24 panelida.
 
-2026-09-27 dan egasi (**FOUNDER**) uchun Channel manager **kuzatuv
-rejimida** ishlaydi: PMS Beds24'dan faqat o'qiydi (`services/beds24/client.ts`
-faqat `GET`) va o'zi bilan solishtiradi. PMS bronlari, narxlari va Beds24'ga
-hech narsa yozilmaydi. Boshqa rollar bu bo'limni ko'rmaydi (403).
+Qarorlar: [zakas042/TZ-ASL.md](zakas042/TZ-ASL.md) (Q9, Q15, Q19).
 
 ---
 
-## 1. Nima ko'rsatiladi
+## 1. Qoidalar — kim nimani o'zgartiradi
 
-| Qayerda | Nima |
-|---|---|
-| Channel manager → Ulangan kanallar | ulanish, kredit, mapping (tur/unit), "Ulanishni tekshirish" |
-| Channel manager → Sinxronizatsiya | jurnal (`SyncLog`); "Hoziroq tekshirish" (bronlar), "Narx va bo'sh joyni o'qish", "Farqni tekshirish" |
-| Channel manager → Bronlar jurnali | Beds24 bronlari PMS bilan: mos / farq / PMS'da yo'q / bog'lanmagan / bron emas; webhook hodisalari |
-| Umumiy hisobot → Kanal (Beds24) | PMS'da yo'q bronlar, farqlar xulosasi |
-| Xona turlari → Dollar kursi | Markaziy bank (har 3 soat) yoki qo'lda — faqat ko'rsatish |
-| Narxlar | kurs, `$`, Beds24 narxi bilan holat nuqtasi, "Beds24: tur …" |
-| Shaxmatka bron oynasi | `$` summa, OTA bron raqami (`externalReference`), Beds24'dagi mos bron |
-| `/admin/connection.html`, `/admin/mapping.html`, `/admin/sync-log.html` | shu ma'lumot alohida sahifada |
+**Beds24 ustuvor (Q9).** Beds24 — markaziy tizim, Shaxmatka — uni
+boshqarish oynasi.
 
-**Solishtiruv qoidasi** (`services/channel/monitor.ts`): avval OTA raqami
-(`apiReference` = PMS `externalReference`), keyin xona (unit bog'lanishi)
-yoki tarif (tur bog'lanishi) + sanalar. Har ochilishda PMS'ning joriy
-holatidan qayta hisoblanadi (Beds24'ga so'rovsiz). Farq tekshiruvi:
-Beds24 `numAvail` > PMS bo'sh xonalar → "ikki marta sotish xavfi"; narx
-`price1` × kurs PMS narxidan 2% dan ko'p farq qilsa → "narx farqi".
-Beds24 javobidan yo'qolgan bron `deleted` bo'ladi (yolg'on "PMS'da yo'q"
-signal bermaydi).
+| Nima | Qayerda o'zgaradi | PMS'da |
+|---|---|---|
+| OTA broni (Booking.com, Ostrovok...) sanasi, narxi, mehmon soni, bekor qilish | OTA'da | qulf — `409 CHANNEL_OWNED`, tugmalar yashirin |
+| OTA bronida kirish/chiqish, to'lov, izoh, nonushta, shu turdagi xonaga ko'chirish | PMS'da | Beds24'ga faqat xona va belgi (`flagText`) ketadi |
+| Qabulxona / sayt broni | PMS'da | Beds24'ga to'liq yuboriladi |
+| Xona yopish (ta'mir) | PMS'da | Beds24'da `black` bron bo'ladi; ochilsa bekor qilinadi |
+| Beds24 panelida yopilgan xona (`black`) | Beds24'da | PMS'da yopiladi, PMS ocholmaydi (`409`) |
+| Tarif narxi | admin (PMS, so'm) | Beds24'ga `so'm / bugungi kurs = $` bo'lib ketadi |
+| Beds24 panelidagi narx (tur darajasida bog'langan tarif) | Beds24'da | soatlik tortiladi; yuborilmagan PMS narxi ustiga yozilmaydi |
 
-**Davriy:** `CHANNEL_MONITOR_MINUTES` (standart 60) — bronlar, kalendar,
-farq. Refresh token'ni ham tirik tutadi (30 kun ishlatilmasa o'ladi).
+- PMS Beds24'ga `numAvail` **yozmaydi** — Beds24 bo'sh joyni bronlar va
+  `black` dan o'zi hisoblaydi.
+- PMS broni `checkAvailability` bilan yuboriladi. Beds24'da joy yo'q bo'lsa
+  bron **`REJECTED`** bo'ladi va **avtomatik qayta yuborilmaydi** (2026-09-26
+  dagi shovqin sababi shu edi). Xodim xona yoki sanani o'zgartiradi,
+  bekor qiladi yoki "Qayta yuborish" bosadi (egasi, admin).
+- Qo'lda kiritilgan OTA broni (manba Booking.com va h.k.) Beds24'ga
+  **yuborilmaydi** — u yerda allaqachon bor. Import uni OTA raqami
+  (`externalReference`) yoki sanalar + tarif + manba bo'yicha (yagona
+  nomzod) topib **bog'laydi** — dublikat bo'lmaydi.
+- Beds24 broni tushgan xona PMS'da band bo'lsa — mehmon shu turdagi bo'sh
+  xonaga joylanadi (avval Beds24'ga bog'lanmagan xona), egasiga Telegram
+  ogohlantirishi ketadi. Bo'sh xona umuman yo'q — "qo'lda hal qilish".
+- Bog'lanmagan xona/unit: bronlari yuborilmaydi (`NOT_APPLICABLE`, xato
+  emas), Beds24 bronlari PMS'ga tushmaydi (jurnalda "qo'lda hal qilish").
+  Bog'langanda hammasi avtomatik: Beds24'dan to'liq import, yuborilmagan
+  PMS bronlari va yopiq kunlar Beds24'ga.
 
-## 2. Ulash
+## 2. Valyuta (Q15, Q19)
 
-1. Beds24 → Settings → Marketplace → API → **invite code**. Faqat **read**
-   ruxsatlari yetadi: bookings, inventory, properties.
-2. Serverda `.env` da `ENCRYPTION_KEY` bo'lishi shart (token AES-256-GCM
-   bilan shifrlanadi) — [SERVER.md](SERVER.md).
+- Tizim **so'mda**. Beds24 obyekti — USD.
+- Beds24'dan kelgan bron **dollarda** qoladi, tagida so'm — **bron kelgan
+  kundagi** Markaziy bank kursi (bronga yoziladi, qotadi).
+- Shaxmatkada **hamma xodimga** ikki xil ko'rinadi: asl `$` va so'm.
+- To'lov **so'mda** qabul qilinadi — **bron kursi** bilan dollarga
+  o'giriladi, asl so'm to'lovda saqlanadi. Xodim xohlasa `$` da kiritadi.
+- Hisobot so'mda: dollar bron — bron kursi bilan, kassa — tushgan so'm.
+- Kurs: Markaziy bankdan har 3 soatda; admin qo'lda o'zgartira oladi
+  (Xona turlari → Dollar kursi). Mavjud bronlar kursi o'zgarmaydi.
+
+## 3. Ruxsatlar
+
+| Rol | Channel manager | Dollar bron |
+|---|---|---|
+| FOUNDER, ADMIN | ulash, bog'lash, qo'lda amallar, kurs, "Qayta yuborish" (`channel.write`) | ko'radi |
+| MANAGER | holat, jurnal, bronlar — faqat ko'rish (`channel.read`) | ko'radi |
+| STAFF | yo'q (403) | ko'radi, so'mda to'lov oladi |
+
+## 4. Ulash
+
+1. Serverda `.env`: `ENCRYPTION_KEY` (64 hex, token AES-256-GCM bilan
+   shifrlanadi). Kalit yo'q bo'lsa "Ulash" invite code'ni **ishlatmasdan**
+   rad etadi — kod yonib ketmaydi. Kalit o'zgarsa qayta ulash kerak.
+2. Beds24 → Settings → Marketplace → API → **invite code**. Ruxsatlar:
+   bookings (o'qish + **yozish**, shaxsiy va moliyaviy), inventory
+   (o'qish + **yozish**), properties (o'qish). Faqat o'qish bilan ulansa
+   panel ogohlantiradi — bronlar va narx yuborilmaydi.
 3. Admin panel → Channel manager → Ulash → invite code (obyekt ID
    ixtiyoriy; noto'g'ri ID rad etiladi).
-4. "Unit'larni avtomatik bog'lash" (unit nomi = PMS xona raqami), qolganini
-   qo'lda.
-5. Webhook (ixtiyoriy): `.env` da `WEBHOOK_URL_TOKEN`, Beds24'da URL
+4. "Unit'larni avtomatik bog'lash" (unit nomi = PMS xona raqami),
+   qolganini qo'lda. Bog'langach import va yuborish fonda boshlanadi.
+5. Webhook: `.env` da `WEBHOOK_URL_TOKEN` (16+ belgi), Beds24'da URL
    `https://<domen>/api/webhooks/beds24/<token>`, versiya
-   `twoWithPersonalData`. Webhook faqat jurnalga yoziladi.
+   `twoWithPersonalData`. Webhook bo'lmasa bronlar polling bilan keladi.
+6. Mavjud PMS narxlari Beds24'ga **avtomatik yuborilmaydi** (Booking.com
+   narxi kutilmaganda o'zgarmasin). Kerak bo'lsa: Narxlar → "Beds24'ga
+   yuborish" yoki narxni qayta saqlash.
 
-2026-09-26 dagi eski token bazadan o'chirilgan — yangi kod kerak.
+**Real hisobga birinchi ulashdan oldin (egasi bilan):** Booking.com broni
+uchun PMS'da 101-xona 30.09–03.10 ga qo'lda yopib qo'yilgan. Bog'lashdan
+oldin shu yopiq ochiladi (egasi roziligi bilan) — aks holda import bronni
+"xona band" deb boshqa xonaga joylaydi va yopiq Beds24'ga `black` bo'lib
+ketadi.
 
-## 3. Beds24 tomonida qolganlar — EGASI qiladi
+## 5. Oqimlar va navbatlar (TZ 11-band)
 
-1. **Booking.com hali Beds24'ga ulangan.** Beds24'ga kelgan bron PMS'ga
-   tushmaydi. Ikki marta sotmaslik uchun Booking.com'ni Beds24'dan uzing
-   (yoki extranet'da sotuvni yoping) va bronlarni PMS'ga qo'lda kiriting.
-   Kuzatuv "PMS'da yo'q" bronlarni ko'rsatadi.
-2. **Booking.com broni: 101, 30.09–03.10, 3 kishi, $225.** PMS'da 101 shu
-   kechalar uchun yopib qo'yilgan — mehmonni bron qilib kiriting, keyin
-   yopishni oching.
-3. Beds24'dagi 3 ta "direct" sinov bronini (24–27.09) bekor qiling.
-4. Eski API token'ni Beds24 kabinetida o'chiring.
-5. Sayt sinov broni (102, 26–30.09) haqiqiy bo'lmasa bekor qiling.
+| Navbat | Nima |
+|---|---|
+| `beds24-reservation-sync` | PMS broni → Beds24 (2 s oyna, oxirgi holat yuboriladi) |
+| `beds24-availability-sync` | xona yopish/ochish → `black` (3 s oyna) |
+| `beds24-rate-sync` | narx → Beds24 (3 s debounce) |
+| `beds24-webhook` | kelgan webhook → PMS |
+| `beds24-retry` | bir necha urinishdan keyin ham bajarilmagan vazifa (Channel manager → Yiqilgan vazifalar) |
+| `pms-maintenance` | polling va catch-up (`POLL_INTERVAL_MINUTES`, standart 15, 0 — o'chiq), narx tortish (soatlik), bo'sh joy farqi (04:00, faqat qayd), kurs (3 soat) |
 
-## 4. Real API faktlari (kuzatuv kodi shunga tayanadi)
+Birinchi polling (va bog'lanish o'zgarganda) — to'liq: Beds24'dagi barcha
+faol bronlar. Keyingilari — `modifiedFrom` bilan faqat o'zgarganlar.
+Redis ishlamasa PMS to'xtamaydi: bron `PENDING` qoladi, catch-up yuboradi.
 
-Real hisobda `GET` bilan yoki rasmiy spetsifikatsiyada
-(`https://beds24.com/api/v2/apiV2.yaml`) tekshirilgan.
+**Muammolar qayerda:** Channel manager → Bronlar ("Muammoli": rad
+etilgan / xato / kutmoqda, sababi bilan), Sinxronizatsiya (jurnal,
+yiqilgan vazifalar), Umumiy hisobot → Kanal (Beds24). Telegram — faqat
+overbooking xavfida (joy yo'q, mehmon boshqa xonaga joylandi).
+
+## 6. Real API faktlari
+
+Real hisobda yoki rasmiy spetsifikatsiyada
+(`https://beds24.com/api/v2/apiV2.yaml`) tekshirilgan; soxta server
+(`backend/src/channel.test.ts`) shu xulqni takrorlaydi.
 
 **Token**
 - `GET /authentication/setup` (header `code`) — invite code → refresh token.
 - `GET /authentication/token` (header `refreshToken`) → access token, 24 soat.
 - **Refresh token almashadi:** javobda yangi `refreshToken` kelsa, eskisi
   o'sha zahoti o'ladi — yangisi darhol saqlanadi, parallel yangilashlar
-  bittaga birlashtiriladi.
+  bittaga birlashtiriladi. 30 kun ishlatilmasa o'ladi (polling tirik tutadi).
 - Scope yetishmasa ham `401 Token not valid`. `GET /authentication/details`
   — token ruxsatlari.
 
@@ -88,34 +132,41 @@ bilan beradi. Valyuta obyekt darajasida (real hisob — USD). Xona turi =
 `roomId`, jismoniy xona = `unit`; **unit id har turda 1 dan boshlanadi** —
 faqat `roomId` bilan birga noyob.
 
-**Bronlar** (`GET /bookings`)
-- Status berilmasa bekor qilinganlar kelmaydi — hamma status aniq
-  so'raladi (`confirmed, request, new, cancelled, black, inquiry`).
-- Javob sahifalanadi (`pages.nextPageExists`, `page=N`).
+**Bronlar**
+- `GET /bookings`: status berilmasa bekor qilinganlar kelmaydi — hamma
+  status aniq so'raladi. Javob sahifalanadi (`pages.nextPageExists`).
 - Manba: `apiSource` ("Booking.com"), `channel` ("booking", "direct"),
-  `apiReference` — OTA bron raqami. Mamlakat `country2` da.
-- `black` — xona yopilishi, `inquiry` — so'rov: bron emas.
-- `subStatus` da `arrived`/`departed` yo'q.
+  `apiReference` — OTA bron raqami. `black` — xona yopilishi, `inquiry` —
+  so'rov (bron emas). `subStatus` da `arrived`/`departed` yo'q — kirish/
+  chiqish `flagText` bilan belgilanadi.
+- `POST /bookings`: massiv; yangi bron — `actions.checkAvailability`,
+  javobda `new.id`; o'zgartirish — `id` bilan, javobda `modified.id`.
+  Joy yo'q — `errors[].message` da "availability".
 
-**Kalendar** (`GET /inventory/rooms/calendar`): `includeNumAvail`,
-`includePrices`, `includeMinStay` bayroqlarisiz **bo'sh** keladi; kunlar
-oraliqqa siqilgan (`{from, to, numAvail, price1}`); `numAvail` — bronlardan
-keyingi sof son; narxsiz kun — yopiq.
+**Kalendar:** `GET /inventory/rooms/calendar` — `includeNumAvail`,
+`includePrices` bayroqlarisiz **bo'sh** keladi; kunlar oraliqqa siqilgan
+(`{from, to, numAvail, price1}`); narxsiz kun — yopiq. Narx yuborish —
+`POST /inventory/rooms/calendar` (`price1`, faqat narx: `minStay`
+yuborilmaydi, Beds24'dagi cheklov buzilmasin).
 
-**Webhook:** payload `{timeStamp, booking, infoItems, invoiceItems, ...}`,
-`event` maydoni yo'q. **Imzo yo'q** — himoya URL'dagi maxfiy token. Narx
-o'zgarishi uchun webhook yo'q.
+**Webhook:** payload `{timeStamp, booking, invoiceItems, retries, ...}`,
+`event` maydoni yo'q. **Imzo yo'q** — himoya URL'dagi maxfiy token. Takror
+yuborishda `retries` oshadi — mazmun bir xil bo'lsa `duplicate`. Narx
+o'zgarishi uchun webhook yo'q (soatlik tortiladi).
 
-## 5. Tarix (qisqa)
+## 7. Tarix (qisqa)
 
 - **2026-09-25/26:** real hisob tahlili — `SyncLog` 17 983 yozuv (asosan
-  mapping yo'qligidan FAILED), Beds24'da 4 ta bron PMS'da yo'q edi.
-- **2026-09-26:** integratsiya olib tashlandi: zaxira (`pg_dump`) → mashq
-  bazasida sinov → purge → migratsiya `20260926200000_remove_beds24`.
-  Zaxiralar serverda: `/opt/hotel-pms/backups/*remove-beds24-2026-09-26-2049*`.
-- **2026-09-27:** kuzatuv rejimi (migratsiya `20260927050200_channel_monitor`,
-  jadvallar eski shaklda). Eski jurnal kerak bo'lsa zaxiradan
-  `pg_restore --data-only -t SyncLog -t Channel ...` bilan tiklanadi
-  (avval zaxira, egasining roziligi bilan).
-
-Eski integratsiyaning to'liq tavsifi git tarixida (`62c834d` gacha).
+  mapping yo'qligidan qayta-qayta FAILED), Beds24'da 4 ta bron PMS'da yo'q edi.
+- **2026-09-26:** integratsiya olib tashlandi (Q18), migratsiya
+  `20260926200000_remove_beds24`. Zaxiralar serverda.
+- **2026-09-27 ertalab:** egasi uchun "faqat kuzatuv" rejimi.
+- **2026-09-27 kechqurun (Q19):** integratsiya qaytdi, migratsiya
+  `20260927120000_beds24_restore` (kuzatuv jadvallari o'chadi, STOP
+  sozlamasi va kelgusi STOP kunlari ochiladi). Olib tashlashga olib kelgan
+  sabablar tuzatildi: rad etilgan bron qayta yuborilmaydi (`REJECTED`),
+  bog'lanmagan xona xato emas (`NOT_APPLICABLE`), birinchi polling to'liq
+  va bog'lanishni kutadi, shifrlash kaliti invite code'dan oldin
+  tekshiriladi, qo'lda kiritilgan OTA broni dublikat bo'lmaydi, navbat
+  oynasida o'zgarish yo'qolmaydi, bog'lashdan keyin kutayotgan bronlar
+  darhol yuboriladi.

@@ -2,8 +2,8 @@
 #
 # Testlar ALOHIDA vaqtinchalik bazada ishlaydi (nomida "test" —
 # vitest.setup.ts himoyasi). Jonli server va uning bazasiga tegmaydi.
-# Kanal kuzatuvi testlari (channel.test.ts) soxta Beds24 va Markaziy
-# bankni o'zi ko'taradi — tashqi internet kerak emas.
+# Beds24 integratsiyasi testlari (channel.test.ts) soxta Beds24 va
+# Markaziy bankni o'zi ko'taradi — tashqi internet kerak emas.
 # Ikkala AUTH_REQUIRED rejimida ham hamma test o'tishi shart.
 
 name: CI
@@ -67,7 +67,8 @@ jobs:
       BEDS24_BASE_URL: http://127.0.0.1:56401/api/v2
       FX_CBU_URL: http://127.0.0.1:56401/api/v2/cbu
       PROPERTY_CACHE_TTL_MS: "0"
-      CHANNEL_MONITOR_MINUTES: "0"
+      # Polling/catch-up jadvali o'chiq — testlar tugma bilan chaqiradi
+      POLL_INTERVAL_MINUTES: "0"
 
     steps:
       - uses: actions/checkout@v4

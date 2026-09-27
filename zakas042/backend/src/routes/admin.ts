@@ -2,7 +2,8 @@
  * Admin endpoint'lari — /api/admin/*
  *
  * Hisobot, audit, xarajat, biznes sozlamalari, tozalash, bot
- * ruxsatlari, xodimlar, sayt, oshxona, nonushta narxi, STOP.
+ * ruxsatlari, xodimlar, sayt, oshxona, nonushta narxi. Channel
+ * manager (Beds24) — routes/channel.ts.
  *
  * Har endpoint `requireAuth` + huquq (services/auth.ts PERMISSIONS):
  * frontend tugmani yashirsa ham backend baribir tekshiradi.
@@ -33,9 +34,6 @@ import {
 } from "../services/cleaning.js";
 import { kitchenOverview } from "../services/kitchen.js";
 import { getMealPriceInfo, setMealPrice } from "../services/mealPrice.js";
-import { releaseSalesStop, salesStopStatus, startSalesStop } from "../services/salesStop.js";
-import { notifySalesStop } from "../realtime/notify.js";
-import { sendSystemAlert } from "../bot/index.js";
 import { sendDailyKitchenReport } from "../bot/kitchen-bot.js";
 import {
   listBotAccess,
@@ -1116,93 +1114,6 @@ adminRouter.put(
     });
 
     res.json({ ok: true, ...result, info: await getMealPriceInfo() });
-  })
-);
-
-// ============================================================
-//  Tizim nazorati — sotuvni vaqtincha to'xtatish (STOP, 2026-09-26)
-//
-//  Mehmonxona dam olsa / ishlamasa: sayt va qabulxona yangi bron
-//  qabul qilmaydi. Mantiq: services/salesStop.ts
-// ============================================================
-
-/** GET /api/admin/sales-stop — holat (Shaxmatka ham o'qiydi) */
-adminRouter.get(
-  "/sales-stop",
-  requireAuth,
-  requirePermission("reservation.read"),
-  asyncHandler(async (_req, res) => {
-    res.json(await salesStopStatus());
-  })
-);
-
-const salesStopSchema = z.object({
-  allRooms: z.boolean(),
-  roomIds: z.array(z.string().min(1).max(50)).max(500).optional(),
-  reason: z.string().max(120).optional(),
-});
-
-/** POST /api/admin/sales-stop { allRooms, roomIds?, reason? } — STOP */
-adminRouter.post(
-  "/sales-stop",
-  requireAuth,
-  requirePermission("settings.write"),
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const input = parseOrThrow(salesStopSchema, req.body);
-    const result = await startSalesStop(input, { email: req.user?.email });
-
-    await audit({
-      userId: req.user?.id,
-      action: "system.sales_stop",
-      entityType: "SalesStop",
-      after: {
-        allRooms: result.stop.allRooms,
-        roomIds: result.stop.roomIds,
-        reason: result.stop.reason,
-        rooms: result.rooms,
-        days: result.days,
-        keptBookings: result.keptBookings,
-      },
-      ipAddress: req.ip,
-    });
-    notifySalesStop(result.stop);
-    void sendSystemAlert(
-      `⛔ <b>Tizim vaqtincha to'xtatildi</b>\n` +
-      `${result.stop.allRooms ? "Barcha xonalar" : `${result.rooms} ta xona`}` +
-      `${result.stop.reason ? ` — ${result.stop.reason.replace(/[<>&]/g, "")}` : ""}\n` +
-      `Sayt va qabulxona yangi bron qabul qilmaydi.` +
-      (result.keptBookings > 0 ? `\nMavjud bronlar saqlandi: ${result.keptBookings} ta.` : "") +
-      (req.user?.email ? `\nKim: ${req.user.email}` : "")
-    ).catch(() => {});
-
-    res.status(201).json({ ok: true, ...result, status: await salesStopStatus() });
-  })
-);
-
-/** POST /api/admin/sales-stop/release — stopdan chiqarish */
-adminRouter.post(
-  "/sales-stop/release",
-  requireAuth,
-  requirePermission("settings.write"),
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const before = await salesStopStatus();
-    const result = await releaseSalesStop({ email: req.user?.email });
-
-    await audit({
-      userId: req.user?.id,
-      action: "system.sales_resume",
-      entityType: "SalesStop",
-      before: { allRooms: before.allRooms, roomIds: before.roomIds, reason: before.reason, since: before.since },
-      after: { rooms: result.rooms, reopenedDays: result.days },
-      ipAddress: req.ip,
-    });
-    notifySalesStop(result.stop);
-    void sendSystemAlert(
-      `✅ <b>Tizim qayta ishga tushdi</b>\nSotuv ochildi: sayt va qabulxona.` +
-      (req.user?.email ? `\nKim: ${req.user.email}` : "")
-    ).catch(() => {});
-
-    res.json({ ok: true, ...result, status: await salesStopStatus() });
   })
 );
 

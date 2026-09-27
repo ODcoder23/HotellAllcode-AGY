@@ -1,38 +1,23 @@
 /**
- * Beds24 API v2 mijozi — FAQAT O'QISH (kanal kuzatuvi, 2026-09-27)
+ * Beds24 HTTP mijozi — YAGONA CHIQISH NUQTASI
  *
- * YAGONA CHIQISH NUQTASI: Beds24'ga hamma so'rov shu fayldan o'tadi.
- * Ataylab faqat `GET` — PMS Beds24'ga hech narsa yozmaydi (egasi
- * qarori: kuzatuv rejimi). `POST`/`DELETE` funksiyasi umuman yo'q,
- * tasodifan yozib yuborish imkonsiz.
+ * Bu fayldan tashqarida hech qayerda Beds24 API'ga `fetch` chaqirilmaydi
+ * (ulanish — `auth.ts`). Maqsad: kredit va qayta urinish mantig'ini
+ * bitta joyda ushlab turish.
  *
- * Real API faktlari (BEDS24.md, "Real API faktlari"):
- *   - access token 24 soat, `refreshToken` bilan olinadi
- *   - javobda yangi `refreshToken` kelishi mumkin — eskisi o'sha
- *     zahoti o'ladi, yangisi DARHOL saqlanishi shart
- *   - scope yetishmasa ham 401 "Token not valid"
- *   - kredit: 5 daqiqada ~100, har javobda `X-Five-Min-Limit-*`
+ * KREDIT: hisob darajasida, 5 daqiqalik aylanma oyna, ~100 kredit. Har
+ * javobda: `x-five-min-limit-remaining`, `x-five-min-limit-resets-in`,
+ * `x-request-cost`.
+ *
+ * Kredit tugashi — XATO EMAS: job kechiktiriladi va `attempts` hisobiga
+ * kirmaydi (queues/workers.ts). Aks holda normal yuklamada job'lar
+ * bekorga "failed" bo'lib qolardi.
  */
 
-import { prisma } from "../../lib/prisma.js";
 import { config } from "../../lib/config.js";
-import { encrypt, decrypt } from "../../lib/encryption.js";
+import { getAccessToken, invalidateToken, Beds24AuthError } from "./auth.js";
 
-/** Muddati tugashiga shuncha qolganda token yangilanadi */
-const REFRESH_MARGIN_MS = 5 * 60_000;
-const TIMEOUT_MS = 20_000;
-
-export class Beds24Error extends Error {
-  constructor(message: string, readonly status = 0) {
-    super(message);
-    this.name = "Beds24Error";
-  }
-}
-
-// ============================================================
-//  Kredit holati (jarayon xotirasida)
-// ============================================================
-
+// --- Kredit holati (jarayon xotirasida) ---------------------
 export type CreditState = {
   remaining: number | null;
   resetsIn: number | null;
@@ -40,238 +25,186 @@ export type CreditState = {
   updatedAt: string | null;
 };
 
-let credits: CreditState = { remaining: null, resetsIn: null, lastCost: null, updatedAt: null };
+let credits = { remaining: config.beds24.creditLimit, resetsIn: 0, lastCost: 0, updatedAt: 0 };
 
-export function getCreditState(): CreditState {
-  return { ...credits };
-}
-
-function readCredits(res: Response): void {
-  const remaining = res.headers.get("x-five-min-limit-remaining");
-  if (remaining === null) return;
-  credits = {
-    remaining: Number(remaining),
-    resetsIn: Number(res.headers.get("x-five-min-limit-resets-in") ?? 0),
-    lastCost: Number(res.headers.get("x-request-cost") ?? 0),
-    updatedAt: new Date().toISOString(),
+export function getCreditState(): CreditState & { isLow: boolean } {
+  const known = credits.updatedAt > 0;
+  return {
+    remaining: known ? credits.remaining : null,
+    resetsIn: known ? credits.resetsIn : null,
+    lastCost: known ? credits.lastCost : null,
+    updatedAt: known ? new Date(credits.updatedAt).toISOString() : null,
+    isLow: known && credits.remaining < config.beds24.creditSafetyThreshold,
   };
 }
 
-// ============================================================
-//  Ulanish (token)
-// ============================================================
-
-/** Kanal yozuvi — bir marta yaratiladi */
-export async function getBeds24Channel() {
-  return prisma.channel.upsert({
-    where: { code: "beds24" },
-    create: { code: "beds24", name: "Beds24" },
-    update: {},
-  });
+/** Test uchun — kredit holatini tiklash */
+export function resetCreditState(): void {
+  credits = { remaining: config.beds24.creditLimit, resetsIn: 0, lastCost: 0, updatedAt: 0 };
+  lastProbeAt = 0;
 }
 
-export async function activeConnection() {
-  return prisma.channelConnection.findFirst({
-    where: { channel: { code: "beds24" }, isActive: true },
-    orderBy: { updatedAt: "desc" },
-  });
+/** Kredit "tugagan" paytda shuncha vaqtda bir marta sinov so'rovi */
+const PROBE_AFTER_MS = 30_000;
+let lastProbeAt = 0;
+
+// --- Xatolar ------------------------------------------------
+
+/**
+ * Kredit tugagan. `retryAfterSeconds` — qancha kutish kerak.
+ * BullMQ bu xatoni ko'rib job'ni kechiktiradi, failed deb belgilamaydi.
+ */
+export class RateLimitError extends Error {
+  readonly retryable = true;
+  constructor(readonly retryAfterSeconds: number) {
+    super(`Beds24 kredit tugadi, ${retryAfterSeconds}s kutish kerak`);
+    this.name = "RateLimitError";
+  }
 }
 
-async function rawGet(path: string, headers: Record<string, string>, query?: URLSearchParams): Promise<Response> {
-  const url = `${config.beds24.baseUrl}${path}${query && [...query].length ? `?${query}` : ""}`;
+export class Beds24ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly retryable: boolean,
+    readonly body?: unknown
+  ) {
+    super(message);
+    this.name = "Beds24ApiError";
+  }
+}
+
+// --- So'rov -------------------------------------------------
+
+type RequestOptions = {
+  method?: "GET" | "POST";
+  /**
+   * Massiv qiymat takroriy parametr bo'lib ketadi:
+   * `{status: ["confirmed","cancelled"]}` -> `?status=confirmed&status=cancelled`
+   */
+  query?: Record<string, string | number | boolean | Array<string | number> | undefined>;
+  body?: unknown;
+  /** Taxminiy kredit qiymati — oldindan tekshirish uchun */
+  estimatedCost?: number;
+  /** 401 kelganda token yangilanib qayta urinilganmi */
+  _retriedAuth?: boolean;
+};
+
+/**
+ * Beds24'ga so'rov yuboradi.
+ *
+ * Oldindan tekshiradi: kredit yetarlimi. Yetmasa darhol
+ * `RateLimitError` — bekorga so'rov yuborilmaydi. Mahalliy holat
+ * eskirishi mumkin (oyna aylanma), shuning uchun PROBE_AFTER_MS da
+ * bitta sinov so'rovi o'tkaziladi.
+ */
+export async function beds24Request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
+  const { method = "GET", query, body, estimatedCost = 1 } = opts;
+
+  if (credits.updatedAt > 0) {
+    const elapsed = (Date.now() - credits.updatedAt) / 1000;
+    const windowExpired = elapsed > credits.resetsIn;
+
+    if (!windowExpired && credits.remaining < estimatedCost) {
+      const now = Date.now();
+      if (now - Math.max(credits.updatedAt, lastProbeAt) < PROBE_AFTER_MS) {
+        throw new RateLimitError(Math.max(1, Math.ceil(credits.resetsIn - elapsed)));
+      }
+      lastProbeAt = now;
+    }
+  }
+
+  // --- URL ---
+  const url = new URL(`${config.beds24.baseUrl}${path}`);
+  if (query) {
+    for (const [k, v] of Object.entries(query)) {
+      if (v === undefined) continue;
+      if (Array.isArray(v)) {
+        for (const item of v) url.searchParams.append(k, String(item));
+      } else {
+        url.searchParams.set(k, String(v));
+      }
+    }
+  }
+
+  const token = await getAccessToken();
+
+  let res: Response;
   try {
-    const res = await fetch(url, { method: "GET", headers, signal: AbortSignal.timeout(TIMEOUT_MS) });
-    readCredits(res);
-    return res;
+    res = await fetch(url, {
+      method,
+      headers: {
+        token,
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      signal: AbortSignal.timeout(20_000),
+    });
   } catch (e) {
     const msg = String(e);
-    throw new Beds24Error(
-      msg.includes("timeout") || msg.includes("abort")
-        ? "Beds24 javob bermadi (20 soniya)"
-        : `Beds24'ga ulanib bo'lmadi: ${msg.slice(0, 120)}`
+    const isTimeout = msg.includes("timeout") || msg.includes("aborted");
+    throw new Beds24ApiError(
+      0,
+      isTimeout ? "Beds24 javob bermadi (20 soniya)" : `Tarmoq xatosi: ${msg.slice(0, 100)}`,
+      true
     );
   }
-}
 
-async function readJson<T>(res: Response, what: string): Promise<T> {
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Beds24Error(`${what}: Beds24 ${res.status} — ${text.slice(0, 200)}`, res.status);
+  // --- Kredit sarlavhalari ---
+  const remaining = res.headers.get("x-five-min-limit-remaining");
+  if (remaining !== null) {
+    credits = {
+      remaining: Number(remaining),
+      resetsIn: Number(res.headers.get("x-five-min-limit-resets-in") ?? 300),
+      lastCost: Number(res.headers.get("x-request-cost") ?? 0),
+      updatedAt: Date.now(),
+    };
+    if (credits.remaining < config.beds24.creditSafetyThreshold) {
+      console.warn(`[beds24] kredit kam: ${credits.remaining}, ${credits.resetsIn}s ichida tiklanadi`);
+    }
   }
+
+  // --- 429: kredit tugadi ---
+  if (res.status === 429) {
+    const bodyJson = await res.json().catch(() => ({}) as Record<string, unknown>);
+    const wait = Number((bodyJson as { resetsIn?: number }).resetsIn ?? credits.resetsIn ?? 60);
+    throw new RateLimitError(Math.max(1, wait));
+  }
+
+  // --- 401: token eskirgan, bir marta yangilab qayta urinish ---
+  if (res.status === 401 && !opts._retriedAuth) {
+    await invalidateToken();
+    return beds24Request<T>(path, { ...opts, _retriedAuth: true });
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    // Yangi token bilan ham 401 — token emas, RUXSAT (scope) muammosi:
+    // Beds24 yetishmagan scope uchun ham "Token not valid" qaytaradi
+    const hint = res.status === 401
+      ? " — token yangilangan, demak bu amal uchun ruxsat (scope) yetishmaydi (Beds24 panelida tekshiring)"
+      : "";
+    throw new Beds24ApiError(
+      res.status,
+      `Beds24 ${method} ${path} -> ${res.status}: ${text.slice(0, 200)}${hint}`,
+      res.status >= 500,
+      text
+    );
+  }
+
+  const text = await res.text();
+  if (!text) throw new Beds24ApiError(res.status, "Beds24 bo'sh javob qaytardi", true);
   try {
     return JSON.parse(text) as T;
   } catch {
-    throw new Beds24Error(`${what}: Beds24 noto'g'ri JSON qaytardi`, res.status);
+    throw new Beds24ApiError(res.status, `Beds24 noto'g'ri JSON qaytardi: ${text.slice(0, 120)}`, true);
   }
 }
 
-type TokenResponse = { token?: string; expiresIn?: number; refreshToken?: string };
-
-/**
- * Yangi ulanish: invite code YOKI tayyor refresh token.
- *
- * Invite code bir martalik (`GET /authentication/setup`). Refresh
- * token berilsa darhol access token olinadi — token haqiqiyligi shu
- * yerda tekshiriladi, noto'g'ri token bazaga yozilmaydi.
- */
-export async function connect(input: { inviteCode?: string; refreshToken?: string; propertyId?: string }) {
-  let tokens: TokenResponse;
-  if (input.inviteCode) {
-    tokens = await readJson<TokenResponse>(
-      await rawGet("/authentication/setup", { code: input.inviteCode.trim() }),
-      "Invite code"
-    );
-  } else if (input.refreshToken) {
-    const refreshToken = input.refreshToken.trim();
-    tokens = await readJson<TokenResponse>(
-      await rawGet("/authentication/token", { refreshToken }),
-      "Refresh token"
-    );
-    tokens.refreshToken = tokens.refreshToken || refreshToken;
-  } else {
-    throw new Beds24Error("Invite code yoki refresh token kerak", 400);
-  }
-
-  if (!tokens.token || !tokens.refreshToken) {
-    throw new Beds24Error("Beds24 token qaytarmadi — kod yoki token yaroqsiz", 400);
-  }
-
-  // Obyekt ID berilmasa — hisobdagi birinchi obyekt; berilsa — mavjudligi
-  // tekshiriladi (noto'g'ri ID bilan ulanib qolmaslik uchun)
-  const props = await readJson<{ data?: Array<{ id: number }> }>(
-    await rawGet("/properties", { token: tokens.token }),
-    "Obyektlar"
-  );
-  const ids = (props.data ?? []).map((p) => String(p.id));
-  let propertyId = input.propertyId?.trim();
-  if (!propertyId) {
-    if (!ids[0]) throw new Beds24Error("Hisobda obyekt (property) topilmadi", 400);
-    propertyId = ids[0];
-  } else if (!ids.includes(propertyId)) {
-    throw new Beds24Error(`Hisobda ${propertyId} obyekti yo'q (bor: ${ids.join(", ") || "—"})`, 400);
-  }
-
-  const channel = await getBeds24Channel();
-  const expiresAt = new Date(Date.now() + (tokens.expiresIn ?? 86_400) * 1000);
-
-  // Faqat bitta faol ulanish
-  await prisma.channelConnection.updateMany({
-    where: { channelId: channel.id, NOT: { propertyId } },
-    data: { isActive: false, accessToken: null, accessTokenExpiresAt: null },
-  });
-
-  return prisma.channelConnection.upsert({
-    where: { channelId_propertyId: { channelId: channel.id, propertyId } },
-    create: {
-      channelId: channel.id,
-      propertyId,
-      refreshToken: encrypt(tokens.refreshToken),
-      accessToken: encrypt(tokens.token),
-      accessTokenExpiresAt: expiresAt,
-      isActive: true,
-    },
-    update: {
-      refreshToken: encrypt(tokens.refreshToken),
-      accessToken: encrypt(tokens.token),
-      accessTokenExpiresAt: expiresAt,
-      isActive: true,
-      lastError: null,
-    },
-  });
-}
-
-/** Ulanishni o'chirish — tokenlar bazadan o'chiriladi */
-export async function disconnect(): Promise<number> {
-  const r = await prisma.channelConnection.updateMany({
-    where: { channel: { code: "beds24" }, isActive: true },
-    data: { isActive: false, accessToken: null, accessTokenExpiresAt: null, refreshToken: "" },
-  });
-  return r.count;
-}
-
-/**
- * Parallel yangilashlar bittaga birlashtiriladi: refresh token
- * almashadigan bo'lsa, ikki so'rov bir vaqtda yangilasa ikkinchisi
- * o'lik token bilan qoladi va ulanish butunlay uziladi.
- */
-let refreshing: Promise<string> | null = null;
-
-async function getAccessToken(force = false): Promise<string> {
-  const conn = await activeConnection();
-  if (!conn || !conn.refreshToken) {
-    throw new Beds24Error("Beds24 ulanmagan — Channel manager → Ulangan kanallar", 400);
-  }
-
-  const expiresAt = conn.accessTokenExpiresAt?.getTime() ?? 0;
-  if (!force && conn.accessToken && expiresAt - Date.now() > REFRESH_MARGIN_MS) {
-    return decrypt(conn.accessToken);
-  }
-
-  if (!refreshing) {
-    refreshing = (async () => {
-      const res = await rawGet("/authentication/token", { refreshToken: decrypt(conn.refreshToken) });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        await prisma.channelConnection.update({
-          where: { id: conn.id },
-          data: { lastCheckOk: false, lastError: `Token yangilanmadi (${res.status})`, lastCheckedAt: new Date() },
-        });
-        throw new Beds24Error(
-          `Token yangilanmadi (${res.status}): ${text.slice(0, 120)}. ` +
-          "Refresh token o'lgan bo'lishi mumkin — qayta ulang.",
-          res.status
-        );
-      }
-      const body = (await res.json()) as TokenResponse;
-      if (!body.token) throw new Beds24Error("Beds24 access token qaytarmadi");
-
-      await prisma.channelConnection.update({
-        where: { id: conn.id },
-        data: {
-          accessToken: encrypt(body.token),
-          accessTokenExpiresAt: new Date(Date.now() + (body.expiresIn ?? 86_400) * 1000),
-          // Yangi refresh token keldi — eskisi o'ldi, darhol saqlaymiz
-          ...(body.refreshToken ? { refreshToken: encrypt(body.refreshToken) } : {}),
-        },
-      });
-      return body.token;
-    })().finally(() => { refreshing = null; });
-  }
-  return refreshing;
-}
-
-/**
- * Beds24'dan o'qish (GET). 401 kelsa token bir marta yangilanadi.
- *
- * `query` qiymati massiv bo'lsa parametr takrorlanadi
- * (`status=confirmed&status=cancelled`).
- */
-export async function beds24Get<T>(
-  path: string,
-  query: Record<string, string | number | boolean | Array<string> | undefined> = {}
-): Promise<T> {
-  const q = new URLSearchParams();
-  for (const [k, v] of Object.entries(query)) {
-    if (v === undefined) continue;
-    if (Array.isArray(v)) v.forEach((x) => q.append(k, x));
-    else q.set(k, String(v));
-  }
-
-  let token = await getAccessToken();
-  let res = await rawGet(path, { token }, q);
-
-  if (res.status === 401) {
-    token = await getAccessToken(true);
-    res = await rawGet(path, { token }, q);
-    if (res.status === 401) {
-      throw new Beds24Error(
-        "Beds24 401: yangi token bilan ham rad etildi — token ruxsatlari (scope) yetarli emas",
-        401
-      );
-    }
-  }
-  if (res.status === 429) {
-    throw new Beds24Error("Beds24 kredit limiti tugadi — bir necha daqiqadan keyin qayta urinib ko'ring", 429);
-  }
-  return readJson<T>(res, `GET ${path}`);
+/** Xato qayta urinishga arziydimi — worker shu funksiyaga qaraydi */
+export function isRetryable(e: unknown): boolean {
+  if (e instanceof RateLimitError) return true;
+  if (e instanceof Beds24ApiError) return e.retryable;
+  if (e instanceof Beds24AuthError) return e.retryable;
+  return false;
 }

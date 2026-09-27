@@ -8,7 +8,7 @@
  * unga ulash ishi scope'dan tashqarida — kontrakt topshiriladi.
  *
  * ASOSIY OQIM (TZ 3-band):
- *   Website -> PMS -> Database -> Shaxmatka
+ *   Website -> PMS -> Database -> Shaxmatka -> Beds24 -> OTA
  * "OVERBOOKING BO'LMASLIGI SHART."
  *
  * Overbooking himoyasi shu yerda qayta yozilmaydi: bron
@@ -22,7 +22,6 @@ import { prisma } from "../lib/prisma.js";
 import { fromDateKey, isValidDateKey, toDateKey, toNumber } from "../lib/serialize.js";
 import { ValidationError, RoomUnavailableError } from "../lib/errors.js";
 import { createReservation } from "./reservations.js";
-import { assertTypeOpenForGuests } from "./salesStop.js";
 import { readRange } from "./availability.js";
 import { config } from "../lib/config.js";
 import { hotelToday } from "../lib/hotelTime.js";
@@ -497,9 +496,6 @@ export async function createPublicBooking(
    * Faqat "xona band" xatolari qayta urinishga sabab bo'ladi;
    * boshqa xatolar (narx, validatsiya) darhol yuqoriga chiqadi.
    */
-  // STOP: turning hamma xonasi to'xtatilgan — aniq xabar (tizim nazorati)
-  await assertTypeOpenForGuests(input.roomTypeId);
-
   const taken: string[] = [];
   const MAX_ROOM_ATTEMPTS = 10;
 

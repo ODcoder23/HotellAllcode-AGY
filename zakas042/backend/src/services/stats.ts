@@ -10,12 +10,16 @@
  * ichiga aralashtirilmadi.
  *
  * "Bugun" — mehmonxona (Toshkent) kuni, `lib/hotelTime.ts`.
+ *
+ * VALYUTA (Q15): jami summalar so'mda — Beds24 dollar broni bron kelgan
+ * kundagi kurs bilan o'giriladi (`toBase`), to'lov — tushgan so'm.
  */
 
 import { prisma } from "../lib/prisma.js";
 import { toDateKey } from "../lib/serialize.js";
-import { reservationMoney, sumMoney } from "../lib/money.js";
+import { isBaseCurrency, paymentBase, reservationMoney, sumMoney, toBase } from "../lib/money.js";
 import { addDays, hotelToday } from "../lib/hotelTime.js";
+import { reportRateResolver } from "./exchangeRate.js";
 
 /** Bron xonani band qiladigan statuslar */
 const ACTIVE_STATUSES = ["PENDING_PAYMENT", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT"] as const;
@@ -44,6 +48,7 @@ export type TodaySnapshot = {
 
 export async function getTodaySnapshot(): Promise<TodaySnapshot> {
   const today = hotelToday();
+  const rateOf = await reportRateResolver();
 
   const [rooms, blocked, arrivals, departures, staying] = await Promise.all([
     prisma.room.count({ where: { isActive: true } }),
@@ -57,7 +62,7 @@ export async function getTodaySnapshot(): Promise<TodaySnapshot> {
       select: {
         id: true, checkIn: true, checkOut: true, adults: true, children: true,
         pricePerNight: true, withMeal: true, mealPricePerPerson: true,
-        status: true, cancellationFee: true,
+        status: true, cancellationFee: true, currency: true, exchangeRate: true,
         charges: { select: { amount: true } },
       },
     }),
@@ -84,7 +89,7 @@ export async function getTodaySnapshot(): Promise<TodaySnapshot> {
   // Bugun boshlangan bronlarning jami qiymati — bron summasi bilan
   // bir xil (xona + nonushta + xizmatlar, lib/money.ts). Ilgari
   // nonushta kirmasdi va bot panelnikidan kam ko'rsatardi.
-  const todayRevenue = sumMoney(arrivals.map((r) => reservationMoney(r).total));
+  const todayRevenue = sumMoney(arrivals.map((r) => toBase(reservationMoney(r).total, rateOf(r))));
 
   const freeRooms = Math.max(0, rooms - occupiedRooms - blocked);
 
@@ -136,6 +141,7 @@ export type FinanceReport = {
  */
 export async function getFinanceReport(from: Date, to: Date): Promise<FinanceReport> {
   const toExclusive = addDays(to, 1);
+  const rateOf = await reportRateResolver();
 
   const reservations = await prisma.reservation.findMany({
     where: {
@@ -145,10 +151,10 @@ export async function getFinanceReport(from: Date, to: Date): Promise<FinanceRep
     select: {
       checkIn: true, checkOut: true, adults: true, children: true,
       pricePerNight: true, withMeal: true, mealPricePerPerson: true,
-      status: true, cancellationFee: true,
+      status: true, cancellationFee: true, currency: true, exchangeRate: true,
       source: true,
       charges: { select: { amount: true } },
-      payments: { select: { amount: true } },
+      payments: { select: { amount: true, originalAmount: true, originalCurrency: true } },
     },
   });
 
@@ -162,15 +168,16 @@ export async function getFinanceReport(from: Date, to: Date): Promise<FinanceRep
 
   for (const r of reservations) {
     const m = reservationMoney(r);
-    room.push(m.roomTotal);
-    meal.push(m.mealTotal);
-    extra.push(m.chargesTotal);
-    paidAll.push(m.paid);
-    debts.push(m.remaining);
+    const rate = rateOf(r);
+    room.push(toBase(m.roomTotal, rate));
+    meal.push(toBase(m.mealTotal, rate));
+    extra.push(toBase(m.chargesTotal, rate));
+    paidAll.push(sumMoney(r.payments.map((p) => paymentBase(p, rate))));
+    debts.push(toBase(m.remaining, rate));
 
     const key = r.source.toLowerCase();
     const cur = bySource.get(key) ?? { count: 0, amount: 0 };
-    bySource.set(key, { count: cur.count + 1, amount: sumMoney([cur.amount, m.total]) });
+    bySource.set(key, { count: cur.count + 1, amount: sumMoney([cur.amount, toBase(m.total, rate)]) });
   }
 
   const roomRevenue = sumMoney(room);
@@ -291,20 +298,24 @@ export type UpcomingBooking = {
   nights: number;
   source: string;
   status: string;
-  /** So'mda */
+  /** Bron valyutasida (so'm yoki Beds24 broni — USD) */
   total: number;
+  currency: string;
+  /** So'mda (dollar bronda bron kursi bilan; kurs noma'lum — null) */
+  totalBase: number | null;
   createdAt: string;
 };
 
 /** Oxirgi yaratilgan bronlar — bot "so'nggi bronlar" uchun */
 export async function getRecentBookings(limit = 10): Promise<UpcomingBooking[]> {
+  const rateOf = await reportRateResolver();
   const rows = await prisma.reservation.findMany({
     orderBy: { createdAt: "desc" },
     take: Math.min(limit, 50),
     select: {
       id: true, roomId: true, checkIn: true, checkOut: true, adults: true, children: true,
       pricePerNight: true, withMeal: true, mealPricePerPerson: true,
-      status: true, cancellationFee: true,
+      status: true, cancellationFee: true, currency: true, exchangeRate: true,
       source: true, createdAt: true,
       guest: { select: { fullName: true, phone: true } },
       charges: { select: { amount: true } },
@@ -313,6 +324,7 @@ export async function getRecentBookings(limit = 10): Promise<UpcomingBooking[]> 
 
   return rows.map((r) => {
     const m = reservationMoney(r);
+    const rate = rateOf(r);
     return {
       id: r.id,
       roomId: r.roomId,
@@ -324,6 +336,8 @@ export async function getRecentBookings(limit = 10): Promise<UpcomingBooking[]> 
       source: r.source.toLowerCase(),
       status: r.status.toLowerCase(),
       total: m.total,
+      currency: r.currency,
+      totalBase: isBaseCurrency(r.currency) ? m.total : rate === null ? null : toBase(m.total, rate),
       createdAt: r.createdAt.toISOString(),
     };
   });

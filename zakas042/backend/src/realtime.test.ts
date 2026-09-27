@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import WebSocket from "ws";
 import { prisma } from "./lib/prisma.js";
-import { PMS_EVENTS, SYSTEM_EVENTS } from "./realtime/events.js";
+import { PMS_EVENTS, CHANNEL_EVENTS } from "./realtime/events.js";
 import { hashPassword } from "./services/auth.js";
 
 const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
@@ -197,9 +197,10 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
       ]);
     });
 
-    it("tizim event'i (STOP) alohida — Beds24 sinxron event'lari yo'q", () => {
-      expect(SYSTEM_EVENTS).toEqual(["system.sales_stop"]);
-      for (const e of SYSTEM_EVENTS) expect(PMS_EVENTS).not.toContain(e as never);
+    it("Beds24 ogohlantirishlari alohida — STOP event'i yo'q", () => {
+      expect(CHANNEL_EVENTS).toEqual(["sync.failed", "webhook.needs_attention", "rate.sync.updated"]);
+      for (const e of CHANNEL_EVENTS) expect(PMS_EVENTS).not.toContain(e as never);
+      expect([...PMS_EVENTS, ...CHANNEL_EVENTS] as string[]).not.toContain("system.sales_stop");
     });
   });
 
@@ -333,10 +334,10 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
       expect(r.status).toBe("confirmed");
       expect(r.source).toBe("direct");
       expect(r.totalPrice).toBe(300_000);
-      // Beds24 olib tashlangan — kanal maydonlari yo'q
-      expect(r.channelOwned).toBeUndefined();
-      expect(r.syncStatus).toBeUndefined();
-      expect(r.currency).toBeUndefined();
+      // Beds24 maydonlari (2026-09-27): so'm bron, PMS'da boshqariladi
+      expect(r.channelOwned).toBe(false);
+      expect(r.currency).toBe("UZS");
+      expect(r.origin).toBe("pms");
     });
 
     it("event bilan birga xona holati ham keladi", async () => {

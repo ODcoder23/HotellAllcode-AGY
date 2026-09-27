@@ -9,7 +9,7 @@
 <body>
 <div class="wrap">
   <h1>Xona bog'lash (mapping)</h1>
-  <div class="sub">Beds24 xona turi / unit ↔ PMS tarifi / xonasi. Faqat solishtirish uchun — Beds24'ga hech narsa yuborilmaydi. Faqat egasi uchun.</div>
+  <div class="sub">Beds24 xona turi / unit ↔ PMS tarifi / xonasi. Bog'langan xonaning bronlari, yopiq kunlari va narxi Beds24 bilan sinxronlanadi; bog'lanmagani — yo'q. Bog'lash — egasi va admin.</div>
 
   <nav>
     <a href="/admin/connection.html">Ulanish</a>
@@ -84,7 +84,14 @@ document.getElementById("rows").addEventListener("click", async (e) => {
   const tr = e.target.closest("tr");
   try {
     if (e.target.dataset.del) {
-      await api("/api/admin/mapping/" + encodeURIComponent(e.target.dataset.del), { method: "DELETE" });
+      const id = encodeURIComponent(e.target.dataset.del);
+      try {
+        await api("/api/admin/mapping/" + id, { method: "DELETE" });
+      } catch (err) {
+        // Faol Beds24 bronlari bor — ogohlantirib, xohlasa majburan
+        if (err.code !== "MAPPING_HAS_ACTIVE_RESERVATIONS" || !confirm(err.message)) throw err;
+        await api("/api/admin/mapping/" + id + "?force=1", { method: "DELETE" });
+      }
       msg("Olib tashlandi"); return load();
     }
     if (!e.target.dataset.save) return;
@@ -99,13 +106,14 @@ document.getElementById("rows").addEventListener("click", async (e) => {
       if (!body.roomTypeId) return msg("Tarifni tanlang", true);
     }
     await api("/api/admin/mapping", { method: "PUT", body });
-    msg("Saqlandi"); load();
+    msg("Saqlandi. Beds24 bronlari fonda qayta o'qilmoqda — natija Sinxronizatsiya jurnalida."); load();
   } catch (err) { msg(err.message, true); }
 });
 document.getElementById("autoBtn").onclick = async () => {
   try {
     const r = await api("/api/admin/mapping/auto-units", { method: "POST" });
-    msg(r.mapped.length + " ta unit bog'landi" + (r.skipped.length ? ", topilmadi: " + r.skipped.map(x => x.unitName).join(", ") : ""));
+    msg(r.mapped.length + " ta unit bog'landi" + (r.skipped.length ? ", PMS'da topilmadi: " + r.skipped.map(x => x.unitName).join(", ") : "") +
+      (r.mapped.length ? ". Beds24 bronlari fonda import qilinmoqda." : ""));
     load();
   } catch (e) { msg(e.message, true); }
 };

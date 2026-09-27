@@ -1,8 +1,9 @@
 /**
  * Imron Hotel PMS — backend server
  *
- * REST API (sayt, Shaxmatka, admin panel), WebSocket, davriy
- * vazifalar va Telegram botlar. Frontend ham shu serverdan beriladi.
+ * REST API (sayt, Shaxmatka, admin panel), WebSocket, Beds24 (channel
+ * manager) navbatlari, davriy vazifalar va Telegram botlar. Frontend
+ * ham shu serverdan beriladi.
  *
  * Ishga tushirish:  npm run dev
  */
@@ -26,6 +27,9 @@ import { webhooksRouter } from "./routes/webhooks.js";
 import { parseAuth, authRequired, requireAuth, requirePermission } from "./lib/authMiddleware.js";
 import { internalLimiter } from "./lib/rateLimit.js";
 import { scheduleMaintenance } from "./queues/scheduler.js";
+// TZ 11-band: Beds24 navbatlari worker'lari va o'lik xat (beds24-retry)
+import "./queues/workers.js";
+import "./queues/deadLetter.js";
 import { startBot, stopBot } from "./bot/index.js";
 import { startCleaningBot, stopCleaningBot } from "./bot/cleaning-bot.js";
 import { startKitchenBot, stopKitchenBot } from "./bot/kitchen-bot.js";
@@ -134,9 +138,10 @@ app.use("/api/public", publicRouter);
 app.use("/api/rooms", internalLimiter, roomsRouter);
 app.use("/api/reservations", internalLimiter, reservationsRouter);
 app.use("/api/rate-plans", internalLimiter, ratesRouter);
-// channelRouter — Channel manager (Beds24 kuzatuvi): faqat FOUNDER,
-// faqat o'qish. Limiter bitta: ikki marta qo'yilsa so'rov ikki hisoblanadi
+// channelRouter — Channel manager (Beds24): ulash, bog'lash, jurnal, kurs.
+// Limiter bitta: ikki marta qo'yilsa so'rov ikki hisoblanadi
 app.use("/api/admin", internalLimiter, channelRouter, adminRouter);
+// Beds24 webhook (TZ 10-band) — JWT emas, URL'dagi maxfiy token
 app.use("/api/webhooks", webhooksRouter);
 
 // --- Yuklangan fayllar (tozalash rasmlari) ------------------
@@ -154,7 +159,7 @@ const appDir = fileURLToPath(new URL("../public/app", import.meta.url));
 app.use(express.static(appDir));
 
 // Channel manager alohida sahifalari (/admin/connection.html va h.k.).
-// Sahifaning o'zida ma'lumot yo'q — hammasi founder token'i bilan API'dan
+// Sahifaning o'zida ma'lumot yo'q — hammasi admin token'i bilan API'dan
 const adminPagesDir = fileURLToPath(new URL("../public/admin", import.meta.url));
 app.use("/admin", express.static(adminPagesDir));
 
@@ -204,8 +209,9 @@ function onReady() {
 // emas, Nginx ham bitta proxy qoidasi bilan o'tkazadi (09-fayl §4).
 startRealtimeServer(server);
 
-// Davriy vazifalar (queues/scheduler.ts). Redis yo'q bo'lsa jim
-// o'tkazib yuboriladi — PMS ishlayveradi.
+// Davriy vazifalar (queues/scheduler.ts): polling, catch-up, narx,
+// drift, kurs va PMS vazifalari. Redis yo'q bo'lsa jim o'tkazib
+// yuboriladi — PMS ishlayveradi (TZ 17, 19-band).
 void scheduleMaintenance();
 
 // Telegram botlar. Token yo'q bo'lsa jim o'tkazib yuboriladi —

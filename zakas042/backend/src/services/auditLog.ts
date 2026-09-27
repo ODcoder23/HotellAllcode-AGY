@@ -21,9 +21,6 @@ export const AUDIT_ACTIONS = [
   "settings.changed",
   // Nonushta narxi — faol bronlar summasini ham o'zgartirishi mumkin
   "meal_price.changed",
-  // Tizim nazorati: sotuvni vaqtincha to'xtatish (STOP) va qayta ochish
-  "system.sales_stop",
-  "system.sales_resume",
   "reservation.cancelled",
   "reservation.no_show",
   // Pul harakati — naqd yo'qolsa javobgar ko'rinsin (SAVOLLAR.md S13)
@@ -48,13 +45,16 @@ export const AUDIT_ACTIONS = [
   "user.role_changed",
   "user.password_changed",
   "user.login",
-  // Kanal kuzatuvi (Beds24, faqat egasi) — ulanish va bog'lanish
+  // Channel manager (Beds24) — ulanish, bog'lash, qo'lda amallar
   "channel.connected",
   "channel.disconnected",
+  "channel.maintenance",
+  "mapping.created",
   "mapping.updated",
   "mapping.deleted",
+  "webhook.reprocessed",
+  "reservation.sync_retry",
   "fx.changed",
-  "reservation.external_ref",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

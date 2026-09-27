@@ -7,9 +7,11 @@
 #    bash tools/sync.sh restart  — yuboradi, build qiladi, qayta ishga tushiradi
 #
 #  Serverda ESKI fayllar qolib ketmasin: src, scripts, prisma,
-#  public/app, tools butunlay almashtiriladi (2026-09-26 gacha tar
-#  faqat ustiga yozardi — o'chirilgan fayllar serverda qolib, build'ni
-#  buzardi). TEGILMAYDI: .env, node_modules, public/uploads (rasmlar).
+#  public/app, public/admin, tools butunlay almashtiriladi (2026-09-26
+#  gacha tar faqat ustiga yozardi — o'chirilgan fayllar serverda qolib,
+#  build'ni buzardi). TEGILMAYDI: .env, node_modules, public/uploads.
+#
+#  Server — v2 (2026-09-27): /opt/hotel-pms-v2, systemd hotel-v2-backend.
 #
 #  Yangi migratsiya bo'lsa: AVVAL zaxira, keyin `npx prisma migrate
 #  deploy` (SERVER.md, "Yangilash").
@@ -20,13 +22,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/_server.sh"
 KEY="$HOME/.ssh/hotel_vps"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL="$(cd "$SCRIPT_DIR/../zakas042/backend" && pwd)"
-REMOTE="/opt/hotel-pms/backend"
+REMOTE="/opt/hotel-pms-v2/backend"
 
 echo "Kod yuborilmoqda: $LOCAL -> $SERVER:$REMOTE"
 
 cd "$LOCAL"
 tar --exclude='*.bak' --exclude='public/uploads' -czf /tmp/sync.tgz \
-    src prisma public/app scripts tools \
+    src prisma public/app public/admin scripts tools \
     package.json package-lock.json tsconfig.json tsconfig.test.json \
     vitest.config.ts vitest.setup.ts .env.example
 
@@ -41,5 +43,5 @@ ssh -i "$KEY" "$SERVER" "cd $REMOTE && npm install --no-audit --no-fund 2>&1 | t
 
 if [ "$1" = "restart" ]; then
   echo "Qayta ishga tushirilmoqda..."
-  ssh -i "$KEY" "$SERVER" "bash /opt/hotel-pms/restart.sh"
+  ssh -i "$KEY" "$SERVER" "bash /opt/hotel-pms-v2/restart.sh"
 fi

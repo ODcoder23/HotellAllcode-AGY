@@ -11,6 +11,10 @@
  *   addPayment         → POST   /api/reservations/:id/payments
  *   reversePayment     → POST   /api/reservations/:id/payments/:pid/reverse
  *   addCharge          → POST   /api/reservations/:id/charges
+ *   (Beds24)           → POST   /api/reservations/:id/resync
+ *
+ * Har amal Beds24'ga navbat orqali yuboriladi (services/reservationSync.ts)
+ * — javob Beds24'ni kutmaydi, holat bronning `syncStatus` maydonida.
  */
 
 import { Router } from "express";
@@ -22,7 +26,9 @@ import { asyncHandler, ValidationError } from "../lib/errors.js";
 import { fromDateKey, isValidDateKey, serializeReservation } from "../lib/serialize.js";
 import { addDays, hotelToday } from "../lib/hotelTime.js";
 import * as svc from "../services/reservations.js";
-import { getFx } from "../services/fx.js";
+import { getFxRate, rateFor } from "../services/exchangeRate.js";
+import { activeConnection } from "../services/beds24/auth.js";
+import { retryReservationSync } from "../services/reservationSync.js";
 import {
   MONEY_LIMITS, moneyAmount, nightPriceAmount, positiveMoney, signedMoney,
 } from "../lib/moneySchema.js";
@@ -60,10 +66,18 @@ reservationsRouter.get("/", requireAuth, requirePermission("reservation.read"), 
 }));
 
 // --- GET /api/reservations/fx-rate --------------------------
-// Dollar kursi — faqat ko'rsatish uchun, FAQAT FOUNDER (2026-09-27).
-// Shaxmatka bron oynasida so'm tagida $ chiqaradi. `/:id` dan OLDIN.
-reservationsRouter.get("/fx-rate", requireAuth, requirePermission("channel.read"), asyncHandler(async (_req, res) => {
-  res.json({ fx: await getFx() });
+// Bugungi dollar kursi (Q15) — HAMMA xodimga (2026-09-27, egasi qarori):
+// Shaxmatka narx va bron oynasida $ ko'rsatadi, dollar bronda so'mda
+// to'lovni oldindan hisoblaydi (backend baribir o'zi hisoblaydi).
+// `channelConnected` — Beds24 ulanganmi: sinxron belgilari (✓ / ⚠) faqat
+// shunda ko'rsatiladi. `/:id` dan OLDIN turishi shart.
+reservationsRouter.get("/fx-rate", requireAuth, requirePermission("reservation.read"), asyncHandler(async (req, res) => {
+  const currency = String(req.query.currency ?? "USD").toUpperCase().slice(0, 3);
+  const [rate, saved, conn] = await Promise.all([rateFor(currency), getFxRate(currency), activeConnection()]);
+  res.json({
+    fx: saved, currency, rate, date: saved?.date ?? null, source: saved?.source ?? null,
+    channelConnected: conn !== null,
+  });
 }));
 
 // --- GET /api/reservations/:id ------------------------------
@@ -176,30 +190,6 @@ reservationsRouter.patch("/:id", requireAuth, requirePermission("reservation.wri
   res.json(serializeReservation(r));
 }));
 
-// --- PUT /api/reservations/:id/external-ref -----------------
-// OTA bron raqami (Booking.com #...) — FAQAT FOUNDER (2026-09-27).
-// Kanal kuzatuvi Beds24 bronini PMS broni bilan shu raqam orqali aniq
-// solishtiradi. Bron summasi, sanasi, holatiga ta'sir qilmaydi.
-reservationsRouter.put("/:id/external-ref", requireAuth, requirePermission("channel.write"), asyncHandler(async (req: AuthedRequest, res) => {
-  const { externalReference } = parse(
-    z.object({ externalReference: z.string().trim().max(100).nullable() }),
-    req.body
-  );
-  const value = externalReference || null;
-  const before = await svc.getReservation(req.params.id);
-  const r = await svc.setExternalReference(req.params.id, value);
-  await audit({
-    userId: req.user?.id,
-    action: "reservation.external_ref",
-    entityType: "Reservation",
-    entityId: req.params.id,
-    before: { externalReference: before.externalReference },
-    after: { externalReference: value },
-    ipAddress: req.ip,
-  });
-  res.json(serializeReservation(r));
-}));
-
 // --- Status amallari ----------------------------------------
 // Tasdiqlash: PENDING_PAYMENT -> CONFIRMED (13-fayl §5).
 // `reservation.write` huquqi: MANAGER ham to'lovni tasdiqlaydi.
@@ -282,11 +272,13 @@ reservationsRouter.post("/:id/change-dates", requireAuth, requirePermission("res
 // To'lov summasi ham cheklangan: juda katta summa — xato kiritish
 // belgisi (qo'shimcha nol). Manfiy — qaytarish.
 reservationsRouter.post("/:id/payments", requireAuth, requirePermission("payment.write"), asyncHandler(async (req: AuthedRequest, res) => {
-  const { amount, method, note } = parse(
+  const { amount, method, note, currency } = parse(
     z.object({
       amount: signedMoney(MONEY_LIMITS.payment),
       method: z.string().min(1).max(50),
       note: z.string().max(500).optional(),
+      // Q15: dollar bronda mehmon so'mda to'lasa "UZS" (bo'sh — bron valyutasi)
+      currency: z.string().regex(/^[A-Za-z]{3}$/, "Valyuta kodi 3 harf (UZS, USD)").optional(),
     }),
     req.body
   );
@@ -301,7 +293,7 @@ reservationsRouter.post("/:id/payments", requireAuth, requirePermission("payment
     return;
   }
 
-  const result = await svc.addPayment(req.params.id, amount, method, note, req.user?.id);
+  const result = await svc.addPayment(req.params.id, amount, method, note, req.user?.id, currency);
 
   // 10-fayl §4: pul harakati har doim jurnalda qolsin (S13)
   await audit({
@@ -309,7 +301,7 @@ reservationsRouter.post("/:id/payments", requireAuth, requirePermission("payment
     action: amount >= 0 ? "payment.received" : "payment.refunded",
     entityType: "Reservation",
     entityId: req.params.id,
-    after: { amount, method },
+    after: { amount, method, currency: (currency ?? result.currency).toUpperCase() },
     ipAddress: req.ip,
   });
 
@@ -340,4 +332,22 @@ reservationsRouter.post("/:id/charges", requireAuth, requirePermission("payment.
     req.body
   );
   res.status(201).json(serializeReservation(await svc.addCharge(req.params.id, label, amount)));
+}));
+
+// --- POST /api/reservations/:id/resync -----------------------
+// Beds24 rad etgan / yubora olmagan bronni qayta yuborish (xona yoki
+// sana o'zgartirilgandan keyin, yoki Beds24'da joy bo'shagach).
+// Natija darhol javobda: yuborildi / yana rad etildi.
+reservationsRouter.post("/:id/resync", requireAuth, requirePermission("channel.write"), asyncHandler(async (req: AuthedRequest, res) => {
+  const outcome = await retryReservationSync(req.params.id);
+  await audit({
+    userId: req.user?.id,
+    action: "reservation.sync_retry",
+    entityType: "Reservation",
+    entityId: req.params.id,
+    after: outcome,
+    ipAddress: req.ip,
+  });
+  const r = await svc.getReservation(req.params.id);
+  res.json({ outcome, reservation: serializeReservation(r) });
 }));

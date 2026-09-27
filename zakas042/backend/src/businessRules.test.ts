@@ -359,7 +359,8 @@ describe("Biznes qoidalari (2026-09-26 audit regressiyalari)", () => {
       expect(report.status).toBe(200);
       // Faol bron bitta (3 kecha) — o'rtacha 3, 2 emas (ilgari 4/2 = 2 edi)
       expect(report.body.bookings.avgNights).toBe(3);
-      expect(report.body.channel).toBeUndefined();
+      // Beds24 bo'limi bor; ulanmagan — bo'sh
+      expect(report.body.channel).toMatchObject({ connected: false, bookings: 0, revenue: 0 });
     });
   });
 });

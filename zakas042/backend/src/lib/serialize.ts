@@ -8,7 +8,8 @@
  * (`p.amount` ustida `reduce` qiladi) — shu yerda o'giriladi.
  */
 
-import { reservationMoney } from "./money.js";
+import { isChannelOwned } from "./channelOwnership.js";
+import { baseRate, isBaseCurrency, paymentBase, reservationMoney, toBase } from "./money.js";
 import type { Prisma } from "@prisma/client";
 
 // --- Ibtidoiy konvertorlar ----------------------------------
@@ -108,6 +109,11 @@ type PaymentRow = {
   method: string;
   paymentDate: Date;
   note: string | null;
+  externalPaymentId?: string | null;
+  // Boshqa valyutada qabul qilingan to'lov (Q15: dollar bronda so'm)
+  originalAmount?: Prisma.Decimal | null;
+  originalCurrency?: string | null;
+  exchangeRate?: Prisma.Decimal | null;
 };
 
 export const serializeCharge = (c: ChargeRow) => ({
@@ -116,12 +122,23 @@ export const serializeCharge = (c: ChargeRow) => ({
   amount: toNumber(c.amount),
 });
 
-export const serializePayment = (p: PaymentRow) => ({
+/**
+ * `rate` — bron kursi (so'm bronda 1). `amountBase` — to'lovning
+ * so'mdagi qiymati: kassa va "bugungi tushum" shu bilan sanaydi.
+ */
+export const serializePayment = (p: PaymentRow, rate: number | null = 1) => ({
   id: p.id,
-  amount: toNumber(p.amount),        // so'm; manfiy — qaytarish
+  amount: toNumber(p.amount),        // bron valyutasida; manfiy — qaytarish
   method: p.method,
   date: toDateKey(p.paymentDate),   // frontend `p.date` kutadi
   note: p.note ?? "",
+  // Beds24'dan kelgan to'lov (OTA)
+  external: Boolean(p.externalPaymentId),
+  // Mehmon boshqa valyutada to'lagan bo'lsa — asl summa va kurs
+  originalAmount: p.originalAmount != null ? toNumber(p.originalAmount) : null,
+  originalCurrency: p.originalCurrency ?? null,
+  exchangeRate: p.exchangeRate != null ? toNumber(p.exchangeRate) : null,
+  amountBase: paymentBase(p, rate),
 });
 
 // --- Reservation --------------------------------------------
@@ -136,6 +153,8 @@ type ReservationRow = {
   children: number;
   source: string;
   pricePerNight: Prisma.Decimal;
+  currency?: string;
+  exchangeRate?: Prisma.Decimal | null;
   notes: string | null;
   withMeal: boolean;
   mealPricePerPerson?: Prisma.Decimal | null;
@@ -143,7 +162,12 @@ type ReservationRow = {
   priceReason?: string | null;
   status: string;
   code?: string | null;
+  channelId?: string | null;
+  externalReservationId?: string | null;
+  origin?: string;
   externalReference?: string | null;
+  syncStatus?: string;
+  syncError?: string | null;
   checkedInAt: Date | null;
   checkedOutAt: Date | null;
   createdAt: Date;
@@ -158,15 +182,19 @@ type ReservationRow = {
  * va `res.phone` kutadi, ichma-ich obyekt emas.
  */
 export function serializeReservation(r: ReservationRow) {
+  // Bron kursi: so'm bron — 1, dollar bron — bron kelgan kundagi kurs
+  // (Q15). Hali yozilmagan bo'lsa null — so'm qiymati ko'rsatilmaydi
+  const currency = (r.currency ?? "UZS").toUpperCase();
+  const rate = baseRate({ currency, exchangeRate: r.exchangeRate });
   const charges = (r.charges ?? []).map(serializeCharge);
-  const payments = (r.payments ?? []).map(serializePayment);
+  const payments = (r.payments ?? []).map((p) => serializePayment(p, rate));
 
   /**
    * TZ 14-band formulasi — `lib/money.ts` (YAGONA MANBA).
    *
    * Nonushta (S10): kishi boshiga, har kecha; narx BRONDAN olinadi.
    * Bekor qilingan / kelmagan bron (S11): summa = faqat jarima.
-   * Hammasi tiyinda qo'shiladi — float qoldig'i yo'q.
+   * Hammasi sentda qo'shiladi — dollar summalarida ham float xatosi yo'q.
    */
   const m = reservationMoney(r);
 
@@ -205,8 +233,41 @@ export function serializeReservation(r: ReservationRow) {
 
     // Sayt broni kodi (IMR-XXXXX) — qabulxona mehmon bilan gaplashganda
     code: r.code ?? null,
-    // OTA bron raqami — Shaxmatka faqat founder'ga ko'rsatadi (kanal kuzatuvi)
+
+    // Valyuta (Q15): so'm — hamma bron, USD — faqat Beds24'dan kelgan.
+    // Yuqoridagi BARCHA summalar bron valyutasida
+    currency,
+    exchangeRate: isBaseCurrency(currency) ? null : rate,
+    // Dollar bronning so'mdagi qiymati — Shaxmatka "tagida so'm" satri
+    // (hamma xodimga). So'm bronda null; kurs hali noma'lum bo'lsa ham null
+    base: isBaseCurrency(currency) || rate === null ? null : {
+      pricePerNight: toBase(r.pricePerNight, rate),
+      roomTotal: toBase(m.roomTotal, rate),
+      mealTotal: toBase(m.mealTotal, rate),
+      total: toBase(m.total, rate),
+      // Bir kurs bilan: jami - to'langan = qoldiq so'mda ham to'g'ri chiqadi.
+      // Kassaga tushgan aniq so'm — har to'lovning `amountBase`
+      paid: toBase(m.paid, rate),
+      remaining: toBase(m.remaining, rate),
+      refundDue: toBase(m.refundDue, rate),
+    },
+
+    // Beds24: OTA broni — sana, narx, mehmon soni va bekor qilish OTA'da
+    // (Q9). Shaxmatka shu bayroq bo'yicha tugmalarni yashiradi
+    channelOwned: isChannelOwned({
+      origin: r.origin ?? "PMS",
+      source: r.source,
+      channelId: r.channelId ?? null,
+      externalReservationId: r.externalReservationId ?? null,
+    }),
+    // Bron qayerda tug'ilgan: "pms" | "channel"
+    origin: enumToKey(r.origin ?? "PMS"),
+    // OTA'dagi bron raqami — xodim Booking.com extranet'ida topishi uchun
     externalReference: r.externalReference ?? null,
+    externalReservationId: r.externalReservationId ?? null,
+    // Beds24 bilan sinxron: pending | syncing | synced | failed | rejected | not_applicable
+    syncStatus: enumToKey(r.syncStatus ?? "NOT_APPLICABLE"),
+    syncError: r.syncError ?? null,
     checkedInAt: r.checkedInAt?.toISOString() ?? null,
     checkedOutAt: r.checkedOutAt?.toISOString() ?? null,
   };

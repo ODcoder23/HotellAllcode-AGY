@@ -399,6 +399,8 @@ export async function sendBookingAlert(b: {
   checkOut: string;
   nights: number;
   total: number;
+  currency?: string;
+  totalBase?: number | null;
   source: string;
   status: string;
   phone?: string;

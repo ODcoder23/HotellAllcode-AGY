@@ -488,9 +488,9 @@ describe("FAZA 2A — ichki REST API", () => {
       const { body } = await api(`/api/rate-plans?from=${day(0)}&to=${day(2)}`);
       expect(body.length).toBeGreaterThan(0);
       expect(typeof body[0].price).toBe("number");
-      // Beds24 olib tashlangan — sinxron maydonlari javobda yo'q
-      expect(body[0].source).toBeUndefined();
-      expect(body[0].syncStatus).toBeUndefined();
+      // Beds24 (2026-09-27 qaytdi): qayerdan kelgani va yuborilganmi
+      expect(body[0].source).toBe("pms");
+      expect(["pending", "synced", "error"]).toContain(body[0].syncStatus);
     });
 
     it("narx belgilanadi va o'qiladi", async () => {

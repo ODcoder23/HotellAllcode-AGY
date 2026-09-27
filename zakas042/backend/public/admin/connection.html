@@ -9,7 +9,7 @@
 <body>
 <div class="wrap">
   <h1>Beds24 ulanishi</h1>
-  <div class="sub">Faqat kuzatuv: PMS Beds24'dan o'qiydi va solishtiradi, hech narsa yozmaydi. Token hech qachon ko'rsatilmaydi. Faqat egasi uchun.</div>
+  <div class="sub">Ikki tomonlama: Beds24 bronlari PMS'ga tushadi; PMS bronlari, narxlari va yopiq kunlari Beds24'ga yuboriladi. Token hech qachon ko'rsatilmaydi. Ulash — egasi va admin.</div>
 
   <nav>
     <a href="/admin/connection.html" class="on">Ulanish</a>
@@ -36,8 +36,9 @@
   <div class="card">
     <h2>Ulash</h2>
     <div class="sub" style="margin:0 0 10px">
-      Beds24 → Settings → Marketplace → API: <b>invite code</b> yarating (faqat o'qish ruxsatlari yetarli:
-      bookings, inventory, properties — read). Kod bir martalik, token bazada shifrlangan saqlanadi.
+      Beds24 → Settings → Marketplace → API: <b>invite code</b> yarating. Ruxsatlar: bookings (o'qish + yozish,
+      shaxsiy va moliyaviy), inventory (o'qish + yozish), properties (o'qish). Kod bir martalik, token bazada
+      shifrlangan saqlanadi. Ulangandan keyin xonalarni bog'lang — shundan keyin Beds24 bronlari import qilinadi.
     </div>
     <div class="row" style="justify-content:flex-start;flex-wrap:wrap">
       <input id="invite" placeholder="Invite code" style="min-width:220px">
@@ -52,30 +53,40 @@
 <script>
 function badge(ok, yes, no) { return '<span class="badge ' + (ok ? 'b-ok' : ok === false ? 'b-err' : 'b-mute') + '">' + (ok ? yes : no) + '</span>'; }
 
+/** Token Beds24'ga yoza oladimi — yo'q bo'lsa bronlar va narx yuborilmaydi */
+function writeScopes(scopes) {
+  const w = (area) => (scopes || []).some((x) => x === "all:" + area || x === "write:" + area);
+  return ["bookings", "inventory"].filter((a) => !w(a));
+}
+
 async function load() {
   try {
     const s = await api("/api/admin/status");
-    const c = s.connection;
+    const c = s.connection, r = s.reservations;
     document.getElementById("status").innerHTML =
       '<div class="stat"><div class="n">' + badge(c.connected && c.lastCheckOk !== false, "ulangan", c.connected ? "xato" : "ulanmagan") + '</div><div class="l">Ulanish</div></div>' +
       '<div class="stat"><div class="n">' + esc(c.propertyId || "—") + '</div><div class="l">Obyekt ID</div></div>' +
       '<div class="stat"><div class="n">' + (c.credits.remaining === null ? "—" : c.credits.remaining) + '</div><div class="l">Kredit (5 daqiqa)</div></div>' +
-      '<div class="stat"><div class="n">' + s.bookings.missingInPms + '</div><div class="l">PMS\'da yo\'q bronlar</div></div>';
+      '<div class="stat"><div class="n">' + (r.failed + r.rejected) + '</div><div class="l">Beds24\'ga yetmagan bronlar</div></div>';
+    const missing = c.connected && (c.scopes || []).length ? writeScopes(c.scopes) : [];
     const rows = [
-      ["Rejim", "faqat o'qish (kuzatuv)"],
       ["Oxirgi tekshiruv", when(c.lastCheckedAt) + (c.lastError ? ' <span class="badge b-err">' + esc(c.lastError) + '</span>' : "")],
       ["Token muddati", when(c.tokenExpiresAt)],
-      ["Ruxsatlar (scope)", (c.scopes || []).map(esc).join(", ") || "—"],
-      ["Shifrlash kaliti", c.encryptionKeySet ? "sozlangan" : '<span class="badge b-err">ENCRYPTION_KEY yo\'q</span>'],
-      ["Avtomatik tekshiruv", c.monitorMinutes > 0 ? "har " + c.monitorMinutes + " daqiqa, " + c.horizonDays + " kun oldinga" : "o'chiq"],
-      ["Webhook", c.webhookConfigured ? "sozlangan (24 soatda " + s.webhooks24h + ")" : "sozlanmagan"],
+      ["Ruxsatlar (scope)", ((c.scopes || []).map(esc).join(", ") || "—") +
+        (missing.length ? ' <span class="badge b-err">yozish yo\'q: ' + esc(missing.join(", ")) + '</span>' : "")],
+      ["Shifrlash kaliti", c.encryptionKeySet ? "sozlangan" : '<span class="badge b-err">ENCRYPTION_KEY yo\'q — ulab bo\'lmaydi</span>'],
+      ["Valyuta", "PMS: so'm · Beds24: " + esc((c.currency && c.currency.channel) || "—") +
+        (c.fx ? " · 1 $ = " + esc(c.fx.rate) + " so'm (" + (c.fx.source === "cbu" ? "Markaziy bank" : "qo'lda") + ")" : "")],
+      ["Polling", c.pollIntervalMinutes > 0 ? "har " + c.pollIntervalMinutes + " daqiqa" : "o'chiq"],
+      ["Bronlarni oxirgi o'qish", when(s.lastPollAt)],
+      ["Webhook", c.webhookConfigured ? "sozlangan (24 soatda " + s.webhooks24h + ")" : "sozlanmagan — bronlar polling bilan keladi"],
       ["Mapping", s.mapping.roomsMapped + " / " + s.mapping.roomsTotal + " xona"],
-      ["Bronlarni oxirgi o'qish", when(s.bookings.lastPollAt)],
-      ["Narxni oxirgi o'qish", when(s.rates.lastPulledAt)],
+      ["Bronlar", "Beds24'dan kelgan " + r.fromChannel + " · yuborilgan " + r.synced + " · kutmoqda " + r.pending +
+        " · xato " + r.failed + " · rad etilgan " + r.rejected],
+      ["Qo'lda hal qilinadigan webhook", s.needsAction],
       ["Xatolar (24 soat)", s.failed24h],
-      ["Dollar kursi", s.fx ? "1 $ = " + esc(s.fx.rate) + " so'm (" + (s.fx.source === "cbu" ? "Markaziy bank" : "qo'lda") + ")" : "—"],
     ];
-    document.getElementById("sys").innerHTML = "<tbody>" + rows.map(r => "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>").join("") + "</tbody>";
+    document.getElementById("sys").innerHTML = "<tbody>" + rows.map(x => "<tr><td>" + x[0] + "</td><td>" + x[1] + "</td></tr>").join("") + "</tbody>";
   } catch (e) { msg(e.message, true); }
 }
 
@@ -83,7 +94,7 @@ document.getElementById("reloadBtn").onclick = load;
 document.getElementById("pingBtn").onclick = async () => {
   try {
     const r = await api("/api/admin/connection/ping", { method: "POST" });
-    r.ok ? msg("Ishlayapti: " + r.propertyName + " (" + r.currency + "), " + r.roomTypes + " xona turi, " + r.units + " unit") : msg(r.error, true);
+    msg((r.ok ? "Ishlayapti: " : "Xato: ") + (r.detail || ""), !r.ok);
     load();
   } catch (e) { msg(e.message, true); }
 };
@@ -94,12 +105,16 @@ document.getElementById("connectBtn").onclick = async () => {
   try {
     const r = await api("/api/admin/connection", { method: "POST", body: propertyId ? { inviteCode, propertyId } : { inviteCode } });
     document.getElementById("invite").value = "";
-    msg(r.ping && r.ping.ok ? "Ulandi: " + r.ping.propertyName : "Ulandi, tekshiruv: " + ((r.ping && r.ping.error) || ""), !(r.ping && r.ping.ok));
+    const ok = r.ping && r.ping.ok;
+    const missing = writeScopes((r.ping && r.ping.scopes) || r.connection.scopes);
+    msg((ok ? "Ulandi: " + (r.ping.detail || "") : "Ulandi, tekshiruv xato: " + ((r.ping && r.ping.detail) || "")) +
+      (missing.length ? " · DIQQAT: token yoza olmaydi (" + missing.join(", ") + ") — bronlar va narx yuborilmaydi" : "") +
+      " · Keyingi qadam: Mapping sahifasida xonalarni bog'lang.", !ok || missing.length > 0);
     load();
   } catch (e) { msg(e.message, true); }
 };
 document.getElementById("disconnectBtn").onclick = async () => {
-  if (!confirm("Beds24 ulanishini uzasizmi? Token bazadan o'chiriladi.")) return;
+  if (!confirm("Beds24 ulanishini uzasizmi? Token bazadan o'chiriladi, sinxron to'xtaydi.")) return;
   try { await api("/api/admin/connection", { method: "DELETE" }); msg("Uzildi"); load(); } catch (e) { msg(e.message, true); }
 };
 load();

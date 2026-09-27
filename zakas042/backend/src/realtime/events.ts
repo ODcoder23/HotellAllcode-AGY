@@ -22,15 +22,18 @@ export const PMS_EVENTS = [
 ] as const;
 
 /**
- * Tizim holati — HAMMA ochiq oynaga (Shaxmatka ham): STOP bosilsa
- * jadval darhol xiralashadi, stopdan chiqarilsa qayta faollashadi
- * (Sozlamalar -> Tizim nazorati, 2026-09-26)
+ * Beds24 (channel manager) ogohlantirishlari — admin panel ko'rsatadi,
+ * Shaxmatka bron belgisini (✓ / ⚠) yangilaydi
  */
-export const SYSTEM_EVENTS = ["system.sales_stop"] as const;
+export const CHANNEL_EVENTS = [
+  "sync.failed",
+  "webhook.needs_attention",
+  "rate.sync.updated",
+] as const;
 
 export type PmsEvent = (typeof PMS_EVENTS)[number];
-export type SystemEvent = (typeof SYSTEM_EVENTS)[number];
-export type EventType = PmsEvent | SystemEvent;
+export type ChannelEvent = (typeof CHANNEL_EVENTS)[number];
+export type EventType = PmsEvent | ChannelEvent;
 
 /** Serializatsiya qilingan bron (serializeReservation natijasi) */
 export type SerializedReservation = Record<string, unknown> & { id: string; roomId: string };
@@ -61,13 +64,24 @@ export type RealtimeMessage =
       to: string;
     }
   | {
-      type: "system.sales_stop";
+      type: "sync.failed";
       timestamp: string;
-      active: boolean;
-      allRooms: boolean;
-      roomIds: string[];
-      reason: string | null;
-      since: string | null;
+      action: string;
+      reservationId?: string;
+      error: string;
+    }
+  | {
+      type: "webhook.needs_attention";
+      timestamp: string;
+      webhookEventId: string;
+      reason: string;
+    }
+  | {
+      type: "rate.sync.updated";
+      timestamp: string;
+      roomTypeId: string;
+      date: string;
+      syncStatus: "pending" | "synced" | "error";
     }
   | {
       type: "connected";

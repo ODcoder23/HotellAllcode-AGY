@@ -139,6 +139,6 @@ const PERMISSION_LABEL: Partial<Record<Permission, string>> = {
   "report.read": "Umumiy hisobot",
   "employee.read": "Xodimlar",
   "employee.write": "Xodim qo'shish",
-  "channel.read": "Channel manager (faqat egasi)",
-  "channel.write": "Channel manager sozlamalari (faqat egasi)",
+  "channel.read": "Channel manager (holat va jurnal)",
+  "channel.write": "Channel manager sozlamalari (ulash, bog'lash)",
 };

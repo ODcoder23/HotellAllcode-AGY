@@ -5,6 +5,11 @@
  * Narx xona TURI (kategoriya) va kun bo'yicha, so'mda. Sayt, Shaxmatka
  * va yangi bronlar shu jadvaldan hisoblaydi; mavjud bronlar summasi
  * o'zgarmaydi (bronda o'z narxi saqlanadi).
+ *
+ * Beds24: o'zgargan narx fonda Beds24'ga ketadi (so'm / kurs = $,
+ * services/rates.ts). Panel har kun uchun holatni ko'radi:
+ * ● yuborildi / ○ kutmoqda / ⚠ xato. Beds24 panelida o'zgargan narx
+ * soatlik tortiladi (Beds24 ustuvor, Q9).
  */
 
 import { Router } from "express";
@@ -16,6 +21,7 @@ import { toNumber, toDateKey, fromDateKey, isValidDateKey } from "../lib/seriali
 import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
 import { audit } from "../services/auditLog.js";
 import { MONEY_LIMITS, moneyAmount } from "../lib/moneySchema.js";
+import { onRatesChanged, syncRatesRange } from "../services/rates.js";
 
 export const ratesRouter = Router();
 
@@ -58,6 +64,12 @@ ratesRouter.get("/", requireAuth, requirePermission("reservation.read"), asyncHa
     date: toDateKey(p.date),
     price: toNumber(p.price),
     minStay: p.minStay,
+    // Beds24: qayerdan kelgan va yuborilganmi
+    source: p.source,
+    syncStatus: p.syncError ? "error" : p.syncedAt ? "synced" : "pending",
+    syncError: p.syncError,
+    // Beds24'dagi narx (kanal valyutasida, odatda $)
+    channelPrice: p.channelPrice === null ? null : toNumber(p.channelPrice),
   })));
 }));
 
@@ -105,11 +117,15 @@ ratesRouter.put("/", requireAuth, requirePermission("rate.write"), asyncHandler(
     const price = new Prisma.Decimal(prices[roomTypeId]);
     return prisma.ratePlan.upsert({
       where: { roomTypeId_date: { roomTypeId, date } },
-      create: { roomTypeId, date, price },
-      update: { price },
+      create: { roomTypeId, date, price, source: "pms" },
+      // Yangi narx "kutmoqda" — Beds24'ga yuboriladi, eski xato belgisi tozalanadi
+      update: { price, source: "pms", syncedAt: null, syncError: null },
     });
   }));
   await prisma.$transaction(ops);
+
+  // Beds24'ga fonda — admin kutmaydi; panel `rate.sync.updated` bilan ko'radi
+  await onRatesChanged(typeIds, days[0], days[days.length - 1]);
 
   // Narx — pul: kim o'zgartirganini bilish kerak
   await audit({
@@ -121,5 +137,43 @@ ratesRouter.put("/", requireAuth, requirePermission("rate.write"), asyncHandler(
     ipAddress: req.ip,
   });
 
-  res.json({ updated: ops.length, days: days.length });
+  res.json({ updated: ops.length, days: days.length, syncStatus: "pending" });
+}));
+
+// --- POST /api/rate-plans/resync — Beds24'ga qayta yuborish ----
+// Panel [↻] tugmasi: yuborilmagan / xato kunlar darhol yuboriladi.
+// `all: true` — oraliqdagi HAMMA kun qayta yuboriladi (masalan
+// birinchi ulanishda PMS narxlarini Beds24'ga o'tkazish uchun)
+const resyncSchema = z.object({
+  roomTypeIds: z.array(z.string().min(1).max(50)).min(1).max(50),
+  from: dateKey,
+  to: dateKey,
+  all: z.boolean().optional(),
+});
+
+ratesRouter.post("/resync", requireAuth, requirePermission("rate.write"), asyncHandler(async (req: AuthedRequest, res) => {
+  const { roomTypeIds, from, to, all } = parse(resyncSchema, req.body);
+  const start = fromDateKey(from);
+  const end = fromDateKey(to);
+  assertRange(start, end);
+
+  await prisma.ratePlan.updateMany({
+    where: {
+      roomTypeId: { in: roomTypeIds },
+      date: { gte: start, lte: end },
+      ...(all ? {} : { OR: [{ syncedAt: null }, { syncError: { not: null } }] }),
+    },
+    data: { syncedAt: null, syncError: null },
+  });
+  const result = await syncRatesRange(roomTypeIds, from, to);
+
+  await audit({
+    userId: req.user?.id,
+    action: "rate.changed",
+    entityType: "RatePlan",
+    entityId: `${from}..${to}`,
+    after: { resync: true, all: !!all, roomTypeIds, sent: result.sent, failed: result.failed },
+    ipAddress: req.ip,
+  });
+  res.json(result);
 }));

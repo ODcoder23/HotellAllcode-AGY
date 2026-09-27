@@ -111,14 +111,15 @@ RATE_LIMIT_DISABLED=true
 JWT_SECRET=<yangi 64 belgili kalit>
 # barcha TELEGRAM_* BO'SH — aks holda mahalliy bot serverdagi bot bilan to'qnashadi
 
-# Kanal kuzatuvi (channel.test.ts): soxta Beds24 va Markaziy bankni test
-# o'zi 56401-portda ko'taradi — server shu manzilga qarashi kerak
+# Beds24 integratsiyasi (channel.test.ts): soxta Beds24 va Markaziy bankni
+# test o'zi 56401-portda ko'taradi — server shu manzilga qarashi kerak
 BEDS24_BASE_URL=http://127.0.0.1:56401/api/v2
 FX_CBU_URL=http://127.0.0.1:56401/api/v2/cbu
 ENCRYPTION_KEY=<openssl rand -hex 32>
 WEBHOOK_URL_TOKEN=test-webhook-token-0123456789
 PROPERTY_CACHE_TTL_MS=0
-CHANNEL_MONITOR_MINUTES=0
+# Polling va catch-up jadvali o'chiq — testlar tugma bilan chaqiradi
+POLL_INTERVAL_MINUTES=0
 ```
 
 ```bash

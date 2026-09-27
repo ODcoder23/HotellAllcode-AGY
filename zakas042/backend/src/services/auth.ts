@@ -55,11 +55,12 @@ export const PERMISSIONS = {
   // pulni olib, tizimda "qaytarildi" deb yozish mumkin edi
   "payment.refund":     ["FOUNDER", "ADMIN", "MANAGER"],
   "reservation.read":   ["FOUNDER", "ADMIN", "MANAGER", "STAFF"],
-  // Kanal kuzatuvi (Beds24) va dollar kursi — FAQAT egasi (2026-09-27).
-  // Egasi Beds24 holatini tekshirib, o'rganib turadi; boshqa rollarga
-  // bu bo'lim ko'rinmaydi va kerak emas
-  "channel.read":       ["FOUNDER"],
-  "channel.write":      ["FOUNDER"],
+  // Channel manager (Beds24) — 2026-09-27, egasi qarori "avvalgidek":
+  // ulash, xonalarni bog'lash, kurs, qayta yuborish — egasi va admin;
+  // holat va sinxron jurnalini menejer ham ko'radi. Dollar summasi esa
+  // bron ichida — Shaxmatkada hamma xodimga ko'rinadi (reservation.read)
+  "channel.read":       ["FOUNDER", "ADMIN", "MANAGER"],
+  "channel.write":      ["FOUNDER", "ADMIN"],
 } as const satisfies Record<string, readonly UserRole[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

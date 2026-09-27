@@ -9,13 +9,19 @@
  * texnik ishlarni qiladi, bu raqamlar unga kerak emas
  * (`PERMISSIONS["report.read"] = ["FOUNDER"]`).
  *
- * Hamma summa so'mda; formula — lib/money.ts.
+ * Hamma summa SO'MDA; formula — lib/money.ts. Beds24'dan kelgan dollar
+ * bron bron kelgan kundagi kurs bilan o'giriladi (`toBase`), so'mda qabul
+ * qilingan to'lov — aynan tushgan so'm (`paymentBase`).
  */
 
 import { prisma } from "../lib/prisma.js";
 import { toNumber, toDateKey } from "../lib/serialize.js";
-import { reservationMoney, round2, stayRevenueIn, sumMoney } from "../lib/money.js";
+import { paymentBase, reservationMoney, round2, stayRevenueIn, sumMoney, toBase } from "../lib/money.js";
 import { expenseSummary, CATEGORY_LABEL } from "./expenses.js";
+import { reportRateResolver } from "./exchangeRate.js";
+
+/** Bron summasini so'mga o'girish uchun kerakli maydonlar */
+const fxSelect = { currency: true, exchangeRate: true } as const;
 
 // ============================================================
 //  Yordamchi
@@ -110,6 +116,24 @@ export type StaffReport = {
   systemUsers: Array<{ role: string; count: number }>;
 };
 
+export type ChannelReport = {
+  /** Beds24 ulanganmi */
+  connected: boolean;
+  /** Davrda Beds24'dan kelgan bronlar (kirish sanasi bo'yicha) */
+  bookings: number;
+  /** Ulardan dollarda */
+  usdBookings: number;
+  /** Beds24 bronlari summasi, so'mda (bron kursi bilan) */
+  revenue: number;
+  /** Beds24'ga yetmagan PMS bronlari: rad etilgan / xato */
+  rejected: number;
+  failed: number;
+  /** Davrdagi sinxron xatolari (jurnal) */
+  syncErrors: number;
+  /** Qo'lda hal qilinishi kerak bo'lgan webhook'lar */
+  needsAction: number;
+};
+
 export type FullReport = {
   from: string;
   to: string;
@@ -118,6 +142,7 @@ export type FullReport = {
   money: MoneyReport;
   occupancy: OccupancyReport;
   staff: StaffReport;
+  channel: ChannelReport;
 };
 
 // ============================================================
@@ -125,13 +150,14 @@ export type FullReport = {
 // ============================================================
 
 async function bookingReport(from: Date, toEx: Date): Promise<BookingReport> {
+  const rateOf = await reportRateResolver();
   const rows = await prisma.reservation.findMany({
     where: { checkIn: { gte: from, lt: toEx } },
     select: {
       status: true, source: true, checkIn: true, checkOut: true,
       adults: true, children: true,
       pricePerNight: true, withMeal: true, mealPricePerPerson: true,
-      cancellationFee: true,
+      cancellationFee: true, ...fxSelect,
       room: { select: { roomTypeId: true, roomType: { select: { label: true } } } },
       charges: { select: { amount: true } },
     },
@@ -153,17 +179,18 @@ async function bookingReport(from: Date, toEx: Date): Promise<BookingReport> {
     // Bekor qilinganlar kecha/tur statistikasiga kirmaydi, lekin
     // jarimasi manba daromadida bor (lib/money.ts: summa = jarima)
     const m = reservationMoney(r);
+    const rate = rateOf(r);
     const src = r.source.toLowerCase();
     if (!ACTIVE_STATUSES.includes(r.status as never)) {
       if (m.total > 0) {
         const cur = bySource.get(src) ?? { count: 0, revenue: 0 };
-        bySource.set(src, { count: cur.count, revenue: sumMoney([cur.revenue, m.total]) });
+        bySource.set(src, { count: cur.count, revenue: sumMoney([cur.revenue, toBase(m.total, rate)]) });
       }
       continue;
     }
 
     const n = m.nights;
-    const rev = m.total;   // xona + nonushta + xizmatlar
+    const rev = toBase(m.total, rate);   // xona + nonushta + xizmatlar, so'mda
 
     active++;
     totalNights += n;
@@ -210,8 +237,9 @@ async function moneyReport(from: Date, toEx: Date, days: number): Promise<MoneyR
    *   - "qarz" = davr daromadi - davrda kelgan pul edi (oldindan
    *     to'lov bo'lsa qarz yo'qolib, yo'q bo'lsa bo'rtib chiqardi);
    *   - davrda to'lov bo'lmasa boshqa davrlarning to'lovi olinardi.
-   * Endi formula lib/money.ts dan olinadi.
+   * Endi formula lib/money.ts dan olinadi; dollar bron — bron kursi bilan.
    */
+  const rateOf = await reportRateResolver();
   const [active, cancelled, periodCharges, periodPayments] = await Promise.all([
     // Davr bilan kesishgan faol bronlar — xona va nonushta kechalar bo'yicha
     prisma.reservation.findMany({
@@ -223,7 +251,7 @@ async function moneyReport(from: Date, toEx: Date, days: number): Promise<MoneyR
       select: {
         checkIn: true, checkOut: true, adults: true, children: true,
         pricePerNight: true, withMeal: true, mealPricePerPerson: true,
-        status: true, cancellationFee: true,
+        status: true, cancellationFee: true, ...fxSelect,
         charges: { select: { amount: true } },
         payments: { select: { amount: true } },
       },
@@ -240,7 +268,7 @@ async function moneyReport(from: Date, toEx: Date, days: number): Promise<MoneyR
       select: {
         checkIn: true, checkOut: true, adults: true, children: true,
         pricePerNight: true, withMeal: true, mealPricePerPerson: true,
-        status: true, cancellationFee: true,
+        status: true, cancellationFee: true, ...fxSelect,
         payments: { select: { amount: true } },
       },
     }),
@@ -250,12 +278,15 @@ async function moneyReport(from: Date, toEx: Date, days: number): Promise<MoneyR
         createdAt: { gte: from, lt: toEx },
         reservation: { status: { in: [...ACTIVE_STATUSES] } },
       },
-      select: { amount: true },
+      select: { amount: true, reservation: { select: fxSelect } },
     }),
     // Kassaga davrda kelgan pul (qaytarishlar manfiy)
     prisma.payment.findMany({
       where: { paymentDate: { gte: from, lt: toEx } },
-      select: { amount: true, method: true },
+      select: {
+        amount: true, method: true, originalAmount: true, originalCurrency: true,
+        reservation: { select: fxSelect },
+      },
     }),
   ]);
 
@@ -264,31 +295,34 @@ async function moneyReport(from: Date, toEx: Date, days: number): Promise<MoneyR
   const debts: number[] = [];
 
   for (const r of active) {
+    const rate = rateOf(r);
     const part = stayRevenueIn(r, from, toEx);
-    room.push(part.room);
-    meal.push(part.meal);
-    debts.push(reservationMoney(r).remaining);
+    room.push(toBase(part.room, rate));
+    meal.push(toBase(part.meal, rate));
+    debts.push(toBase(reservationMoney(r).remaining, rate));
   }
 
   const fees: number[] = [];
   for (const r of cancelled) {
+    const rate = rateOf(r);
     const m = reservationMoney(r);
-    fees.push(m.cancellationFee);
-    debts.push(m.remaining);
+    fees.push(toBase(m.cancellationFee, rate));
+    debts.push(toBase(m.remaining, rate));
   }
 
-  // Kassa — davrda tushgan pul (qaytarishlar manfiy)
+  // Kassa — davrda tushgan pul, so'mda (qaytarishlar manfiy)
+  const paidBase = periodPayments.map((p) => paymentBase(p, rateOf(p.reservation)));
   const byMethod = new Map<string, { count: number; amount: number }>();
-  for (const p of periodPayments) {
+  periodPayments.forEach((p, i) => {
     const cur = byMethod.get(p.method) ?? { count: 0, amount: 0 };
-    byMethod.set(p.method, { count: cur.count + 1, amount: sumMoney([cur.amount, p.amount]) });
-  }
+    byMethod.set(p.method, { count: cur.count + 1, amount: sumMoney([cur.amount, paidBase[i]]) });
+  });
 
   const roomRevenue = sumMoney(room);
   const mealRevenue = sumMoney(meal);
-  const charges = sumMoney(periodCharges.map((c) => c.amount));
+  const charges = sumMoney(periodCharges.map((c) => toBase(c.amount, rateOf(c.reservation))));
   const cancellationFees = sumMoney(fees);
-  const paid = sumMoney(periodPayments.map((p) => p.amount));
+  const paid = sumMoney(paidBase);
 
   // Maosh: oylik summa davr uzunligiga moslanadi.
   // 30 kunlik oy deb hisoblanadi — aniq kun soni har oyda farq
@@ -345,6 +379,7 @@ async function moneyReport(from: Date, toEx: Date, days: number): Promise<MoneyR
 // ============================================================
 
 async function occupancyReport(from: Date, toEx: Date, days: number): Promise<OccupancyReport> {
+  const rateOf = await reportRateResolver();
   const [totalRooms, blocked, reservations] = await Promise.all([
     prisma.room.count({ where: { isActive: true } }),
 
@@ -363,7 +398,7 @@ async function occupancyReport(from: Date, toEx: Date, days: number): Promise<Oc
       },
       select: {
         checkIn: true, checkOut: true, adults: true, children: true,
-        pricePerNight: true, withMeal: true, mealPricePerPerson: true,
+        pricePerNight: true, withMeal: true, mealPricePerPerson: true, ...fxSelect,
       },
     }),
   ]);
@@ -377,7 +412,7 @@ async function occupancyReport(from: Date, toEx: Date, days: number): Promise<Oc
   for (const r of reservations) {
     const part = stayRevenueIn(r, from, toEx);
     soldNights += part.nights;
-    revenue.push(part.room);
+    revenue.push(toBase(part.room, rateOf(r)));
   }
   const roomRevenue = sumMoney(revenue);
 
@@ -432,6 +467,41 @@ async function staffReport(): Promise<StaffReport> {
 }
 
 // ============================================================
+//  5. Kanal (Beds24)
+// ============================================================
+
+async function channelReport(from: Date, toEx: Date): Promise<ChannelReport> {
+  const rateOf = await reportRateResolver();
+  const [conn, rows, rejected, failed, syncErrors, needsAction] = await Promise.all([
+    prisma.channelConnection.findFirst({ where: { isActive: true, channel: { code: "beds24" } }, select: { id: true } }),
+    prisma.reservation.findMany({
+      where: { origin: "CHANNEL", checkIn: { gte: from, lt: toEx }, status: { in: [...ACTIVE_STATUSES] } },
+      select: {
+        checkIn: true, checkOut: true, adults: true, children: true,
+        pricePerNight: true, withMeal: true, mealPricePerPerson: true,
+        status: true, cancellationFee: true, ...fxSelect,
+        charges: { select: { amount: true } },
+      },
+    }),
+    prisma.reservation.count({ where: { syncStatus: "REJECTED" } }),
+    prisma.reservation.count({ where: { syncStatus: "FAILED" } }),
+    prisma.syncLog.count({ where: { status: "FAILED", createdAt: { gte: from, lt: toEx } } }),
+    prisma.webhookEvent.count({ where: { status: { in: ["NEEDS_MANUAL_ACTION", "FAILED"] } } }),
+  ]);
+
+  return {
+    connected: conn !== null,
+    bookings: rows.length,
+    usdBookings: rows.filter((r) => r.currency.toUpperCase() === "USD").length,
+    revenue: sumMoney(rows.map((r) => toBase(reservationMoney(r).total, rateOf(r)))),
+    rejected,
+    failed,
+    syncErrors,
+    needsAction,
+  };
+}
+
+// ============================================================
 //  Umumiy hisobot
 // ============================================================
 
@@ -444,11 +514,12 @@ export async function getFullReport(from: Date, to: Date): Promise<FullReport> {
   const toEx = addDays(to, 1);
   const days = Math.max(1, Math.round((toEx.getTime() - from.getTime()) / 86_400_000));
 
-  const [bookings, money, occupancy, staff] = await Promise.all([
+  const [bookings, money, occupancy, staff, channel] = await Promise.all([
     bookingReport(from, toEx),
     moneyReport(from, toEx, days),
     occupancyReport(from, toEx, days),
     staffReport(),
+    channelReport(from, toEx),
   ]);
 
   return {
@@ -459,5 +530,6 @@ export async function getFullReport(from: Date, to: Date): Promise<FullReport> {
     money,
     occupancy,
     staff,
+    channel,
   };
 }
