@@ -81,6 +81,13 @@ export function fromChannelPrice(price: number, rate: number): number {
   return rate === 1 ? round2(price) : Math.round(price * rate);
 }
 
+/** Jurnal uchun: 3 tagacha turli narx ro'yxat, ko'p bo'lsa "min–max" */
+function priceSummary(prices: number[]): string[] {
+  const uniq = [...new Set(prices)].sort((a, b) => a - b);
+  if (uniq.length <= 3) return uniq.map(String);
+  return [`${uniq[0]}–${uniq[uniq.length - 1]}`];
+}
+
 /** Beds24'dagi narx shu PMS qatoriga tegishlimi (biz yuborganmi) */
 function sameChannelPrice(
   row: { price: Prisma.Decimal; channelPrice: Prisma.Decimal | null },
@@ -163,6 +170,11 @@ export async function pushRates(roomTypeId: string, from: Date, to: Date): Promi
     date: toDateKey(d.date) ?? "",
     price: toChannelPrice(toNumber(d.price), conv.rate),
   }));
+  // Jurnal uchun (TZ 16-band: sana va qiymat)
+  const logInfo = {
+    from: days[0]?.date, to: days[days.length - 1]?.date, days: days.length,
+    prices: priceSummary(days.map((d) => d.price)), currency: conv.currency,
+  };
 
   let detail = "";
   for (const externalRoomTypeId of targets) {
@@ -171,7 +183,7 @@ export async function pushRates(roomTypeId: string, from: Date, to: Date): Promi
       const error = `${externalRoomTypeId}: ${r.error}`;
       await markRateError(roomTypeId, start, to, error);
       await logPush("push_rates", "FAILED", {
-        request: { roomTypeId, externalRoomTypeId, days: days.length },
+        request: { roomTypeId, externalRoomTypeId, ...logInfo },
         errorMessage: error,
         durationMs: Date.now() - started,
       });
@@ -197,8 +209,8 @@ export async function pushRates(roomTypeId: string, from: Date, to: Date): Promi
 
   await logPush("push_rates", "SUCCESS", {
     request: {
-      roomTypeId, externalRoomTypeIds: targets, days: pending.length,
-      ...(conv.rate !== 1 ? { currency: conv.currency, rate: conv.rate } : {}),
+      roomTypeId, externalRoomTypeIds: targets, ...logInfo,
+      ...(conv.rate !== 1 ? { rate: conv.rate } : {}),
     },
     response: { detail },
     durationMs: Date.now() - started,

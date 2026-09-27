@@ -28,6 +28,7 @@ import { addDays, hotelToday } from "../lib/hotelTime.js";
 import { config } from "../lib/config.js";
 import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
 import { audit } from "../services/auditLog.js";
+import { describeSyncLog } from "../lib/syncLog.js";
 import { connect, disconnect, getConnectionStatus, Beds24AuthError } from "../services/beds24/auth.js";
 import { Beds24ApiError, RateLimitError, getCreditState } from "../services/beds24/client.js";
 import { getChannel } from "../services/channel/registry.js";
@@ -298,14 +299,18 @@ channelRouter.get("/sync-log", ...read, asyncHandler(async (req, res) => {
     },
     orderBy: { createdAt: "desc" },
     take: q.limit ?? 50,
+    include: { channel: { select: { name: true } } },
   });
+  // TZ 16-band: Provider, Action, Room, Date, Value, Status, Time, Error
   res.json(rows.map((r) => ({
     id: r.id,
+    provider: r.channel.name,
     action: r.action,
     direction: r.direction,
     status: r.status,
     reservationId: r.reservationId,
     roomId: r.roomId,
+    ...describeSyncLog(r),
     errorMessage: r.errorMessage,
     durationMs: r.durationMs,
     response: r.response,

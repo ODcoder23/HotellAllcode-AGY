@@ -36,6 +36,9 @@
           <option value="pull_rates">Narx ← Beds24</option>
           <option value="drift_check">Farq tekshiruvi</option>
           <option value="drift_detected">Farq topildi</option>
+          <option value="webhook_booking_new">Webhook: yangi bron</option>
+          <option value="webhook_booking_modified">Webhook: bron o'zgardi</option>
+          <option value="webhook_booking_cancelled">Webhook: bron bekor qilindi</option>
           <option value="webhook_needs_action">Webhook: qo'lda hal qilish</option>
           <option value="job_dead_lettered">Vazifa yiqildi</option>
           <option value="ping">Ulanishni tekshirish</option>
@@ -53,8 +56,8 @@
 
   <div class="card">
     <table>
-      <thead><tr><th>Vaqt</th><th>Amal</th><th>Yo'nalish</th><th>Holati</th><th>Natija / xato</th><th>ms</th></tr></thead>
-      <tbody id="rows"><tr><td colspan="6" class="empty">Yuklanmoqda...</td></tr></tbody>
+      <thead><tr><th>Vaqt</th><th>Provider</th><th>Amal</th><th>Yo'nalish</th><th>Xona / tarif</th><th>Sana</th><th>Qiymat</th><th>Holati</th><th>Xato / natija</th><th>ms</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="10" class="empty">Yuklanmoqda...</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -64,6 +67,10 @@
 const BADGE = { SUCCESS: "b-ok", FAILED: "b-err", SKIPPED: "b-mute", RETRYING: "b-warn" };
 
 const DIR = { PMS_TO_CHANNEL: "PMS → Beds24", CHANNEL_TO_PMS: "Beds24 → PMS" };
+
+/** Amal nomlari — filtrdagi bilan bir xil (bitta ro'yxat) */
+const ACTION = Object.fromEntries([...document.querySelectorAll("#action option")]
+  .filter((o) => o.value).map((o) => [o.value, o.textContent]));
 
 function summary(r) {
   if (!r || typeof r !== "object") return "";
@@ -83,11 +90,14 @@ async function load() {
   const q = "?limit=200" + (a ? "&action=" + a : "") + (s ? "&status=" + s : "");
   try {
     const rows = await api("/api/admin/sync-log" + q);
+    // TZ 16-band: Provider, Action, Room, Date, Value, Status, Time, Error
     document.getElementById("rows").innerHTML = rows.length ? rows.map(l =>
-      "<tr><td class=\"mono\">" + when(l.createdAt) + "</td><td>" + esc(l.action) + "</td><td>" + esc(DIR[l.direction] || l.direction || "") +
-      '</td><td><span class="badge ' + (BADGE[l.status] || "b-mute") + '">' + esc(l.status) + "</span></td>" +
-      "<td>" + esc(l.errorMessage || summary(l.response)) + '</td><td class="mono">' + (l.durationMs ?? "") + "</td></tr>").join("")
-      : '<tr><td colspan="6" class="empty">Yozuv yo\'q</td></tr>';
+      "<tr><td class=\"mono\">" + when(l.createdAt) + "</td><td>" + esc(l.provider || "") + "</td>" +
+      '<td title="' + esc(l.action) + '">' + esc(ACTION[l.action] || l.action) + "</td><td>" + esc(DIR[l.direction] || l.direction || "") + "</td>" +
+      "<td>" + esc(l.target || "—") + '</td><td class="mono">' + esc(l.dates || "—") + "</td><td>" + esc(l.value || "—") + "</td>" +
+      '<td><span class="badge ' + (BADGE[l.status] || "b-mute") + '">' + esc(l.status) + "</span></td>" +
+      "<td>" + esc(l.errorMessage || (l.value ? "" : summary(l.response))) + '</td><td class="mono">' + (l.durationMs ?? "") + "</td></tr>").join("")
+      : '<tr><td colspan="10" class="empty">Yozuv yo\'q</td></tr>';
   } catch (e) { msg(e.message, true); }
 }
 async function run(path) {

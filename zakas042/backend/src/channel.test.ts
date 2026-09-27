@@ -822,6 +822,14 @@ describe("Narx — PMS so'mda, Beds24'ga dollarda", () => {
     const row = plans.body.find((p: any) => p.roomTypeId === "comfort3");
     expect(row.syncStatus).toBe("synced");
     expect(row.channelPrice).toBe(40);
+
+    // TZ 16-band: jurnalda Provider, xona/tarif, sana, qiymat
+    const log = await api("/api/admin/sync-log?action=push_rates&status=SUCCESS&limit=1", { token: tok.admin });
+    expect(log.status).toBe(200);
+    expect(log.body[0]).toMatchObject({ provider: "Beds24", dates: `${day(90)} — ${day(91)}` });
+    expect(log.body[0].target).toContain("Tarif comfort3");
+    expect(log.body[0].target).toContain("Beds24 5001");
+    expect(log.body[0].value).toContain("40 USD");
   });
 
   it("bog'lanmagan tarif narxi yuborilmaydi va xato ham yozilmaydi", async () => {

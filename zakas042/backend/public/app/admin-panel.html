@@ -1447,8 +1447,8 @@
         <div id="chDriftCard" class="card" style="margin-bottom:18px;"></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Amal</th><th>Yo'nalish</th><th>Holati</th><th>Natija</th><th>Davomiyligi</th><th>Vaqt</th></tr></thead>
-            <tbody id="chSyncTbody"><tr><td colspan="6" class="ch-empty">Yuklanmoqda…</td></tr></tbody>
+            <thead><tr><th>Vaqt</th><th>Provider</th><th>Amal</th><th>Yo'nalish</th><th>Xona / tarif</th><th>Sana</th><th>Qiymat</th><th>Holati</th><th>Xato / natija</th><th>Davomiyligi</th></tr></thead>
+            <tbody id="chSyncTbody"><tr><td colspan="10" class="ch-empty">Yuklanmoqda…</td></tr></tbody>
           </table>
         </div>
         <div style="margin-top:10px;"><a href="/admin/sync-log.html" target="_blank" class="ch-link">Jurnal alohida sahifada ↗</a></div>
@@ -5827,6 +5827,8 @@
       booking_linked: "Qo'lda kiritilgan bron bog'landi", reservation_relocated: 'Mehmon boshqa xonaga joylandi',
       webhook_needs_action: "Webhook: qo'lda hal qilish", webhook_failed: 'Webhook xatosi',
       webhook_echo_skipped: "Webhook: o'zimizning o'zgarish", job_dead_lettered: 'Vazifa yiqildi',
+      webhook_booking_new: 'Webhook: yangi bron', webhook_booking_modified: "Webhook: bron o'zgardi",
+      webhook_booking_cancelled: 'Webhook: bron bekor qilindi',
     };
     const DIR_UI = { PMS_TO_CHANNEL: 'PMS → Beds24', CHANNEL_TO_PMS: 'Beds24 → PMS' };
     const STATUS_UI = {
@@ -6080,15 +6082,17 @@
       const tb = $('chSyncTbody');
       try{
         const [logs, drift] = await Promise.all([api('/api/admin/sync-log?limit=50'), api('/api/admin/channel/drift')]);
+        // TZ 16-band: Provider, Action, Room, Date, Value, Status, Time, Error
         tb.innerHTML = logs.length ? logs.map((l) =>
-          '<tr><td>' + esc(ACTION_UI[l.action] || l.action) + '</td><td class="ch-sub">' + esc(DIR_UI[l.direction] || l.direction || '') + '</td>' +
+          '<tr><td class="num">' + when(l.createdAt) + '</td><td class="ch-sub">' + esc(l.provider || '') + '</td>' +
+          '<td>' + esc(ACTION_UI[l.action] || l.action) + '</td><td class="ch-sub">' + esc(DIR_UI[l.direction] || l.direction || '') + '</td>' +
+          '<td>' + esc(l.target || '—') + '</td><td class="num">' + esc(l.dates || '—') + '</td><td>' + esc(l.value || '—') + '</td>' +
           '<td>' + pill(STATUS_UI[l.status] || { label: l.status, cls: 'free' }) + '</td>' +
-          '<td>' + esc(l.errorMessage || syncSummary(l)) + '</td><td class="num">' + (l.durationMs ? l.durationMs + ' ms' : '—') + '</td>' +
-          '<td class="num">' + when(l.createdAt) + '</td></tr>').join('')
-          : '<tr><td colspan="6" class="ch-empty">Hali muloqot bo\'lmagan</td></tr>';
+          '<td>' + esc(l.errorMessage || (l.value ? '' : syncSummary(l))) + '</td><td class="num">' + (l.durationMs ? l.durationMs + ' ms' : '—') + '</td></tr>').join('')
+          : '<tr><td colspan="10" class="ch-empty">Hali muloqot bo\'lmagan</td></tr>';
         renderDrift(drift);
       }catch(e){
-        tb.innerHTML = '<tr><td colspan="6" class="ch-empty" style="color:var(--terracotta);">' + esc(e.message) + '</td></tr>';
+        tb.innerHTML = '<tr><td colspan="10" class="ch-empty" style="color:var(--terracotta);">' + esc(e.message) + '</td></tr>';
       }
       loadDeadLetters();
     }
