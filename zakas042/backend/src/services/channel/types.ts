@@ -131,6 +131,28 @@ export type ExternalRateDay = {
   closedDeparture?: boolean;
 };
 
+// --- Ulanish (TZ 12-band) -----------------------------------
+
+/** Ulanish ma'lumoti: Beds24'da invite code yoki refresh token + obyekt */
+export type ConnectInput = {
+  inviteCode?: string;
+  refreshToken?: string;
+  propertyId?: string;
+};
+
+/** Ulanish holati — admin panel uchun. Token hech qachon chiqmaydi */
+export type ConnectionStatus = {
+  isConnected: boolean;
+  propertyId: string | null;
+  tokenExpiresAt: string | null;
+  lastCheckedAt: string | null;
+  lastCheckOk: boolean | null;
+  lastError: string | null;
+  scopes: string[];
+  connectedAt: string | null;
+  encryptionKeySet: boolean;
+};
+
 /**
  * Bronni kanalga yuborish rejimi.
  *
@@ -155,6 +177,20 @@ export type PushMode = "full" | "ota";
 export interface ChannelAdapter {
   /** Kanal kodi — `Channel.code` bilan mos (`"beds24"`) */
   readonly code: string;
+  /** Odam o'qiydigan nom — admin panel, jurnal ("Beds24") */
+  readonly name: string;
+
+  /**
+   * Ulash (TZ 14-band `connect()`). Kalit shifrlangan saqlanadi; xato
+   * bo'lsa hech narsa saqlanmaydi. Obyekt berilmasa hisobdagi birinchisi.
+   */
+  connect(input: ConnectInput): Promise<{ id: string; propertyId: string }>;
+
+  /** Uzish — kalitlar bazadan o'chiriladi. Nechta ulanish uzilgani */
+  disconnect(): Promise<number>;
+
+  /** Ulanish holati (kalitsiz) */
+  connectionStatus(): Promise<ConnectionStatus>;
 
   /** Ulanish tekshiruvi. FAZA 15 `beds24:verify` shuni chaqiradi */
   ping(): Promise<{ ok: boolean; detail: string; creditsRemaining?: number }>;
@@ -164,6 +200,12 @@ export interface ChannelAdapter {
 
   /** O'zgargan bronlarni tortish — polling fallback (04-fayl §8) */
   pullReservations(since: Date): Promise<ExternalReservation[]>;
+
+  /**
+   * Bitta bron (TZ 14-band `getBooking()`) — bekor qilinganlari ham.
+   * Kanalda yo'q bo'lsa null. "Beds24'dan qayta olish" tugmasi uchun.
+   */
+  getBooking(externalId: string): Promise<ExternalReservation | null>;
 
   /**
    * Hozirgi va kelgusi HAMMA bronlar (chiqish sanasi `departureFrom`

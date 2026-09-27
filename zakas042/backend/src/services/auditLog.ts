@@ -54,6 +54,7 @@ export const AUDIT_ACTIONS = [
   "mapping.deleted",
   "webhook.reprocessed",
   "reservation.sync_retry",
+  "reservation.channel_refresh",
   "fx.changed",
 ] as const;
 

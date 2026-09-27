@@ -346,6 +346,8 @@ const api = {
   fxRate: (currency) => apiFetch(`/api/reservations/fx-rate?currency=${encodeURIComponent(currency || "USD")}`),
   // Beds24'ga yetmagan bronni qayta yuborish — egasi, admin (channel.write)
   resyncReservation: (id) => apiFetch(`/api/reservations/${id}/resync`, { method: "POST" }),
+  // Bronni Beds24'dagi holatga keltirish (TZ 14-band getBooking) — egasi, admin
+  refreshFromChannel: (id) => apiFetch(`/api/reservations/${id}/channel-refresh`, { method: "POST" }),
   // Qaysi tariflar Beds24'ga bog'langan — narx belgilaydiganlarga (channel.read)
   channelMapping: () => apiFetch("/api/admin/mapping"),
 };
@@ -1001,6 +1003,13 @@ function App() {
     if (r && r.reservation) applyReservation(r.reservation);
   }
 
+  /** Beds24'dan qayta olish — natija matni (o'tkazildi / qo'lda hal qilish) qaytadi */
+  async function refreshRes(res) {
+    const r = await api.refreshFromChannel(res.id);
+    if (r && r.reservation) applyReservation(r.reservation);
+    return r && r.result;
+  }
+
   async function reversePayment(res, payment) {
     try {
       applyReservation(await api.reversePayment(res.id, payment.id));
@@ -1259,6 +1268,7 @@ function App() {
           onCancel={() => cancelRes(detailRes)}
           onReversePayment={(p) => reversePayment(detailRes, p)}
           onResync={() => resyncRes(detailRes)}
+          onRefresh={() => refreshRes(detailRes)}
         />
       )}
 
@@ -1923,10 +1933,11 @@ const SYNC_LABEL = {
   not_applicable: ["Beds24'ga yuborilmaydi", "text-gray-600 bg-gray-50 border-gray-200"],
 };
 
-function ChannelSyncInfo({ res, onResync }) {
+function ChannelSyncInfo({ res, onResync, onRefresh }) {
   const ch = useChannel();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [note, setNote] = useState(null);
   if (!ch.connected && !res.externalReservationId) return null;
 
   const fromChannel = res.origin === "channel";
@@ -1936,8 +1947,17 @@ function ChannelSyncInfo({ res, onResync }) {
   const retryable = ch.connected && ch.canResync && ["failed", "rejected", "pending"].includes(res.syncStatus);
 
   const retry = async () => {
-    setBusy(true); setErr(null);
+    setBusy(true); setErr(null); setNote(null);
     try { await onResync(); } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  // Beds24'dan qayta olish — Beds24 bilan bog'langan bronda, egasi va adminga
+  const refreshable = ch.connected && ch.canResync && !!res.externalReservationId && !!onRefresh;
+  const refresh = async () => {
+    setBusy(true); setErr(null); setNote(null);
+    try {
+      const r = await onRefresh();
+      if (r && r.status !== "processed") setNote(r.detail);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
 
   return (
@@ -1947,9 +1967,17 @@ function ChannelSyncInfo({ res, onResync }) {
         {res.externalReservationId && <span className="font-mono opacity-80">Beds24 #{res.externalReservationId}</span>}
       </div>
       {res.syncError && res.syncStatus !== "synced" && <div>{res.syncError}</div>}
-      {retryable && (
-        <Btn variant="subtle" onClick={retry} disabled={busy}><RotateCcw size={12} /> {busy ? "Yuborilmoqda…" : "Qayta yuborish"}</Btn>
+      {(retryable || refreshable) && (
+        <div className="flex flex-wrap gap-1.5">
+          {retryable && (
+            <Btn variant="subtle" onClick={retry} disabled={busy}><RotateCcw size={12} /> {busy ? "Yuborilmoqda…" : "Qayta yuborish"}</Btn>
+          )}
+          {refreshable && (
+            <Btn variant="subtle" onClick={refresh} disabled={busy} title="Bron Beds24'dagi holatga keltiriladi"><RotateCcw size={12} /> Beds24'dan yangilash</Btn>
+          )}
+        </div>
       )}
+      {note && <div>{note}</div>}
       {err && <div className="text-red-600">{err}</div>}
     </div>
   );
@@ -1957,7 +1985,7 @@ function ChannelSyncInfo({ res, onResync }) {
 
 /* ============================== DETAIL MODAL ============================== */
 
-function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, onOpenPayment, onOpenCharge, onOpenChangeRoom, onOpenChangeDates, onCancel, onReversePayment, onResync }) {
+function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, onOpenPayment, onOpenCharge, onOpenChangeRoom, onOpenChangeDates, onCancel, onReversePayment, onResync, onRefresh }) {
   const room = rooms.find((r) => r.id === res.roomId);
   const { nights, roomTotal, mealTotal, total, paid, remaining, refundDue } = resMoney(res);
   const isCancelledRes = res.status === "cancelled" || res.status === "no_show";
@@ -2053,7 +2081,7 @@ function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, on
           </div>
         )}
 
-        <ChannelSyncInfo res={res} onResync={onResync} />
+        <ChannelSyncInfo res={res} onResync={onResync} onRefresh={onRefresh} />
 
         {/* Tarix (chiqqan, bekor, kelmagan) o'zgartirilmaydi — backend rad etadi */}
         <div className="flex gap-2 flex-wrap">

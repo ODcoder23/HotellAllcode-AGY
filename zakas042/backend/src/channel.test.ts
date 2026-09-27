@@ -737,6 +737,29 @@ describe("Webhook (TZ 10-band)", () => {
     expect(guest.fullName).toBe("John Smith");
   });
 
+  it("Beds24'dan qayta olish (getBooking, TZ 14): bron Beds24'dagi holatga keladi", async () => {
+    if (!ready()) return;
+    const b = fake.bookings.find((x) => x.id === 9002)!;
+    b.numAdult = 2;                              // webhook kelmadi — faqat Beds24'da o'zgardi
+    b.modifiedTime = nowStamp();
+    const res = (await byExternal(9002))!;
+
+    if (authOn) {
+      const denied = await api(`/api/reservations/${res.id}/channel-refresh`, { method: "POST", token: tok.manager });
+      expect(denied.status).toBe(403);
+    }
+    const r = await api(`/api/reservations/${res.id}/channel-refresh`, { method: "POST", token: tok.admin });
+    expect(r.status).toBe(200);
+    expect(r.body.result.status).toBe("processed");
+    expect(r.body.reservation.adults).toBe(2);
+
+    const local = await prisma.reservation.findFirst({ where: { externalReservationId: null, status: "CONFIRMED" } });
+    if (local) {
+      const bad = await api(`/api/reservations/${local.id}/channel-refresh`, { method: "POST", token: tok.admin });
+      expect(bad.status).toBe(400);
+    }
+  });
+
   it("yangi OTA broni webhook bilan darhol Shaxmatkada", async () => {
     if (!ready() || WEBHOOK_TOKEN.length < 16) return;
     const b = book({ id: 9011, roomId: 5002, arrival: day(40), departure: day(41), price: 45, firstName: "Yangi",

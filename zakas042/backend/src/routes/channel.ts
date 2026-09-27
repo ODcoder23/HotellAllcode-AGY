@@ -29,7 +29,7 @@ import { config } from "../lib/config.js";
 import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
 import { audit } from "../services/auditLog.js";
 import { describeSyncLog } from "../lib/syncLog.js";
-import { connect, disconnect, getConnectionStatus, Beds24AuthError } from "../services/beds24/auth.js";
+import { Beds24AuthError } from "../services/beds24/auth.js";
 import { Beds24ApiError, RateLimitError, getCreditState } from "../services/beds24/client.js";
 import { getChannel } from "../services/channel/registry.js";
 import { invalidateRoomTypes } from "../services/channel/propertyCache.js";
@@ -99,7 +99,7 @@ function afterMappingChange(): void {
 // ============================================================
 
 async function connectionView() {
-  const status = await getConnectionStatus();
+  const status = await getChannel().connectionStatus();
   let channelCurrency: string | null = null;
   if (status.isConnected) channelCurrency = await getChannel().getCurrency().catch(() => null);
   const fx = channelCurrency ? await getFxRate(channelCurrency) : await getFxRate("USD");
@@ -128,7 +128,7 @@ const connectSchema = z.object({
 
 channelRouter.post("/connection", ...write, asyncHandler(async (req: AuthedRequest, res) => {
   const body = parse(connectSchema, req.body);
-  const conn = await beds24(() => connect(body));
+  const conn = await beds24(() => getChannel().connect(body));
   await audit({
     userId: req.user?.id,
     action: "channel.connected",
@@ -147,7 +147,7 @@ channelRouter.post("/connection", ...write, asyncHandler(async (req: AuthedReque
 }));
 
 channelRouter.delete("/connection", ...write, asyncHandler(async (req: AuthedRequest, res) => {
-  const count = await disconnect();
+  const count = await getChannel().disconnect();
   await audit({ userId: req.user?.id, action: "channel.disconnected", entityType: "ChannelConnection", ipAddress: req.ip });
   res.json({ disconnected: count });
 }));

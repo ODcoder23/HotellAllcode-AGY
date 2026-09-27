@@ -12,6 +12,7 @@
  *   reversePayment     → POST   /api/reservations/:id/payments/:pid/reverse
  *   addCharge          → POST   /api/reservations/:id/charges
  *   (Beds24)           → POST   /api/reservations/:id/resync
+ *   (Beds24)           → POST   /api/reservations/:id/channel-refresh
  *
  * Har amal Beds24'ga navbat orqali yuboriladi (services/reservationSync.ts)
  * — javob Beds24'ni kutmaydi, holat bronning `syncStatus` maydonida.
@@ -22,13 +23,17 @@ import { z } from "zod";
 import { requireAuth, requirePermission, authRequired, type AuthedRequest } from "../lib/authMiddleware.js";
 import { can } from "../services/auth.js";
 import { audit } from "../services/auditLog.js";
-import { asyncHandler, ValidationError } from "../lib/errors.js";
+import { asyncHandler, NotFoundError, ValidationError } from "../lib/errors.js";
 import { fromDateKey, isValidDateKey, serializeReservation } from "../lib/serialize.js";
 import { addDays, hotelToday } from "../lib/hotelTime.js";
 import * as svc from "../services/reservations.js";
 import { getFxRate, rateFor } from "../services/exchangeRate.js";
 import { activeConnection } from "../services/beds24/auth.js";
 import { retryReservationSync } from "../services/reservationSync.js";
+import { getChannel } from "../services/channel/registry.js";
+import { applyReservation } from "../services/webhookProcessor.js";
+import { Beds24AuthError } from "../services/beds24/auth.js";
+import { Beds24ApiError, RateLimitError } from "../services/beds24/client.js";
 import {
   MONEY_LIMITS, moneyAmount, nightPriceAmount, positiveMoney, signedMoney,
 } from "../lib/moneySchema.js";
@@ -350,4 +355,38 @@ reservationsRouter.post("/:id/resync", requireAuth, requirePermission("channel.w
   });
   const r = await svc.getReservation(req.params.id);
   res.json({ outcome, reservation: serializeReservation(r) });
+}));
+
+// --- POST /api/reservations/:id/channel-refresh ---------------
+// "Beds24'dan qayta olish" (TZ 14-band `getBooking()`): bron Beds24'dan
+// o'qiladi va webhook/polling bilan bir xil yo'ldan (`applyReservation`)
+// qo'llanadi. PMS'dagi o'zgarish hali yuborilmagan bo'lsa ustiga
+// yozilmaydi — natija javobda.
+reservationsRouter.post("/:id/channel-refresh", requireAuth, requirePermission("channel.write"), asyncHandler(async (req: AuthedRequest, res) => {
+  const current = await svc.getReservation(req.params.id);
+  if (!current.externalReservationId) throw new ValidationError("Bron Beds24 bilan bog'lanmagan");
+  if (!(await activeConnection())) throw new ValidationError("Beds24 ulanmagan");
+
+  let ext;
+  try {
+    ext = await getChannel().getBooking(current.externalReservationId);
+  } catch (e) {
+    if (e instanceof Beds24AuthError || e instanceof Beds24ApiError || e instanceof RateLimitError) {
+      throw new ValidationError(e.message);
+    }
+    throw e;
+  }
+  if (!ext) throw new NotFoundError("Beds24'dagi bron");
+
+  const result = await applyReservation(ext);
+  await audit({
+    userId: req.user?.id,
+    action: "reservation.channel_refresh",
+    entityType: "Reservation",
+    entityId: req.params.id,
+    after: { status: result.status, detail: result.detail },
+    ipAddress: req.ip,
+  });
+  const r = await svc.getReservation(req.params.id);
+  res.json({ result: { status: result.status, detail: result.detail }, reservation: serializeReservation(r) });
 }));

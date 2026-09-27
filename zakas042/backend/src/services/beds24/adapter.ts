@@ -35,6 +35,8 @@ import { prisma } from "../../lib/prisma.js";
 import { UNKNOWN_GUEST } from "../channel/types.js";
 import type {
   ChannelAdapter,
+  ConnectInput,
+  ConnectionStatus,
   ExternalProperty,
   ExternalRateDay,
   ExternalReservation,
@@ -46,7 +48,7 @@ import type {
   WebhookResult,
 } from "../channel/types.js";
 import { beds24Request, getCreditState, RateLimitError, Beds24ApiError } from "./client.js";
-import { Beds24AuthError } from "./auth.js";
+import { Beds24AuthError, connect, disconnect, getConnectionStatus } from "./auth.js";
 
 // --- Beds24 javob shakllari ---------------------------------
 
@@ -313,9 +315,23 @@ async function connectedPropertyId(): Promise<string | undefined> {
 
 export class Beds24Adapter implements ChannelAdapter {
   readonly code = "beds24";
+  readonly name = "Beds24";
 
   /** Obyekt valyutasi keshi — kamdan-kam o'zgaradi */
   private currencyCache: { value: string; at: number; propertyId?: string } | null = null;
+
+  // Ulanish: invite code -> refresh token (shifrlangan) — beds24/auth.ts
+  connect(input: ConnectInput) {
+    return connect(input);
+  }
+
+  disconnect() {
+    return disconnect();
+  }
+
+  connectionStatus(): Promise<ConnectionStatus> {
+    return getConnectionStatus();
+  }
 
   async ping() {
     try {
@@ -414,6 +430,20 @@ export class Beds24Adapter implements ChannelAdapter {
     return this.listBookings({ departureFrom });
   }
 
+  /** Bitta bron — Beds24 shaklida (`id` bo'yicha, hamma statuslar) */
+  private async fetchBooking(externalId: string, withInvoice = false): Promise<Beds24Booking | null> {
+    const res = await beds24Request<Beds24List<Beds24Booking>>("/bookings", {
+      query: { id: externalId, status: ALL_STATUSES, ...(withInvoice ? { includeInvoiceItems: true } : {}) },
+      estimatedCost: 1,
+    });
+    return res.data?.[0] ?? null;
+  }
+
+  async getBooking(externalId: string): Promise<ExternalReservation | null> {
+    const [b, currency] = await Promise.all([this.fetchBooking(externalId, true), this.getCurrency()]);
+    return b ? toExternalReservation(b, { currency }) : null;
+  }
+
   /**
    * Bron OTA'dan kelganmi — Beds24'ning o'zidan so'raladi (Q9: Beds24
    * ustuvor). PMS'dagi `source` bunga ishonchli emas: xodim bronni
@@ -424,11 +454,7 @@ export class Beds24Adapter implements ChannelAdapter {
    */
   private async detectMode(externalId: string): Promise<PushMode> {
     try {
-      const res = await beds24Request<Beds24List<Beds24Booking>>("/bookings", {
-        query: { id: externalId, status: ALL_STATUSES },
-        estimatedCost: 1,
-      });
-      const b = res.data?.[0];
+      const b = await this.fetchBooking(externalId);
       if (!b) return "ota";
       const channel = (b.channel ?? "").toLowerCase();
       return b.referer === OWN_REFERER || channel === "" || channel === "direct" ? "full" : "ota";
