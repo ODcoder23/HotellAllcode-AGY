@@ -91,11 +91,19 @@ class TestClient {
 
   static async connect(): Promise<TestClient> {
     const ws = new WebSocket(wsUrl());
+    /**
+     * Tinglovchi `open` dan OLDIN qo'yiladi. Foydalanuvchi keshda bo'lsa
+     * server `connected` ni darhol yuboradi va u upgrade javobi bilan
+     * bitta TCP paketda keladi: `ws` avval `open`, keyin shu zahoti
+     * `message` chiqaradi — `await` dan keyin qo'yilgan tinglovchi uni
+     * yo'qotardi (CI'da "Event kelmadi ... hech narsa").
+     */
+    const client = new TestClient(ws);
     await new Promise<void>((resolve, reject) => {
       ws.once("open", () => resolve());
       ws.once("error", reject);
     });
-    return new TestClient(ws);
+    return client;
   }
 
   /** Shartga mos event kutadi. Allaqachon kelgan bo'lsa darhol qaytaradi. */
