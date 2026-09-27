@@ -29,6 +29,8 @@ import { sendDailyKitchenReport } from "../bot/kitchen-bot.js";
 import { enforceSalesStop } from "../services/salesStop.js";
 import { recalcAllRoomStatuses } from "../services/roomStatus.js";
 import { notifyRoomStatus } from "../realtime/notify.js";
+import { runMonitor, logSync } from "../services/channel/monitor.js";
+import { refreshFxFromCbu } from "../services/fx.js";
 
 const connection = redisConnection as never;
 
@@ -39,7 +41,9 @@ export type MaintenanceJob =
   | { task: "prune_audit" }
   | { task: "cleaning_check" }
   | { task: "room_status" }
-  | { task: "kitchen_report"; offset: 0 | 1 };
+  | { task: "kitchen_report"; offset: 0 | 1 }
+  | { task: "channel_monitor" }
+  | { task: "fx_refresh" };
 
 /**
  * Beds24 bilan birga olib tashlangan jadvallar (2026-09-26).
@@ -147,6 +151,29 @@ export const maintenanceWorker = new Worker<MaintenanceJob>(
         return res;
       }
 
+      case "channel_monitor": {
+        // Beds24 kuzatuvi (faqat o'qish): bronlar, kalendar, farq.
+        // Ulanish bo'lmasa hech narsa qilmaydi. Refresh token'ni ham
+        // tirik tutadi (30 kun ishlatilmasa o'ladi)
+        const r = await runMonitor();
+        if ("poll" in r && r.poll && r.poll.missingInPms > 0) {
+          console.log(`[kanal] Beds24'da ${r.poll.missingInPms} ta bron PMS'da yo'q`);
+        }
+        return r;
+      }
+
+      case "fx_refresh": {
+        // Markaziy bank kursi. Qo'lda qo'yilgan kurs bosilmaydi
+        try {
+          const r = await refreshFxFromCbu();
+          if (r.changed) await logSync("fx_refresh", "SUCCESS", { response: r.fx });
+          return { rate: r.fx.rate, source: r.fx.source };
+        } catch (e) {
+          await logSync("fx_refresh", "FAILED", { errorMessage: String(e instanceof Error ? e.message : e) });
+          throw e;
+        }
+      }
+
       default:
         // Eski (olib tashlangan) vazifa — jim o'tkazib yuboriladi
         return { ok: true, skipped: true };
@@ -229,6 +256,24 @@ export async function scheduleMaintenance(): Promise<void> {
       "cron_kitchen_evening",
       { pattern: "0 20 * * *", tz: HOTEL_TIMEZONE },
       { name: "kitchen_evening", data: { task: "kitchen_report", offset: 1 } }
+    );
+
+    // Kanal kuzatuvi (Beds24, faqat o'qish). 0 — o'chiq
+    if (config.beds24.monitorMinutes > 0) {
+      await maintenanceQueue.upsertJobScheduler(
+        "cron_channel_monitor",
+        { every: config.beds24.monitorMinutes * 60_000 },
+        { name: "channel_monitor", data: { task: "channel_monitor" } }
+      );
+    } else {
+      await maintenanceQueue.removeJobScheduler("cron_channel_monitor").catch(() => false);
+    }
+
+    // Dollar kursi (Markaziy bank) — har 3 soatda, faqat ko'rsatish uchun
+    await maintenanceQueue.upsertJobScheduler(
+      "cron_fx_cbu",
+      { every: 3 * 3_600_000 },
+      { name: "fx_refresh", data: { task: "fx_refresh" } }
     );
 
     if (config.isDev) {

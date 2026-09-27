@@ -349,8 +349,10 @@ tekshiradi.
 | `room.block` (yopish, iflos xonani qo'lda ochish) | ✓ | ✓ | ✓ | |
 | `audit.read` (audit jurnali) | ✓ | ✓ | ✓ | |
 | `checkin.write` | ✓ | ✓ | ✓ | ✓ |
-| `payment.write` | ✓ | ✓ | ✓ | ✓ |
+| `payment.write` (to'lov qabul qilish) | ✓ | ✓ | ✓ | ✓ |
+| `payment.refund` (qaytarish, manfiy to'lov) | ✓ | ✓ | ✓ | |
 | `reservation.read` | ✓ | ✓ | ✓ | ✓ |
+| `channel.read` / `channel.write` (Channel manager, dollar kursi, OTA raqami) | ✓ | | | |
 
 **Muhim:** moliya va foydalanuvchi boshqaruvi faqat FOUNDER'da.
 ADMIN texnik ishlarni qiladi, biznes raqamlarini ko'rmaydi.
@@ -389,6 +391,25 @@ Tashqi channel manager yo'q (Beds24 2026-09-26 da olib tashlangan —
   xarajatlarga avtomatik yoziladi (`recalcCommissions`, advisory lock);
 - OTA'dagi sotuvni (bo'sh joy, STOP) OTA kabinetida boshqarish kerak —
   PMS'dagi STOP va xona yopish faqat sayt va qabulxonaga ta'sir qiladi.
+
+### Channel manager — Beds24 kuzatuvi (faqat egasi, 2026-09-27)
+
+Egasi qarori: integratsiya qaytmaydi, lekin egasi Beds24 holatini ko'rib
+turadi. **Faqat o'qish** — `services/beds24/client.ts` faqat `GET`
+yuboradi; PMS bronlari, narxlari, xonalari o'zgarmaydi; qabulxona ishi
+o'zgarmaydi. Batafsil: [BEDS24.md](BEDS24.md), 0-bo'lim.
+
+| Nima | Qayerda |
+|---|---|
+| Ulanish (invite code / refresh token, AES-256 shifrlangan), mapping | admin panel → Channel manager → Ulangan kanallar; `/admin/connection.html`, `/admin/mapping.html` |
+| Beds24 bronlari ↔ PMS: mos / farq / PMS'da yo'q / bog'lanmagan | Bronlar jurnali; hisobot → "Kanal (Beds24)" |
+| Bo'sh joy va narx farqi (ikki marta sotish xavfi, narx farqi, narxsiz kun) | Sinxronizatsiya → Farqni tekshirish; `/admin/sync-log.html` |
+| Dollar kursi (Markaziy bank / qo'lda) — faqat ko'rsatish | Xona turlari → Dollar kursi; Narxlar va Shaxmatkada $ |
+| OTA bron raqami (`Reservation.externalReference`) | Shaxmatka bron oynasi (faqat egasi) |
+
+Solishtiruv har ochilishda PMS'ning joriy holatidan qayta hisoblanadi
+(Beds24'ga so'rovsiz). Davriy tekshiruv `CHANNEL_MONITOR_MINUTES`
+(standart 60), kurs har 3 soatda.
 
 ---
 

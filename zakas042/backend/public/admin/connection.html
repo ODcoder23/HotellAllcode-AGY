@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beds24 ulanishi</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Beds24 ulanishi</h1>
+  <div class="sub">Faqat kuzatuv: PMS Beds24'dan o'qiydi va solishtiradi, hech narsa yozmaydi. Token hech qachon ko'rsatilmaydi. Faqat egasi uchun.</div>
+
+  <nav>
+    <a href="/admin/connection.html" class="on">Ulanish</a>
+    <a href="/admin/mapping.html">Mapping</a>
+    <a href="/admin/sync-log.html">Sinxronizatsiya jurnali</a>
+    <a href="/admin-panel">← Admin panel</a>
+  </nav>
+
+  <div id="msg" class="msg"></div>
+
+  <div class="card">
+    <div class="row">
+      <h2 style="margin:0">Holat</h2>
+      <div><button id="pingBtn">Ulanishni tekshirish</button> <button id="reloadBtn">Yangilash</button></div>
+    </div>
+    <div id="status" class="stats" style="margin-top:12px"><div class="empty">Yuklanmoqda...</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Tizim holati</h2>
+    <table id="sys"><tbody><tr><td class="empty">Yuklanmoqda...</td></tr></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>Ulash</h2>
+    <div class="sub" style="margin:0 0 10px">
+      Beds24 → Settings → Marketplace → API: <b>invite code</b> yarating (faqat o'qish ruxsatlari yetarli:
+      bookings, inventory, properties — read). Kod bir martalik, token bazada shifrlangan saqlanadi.
+    </div>
+    <div class="row" style="justify-content:flex-start;flex-wrap:wrap">
+      <input id="invite" placeholder="Invite code" style="min-width:220px">
+      <input id="property" placeholder="Obyekt ID (ixtiyoriy)" style="width:170px">
+      <button class="primary" id="connectBtn">Ulash</button>
+      <button id="disconnectBtn">Uzish</button>
+    </div>
+  </div>
+</div>
+
+<script src="_shared.js"></script>
+<script>
+function badge(ok, yes, no) { return '<span class="badge ' + (ok ? 'b-ok' : ok === false ? 'b-err' : 'b-mute') + '">' + (ok ? yes : no) + '</span>'; }
+
+async function load() {
+  try {
+    const s = await api("/api/admin/status");
+    const c = s.connection;
+    document.getElementById("status").innerHTML =
+      '<div class="stat"><div class="n">' + badge(c.connected && c.lastCheckOk !== false, "ulangan", c.connected ? "xato" : "ulanmagan") + '</div><div class="l">Ulanish</div></div>' +
+      '<div class="stat"><div class="n">' + esc(c.propertyId || "—") + '</div><div class="l">Obyekt ID</div></div>' +
+      '<div class="stat"><div class="n">' + (c.credits.remaining === null ? "—" : c.credits.remaining) + '</div><div class="l">Kredit (5 daqiqa)</div></div>' +
+      '<div class="stat"><div class="n">' + s.bookings.missingInPms + '</div><div class="l">PMS\'da yo\'q bronlar</div></div>';
+    const rows = [
+      ["Rejim", "faqat o'qish (kuzatuv)"],
+      ["Oxirgi tekshiruv", when(c.lastCheckedAt) + (c.lastError ? ' <span class="badge b-err">' + esc(c.lastError) + '</span>' : "")],
+      ["Token muddati", when(c.tokenExpiresAt)],
+      ["Ruxsatlar (scope)", (c.scopes || []).map(esc).join(", ") || "—"],
+      ["Shifrlash kaliti", c.encryptionKeySet ? "sozlangan" : '<span class="badge b-err">ENCRYPTION_KEY yo\'q</span>'],
+      ["Avtomatik tekshiruv", c.monitorMinutes > 0 ? "har " + c.monitorMinutes + " daqiqa, " + c.horizonDays + " kun oldinga" : "o'chiq"],
+      ["Webhook", c.webhookConfigured ? "sozlangan (24 soatda " + s.webhooks24h + ")" : "sozlanmagan"],
+      ["Mapping", s.mapping.roomsMapped + " / " + s.mapping.roomsTotal + " xona"],
+      ["Bronlarni oxirgi o'qish", when(s.bookings.lastPollAt)],
+      ["Narxni oxirgi o'qish", when(s.rates.lastPulledAt)],
+      ["Xatolar (24 soat)", s.failed24h],
+      ["Dollar kursi", s.fx ? "1 $ = " + esc(s.fx.rate) + " so'm (" + (s.fx.source === "cbu" ? "Markaziy bank" : "qo'lda") + ")" : "—"],
+    ];
+    document.getElementById("sys").innerHTML = "<tbody>" + rows.map(r => "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>").join("") + "</tbody>";
+  } catch (e) { msg(e.message, true); }
+}
+
+document.getElementById("reloadBtn").onclick = load;
+document.getElementById("pingBtn").onclick = async () => {
+  try {
+    const r = await api("/api/admin/connection/ping", { method: "POST" });
+    r.ok ? msg("Ishlayapti: " + r.propertyName + " (" + r.currency + "), " + r.roomTypes + " xona turi, " + r.units + " unit") : msg(r.error, true);
+    load();
+  } catch (e) { msg(e.message, true); }
+};
+document.getElementById("connectBtn").onclick = async () => {
+  const inviteCode = document.getElementById("invite").value.trim();
+  const propertyId = document.getElementById("property").value.trim();
+  if (!inviteCode) return msg("Invite code kiriting", true);
+  try {
+    const r = await api("/api/admin/connection", { method: "POST", body: propertyId ? { inviteCode, propertyId } : { inviteCode } });
+    document.getElementById("invite").value = "";
+    msg(r.ping && r.ping.ok ? "Ulandi: " + r.ping.propertyName : "Ulandi, tekshiruv: " + ((r.ping && r.ping.error) || ""), !(r.ping && r.ping.ok));
+    load();
+  } catch (e) { msg(e.message, true); }
+};
+document.getElementById("disconnectBtn").onclick = async () => {
+  if (!confirm("Beds24 ulanishini uzasizmi? Token bazadan o'chiriladi.")) return;
+  try { await api("/api/admin/connection", { method: "DELETE" }); msg("Uzildi"); load(); } catch (e) { msg(e.message, true); }
+};
+load();
+</script>
+</body>
+</html>

@@ -15,12 +15,14 @@
 
 import { Router } from "express";
 import { z } from "zod";
-import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
+import { requireAuth, requirePermission, authRequired, type AuthedRequest } from "../lib/authMiddleware.js";
+import { can } from "../services/auth.js";
 import { audit } from "../services/auditLog.js";
 import { asyncHandler, ValidationError } from "../lib/errors.js";
 import { fromDateKey, isValidDateKey, serializeReservation } from "../lib/serialize.js";
 import { addDays, hotelToday } from "../lib/hotelTime.js";
 import * as svc from "../services/reservations.js";
+import { getFx } from "../services/fx.js";
 import {
   MONEY_LIMITS, moneyAmount, nightPriceAmount, positiveMoney, signedMoney,
 } from "../lib/moneySchema.js";
@@ -55,6 +57,13 @@ reservationsRouter.get("/", requireAuth, requirePermission("reservation.read"), 
   );
   const list = await svc.listReservations(from, to);
   res.json(list.map(serializeReservation));
+}));
+
+// --- GET /api/reservations/fx-rate --------------------------
+// Dollar kursi — faqat ko'rsatish uchun, FAQAT FOUNDER (2026-09-27).
+// Shaxmatka bron oynasida so'm tagida $ chiqaradi. `/:id` dan OLDIN.
+reservationsRouter.get("/fx-rate", requireAuth, requirePermission("channel.read"), asyncHandler(async (_req, res) => {
+  res.json({ fx: await getFx() });
 }));
 
 // --- GET /api/reservations/:id ------------------------------
@@ -167,6 +176,30 @@ reservationsRouter.patch("/:id", requireAuth, requirePermission("reservation.wri
   res.json(serializeReservation(r));
 }));
 
+// --- PUT /api/reservations/:id/external-ref -----------------
+// OTA bron raqami (Booking.com #...) — FAQAT FOUNDER (2026-09-27).
+// Kanal kuzatuvi Beds24 bronini PMS broni bilan shu raqam orqali aniq
+// solishtiradi. Bron summasi, sanasi, holatiga ta'sir qilmaydi.
+reservationsRouter.put("/:id/external-ref", requireAuth, requirePermission("channel.write"), asyncHandler(async (req: AuthedRequest, res) => {
+  const { externalReference } = parse(
+    z.object({ externalReference: z.string().trim().max(100).nullable() }),
+    req.body
+  );
+  const value = externalReference || null;
+  const before = await svc.getReservation(req.params.id);
+  const r = await svc.setExternalReference(req.params.id, value);
+  await audit({
+    userId: req.user?.id,
+    action: "reservation.external_ref",
+    entityType: "Reservation",
+    entityId: req.params.id,
+    before: { externalReference: before.externalReference },
+    after: { externalReference: value },
+    ipAddress: req.ip,
+  });
+  res.json(serializeReservation(r));
+}));
+
 // --- Status amallari ----------------------------------------
 // Tasdiqlash: PENDING_PAYMENT -> CONFIRMED (13-fayl §5).
 // `reservation.write` huquqi: MANAGER ham to'lovni tasdiqlaydi.
@@ -258,6 +291,16 @@ reservationsRouter.post("/:id/payments", requireAuth, requirePermission("payment
     req.body
   );
 
+  // Manfiy summa — qaytarish: alohida huquq (qabulxonada yo'q)
+  if (amount < 0 && authRequired() && !(req.user && can(req.user.role, "payment.refund"))) {
+    res.status(403).json({
+      error: "Bu amal uchun huquq yetarli emas: payment.refund",
+      code: "FORBIDDEN",
+      required: "To'lovni qaytarish",
+    });
+    return;
+  }
+
   const result = await svc.addPayment(req.params.id, amount, method, note, req.user?.id);
 
   // 10-fayl §4: pul harakati har doim jurnalda qolsin (S13)
@@ -273,7 +316,7 @@ reservationsRouter.post("/:id/payments", requireAuth, requirePermission("payment
   res.status(201).json(serializeReservation(result));
 }));
 
-reservationsRouter.post("/:id/payments/:pid/reverse", requireAuth, requirePermission("payment.write"), asyncHandler(async (req: AuthedRequest, res) => {
+reservationsRouter.post("/:id/payments/:pid/reverse", requireAuth, requirePermission("payment.refund"), asyncHandler(async (req: AuthedRequest, res) => {
   const result = await svc.reversePayment(req.params.id, req.params.pid, req.user?.id);
 
   await audit({

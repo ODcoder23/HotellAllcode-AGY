@@ -48,6 +48,13 @@ export const AUDIT_ACTIONS = [
   "user.role_changed",
   "user.password_changed",
   "user.login",
+  // Kanal kuzatuvi (Beds24, faqat egasi) — ulanish va bog'lanish
+  "channel.connected",
+  "channel.disconnected",
+  "mapping.updated",
+  "mapping.deleted",
+  "fx.changed",
+  "reservation.external_ref",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

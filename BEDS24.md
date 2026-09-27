@@ -1,4 +1,42 @@
-# Beds24 integratsiyasi — OLIB TASHLANGAN (arxiv)
+# Beds24 integratsiyasi — OLIB TASHLANGAN (arxiv) + egasi uchun KUZATUV
+
+## 0. 2026-09-27: Channel manager egasi uchun qaytdi — faqat kuzatuv
+
+Egasi qarori: integratsiya (avtomatik import, PMS → Beds24 yozish,
+"Beds24 ustuvor" qoidasi, `CHANNEL_OWNED` qulfi, dollar to'lovlar)
+**qaytmaydi** — pastdagi 2026-09-26 holati o'z kuchida. Lekin olib
+tashlangan ekranlar **faqat FOUNDER** uchun qaytdi, egasi Beds24 holatini
+tekshirib, o'rganib turishi uchun:
+
+| Qaytdi (faqat egasi) | Qanday ishlaydi |
+|---|---|
+| Channel manager (3-tugma): Ulangan kanallar, Sinxronizatsiya, Bronlar jurnali | Beds24'dan `GET` bilan o'qiydi, PMS bilan solishtiradi |
+| "Ulanishni tekshirish", "Hoziroq tekshirish", "Farqni tekshirish", "Narx va bo'sh joyni o'qish" | faqat o'qish; natija `SyncLog` ga |
+| Webhook `/api/webhooks/beds24/<WEBHOOK_URL_TOKEN>` | jurnalga yoziladi va Beds24 bron nusxasi yangilanadi; PMS broni yaratilmaydi |
+| Mapping (tur va unit), avtomatik unit bog'lash | faqat solishtirish uchun |
+| Dollar kursi (Markaziy bank / qo'lda) | faqat ko'rsatish; pul so'mda qoladi |
+| Hisobot → "Kanal (Beds24)" | PMS'da yo'q bronlar, farqlar |
+| Narxlar: kurs, $ va Beds24 holati nuqtalari, "Beds24: tur …" | "yuborildi/kutmoqda" o'rniga "mos / farq / Beds24'da yopiq" |
+| Shaxmatka: $ summa, OTA bron raqami, Beds24'dagi mos bron | "qayta yuborish" o'rniga "Beds24'dan qayta o'qish" |
+| `/admin/connection.html`, `/admin/mapping.html`, `/admin/sync-log.html` | faqat egasi token'i bilan |
+
+**Qaytmadi (qoidaga zid):** PMS → Beds24 yozish (bron, narx, bo'sh joy,
+`black` yopish), Beds24 bronini PMS'ga avtomatik import, `CHANNEL_OWNED`
+qulfi, $ to'lov, `SOURCE_OF_TRUTH_*`, dead-letter/qayta ishlash,
+`cleaning/:id/reassign`, `db:reset`, `tools/test.sh`, bir martalik skriptlar.
+
+**Ulash:** Beds24 → Settings → Marketplace → API → invite code (faqat
+**read** ruxsatlari yetadi: bookings, inventory, properties) → admin
+panel → Channel manager → Ulash. Serverda `.env` ga `ENCRYPTION_KEY`
+(`openssl rand -hex 32`) qo'shilgan bo'lishi kerak. Eski token
+2026-09-26 da o'chirilgan — yangi kod kerak.
+
+**Eski jurnal (17 983 `SyncLog` yozuvi):** jadvallar eski shaklda
+qaytgan; kerak bo'lsa serverdagi `*remove-beds24*.dump` zaxirasidan
+`pg_restore --data-only -t SyncLog -t Channel ...` bilan tiklanadi
+(avval zaxira, keyin egasining roziligi).
+
+---
 
 **Holat (2026-09-26):** egasi qarori bilan Beds24 integratsiyasi PMS'dan
 to'liq olib tashlandi — kod, endpoint'lar, navbatlar, davriy vazifalar,

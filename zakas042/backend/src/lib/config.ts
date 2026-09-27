@@ -121,6 +121,40 @@ export const config = {
 
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "12h",
 
+  /**
+   * Beds24 tokenlarini shifrlash kaliti (AES-256-GCM, 64 hex belgi).
+   *
+   * Faqat kanal kuzatuvi uchun kerak (2026-09-27). Bo'sh bo'lsa server
+   * ishlayveradi — faqat Beds24'ga ulanib bo'lmaydi va founder aniq
+   * xabar oladi.
+   */
+  encryptionKey: process.env.ENCRYPTION_KEY ?? "",
+
+  /**
+   * Kanal kuzatuvi — Beds24 (FAQAT O'QISH, FAQAT FOUNDER).
+   *
+   * PMS Beds24'dan bronlar, kalendar va narxni o'qib o'zi bilan
+   * solishtiradi. Beds24'ga ham, PMS bronlariga ham yozmaydi.
+   */
+  beds24: {
+    baseUrl: (process.env.BEDS24_BASE_URL ?? "https://beds24.com/api/v2").replace(/\/$/, ""),
+    /** Davriy tekshiruv oralig'i, daqiqa. 0 — o'chiq (faqat tugma bilan) */
+    monitorMinutes: num("CHANNEL_MONITOR_MINUTES", 60),
+    /** Bo'sh joy va narx necha kun oldinga solishtiriladi */
+    horizonDays: num("CHANNEL_HORIZON_DAYS", 60),
+    /**
+     * Webhook URL'idagi maxfiy token: `/api/webhooks/beds24/<token>`.
+     * Bo'sh bo'lsa webhook qabul qilinmaydi (404). Beds24 webhook'ida
+     * imzo yo'q — himoya shu token (BEDS24.md).
+     */
+    webhookUrlToken: process.env.WEBHOOK_URL_TOKEN ?? "",
+  },
+
+  /** Dollar kursi manbai — O'zbekiston Markaziy banki */
+  fx: {
+    cbuUrl: process.env.FX_CBU_URL ?? "https://cbu.uz/uz/arkhiv-kursov-valyut/json/USD/",
+  },
+
   pendingPaymentTimeoutHours: num("PENDING_PAYMENT_TIMEOUT_HOURS", 24),
 } as const;
 

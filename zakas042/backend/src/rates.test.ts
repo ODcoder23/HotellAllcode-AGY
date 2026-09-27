@@ -258,6 +258,51 @@ describe("Narxlar va to'lov (TZ 7, 14-band)", () => {
       expect(again.status).toBe(400);
     });
 
+    it("ikki to'lovli bronda bitta to'lovni ikki marta qaytarib bo'lmaydi (2026-09-27)", async () => {
+      // Xato: tekshiruv faqat "qaytarish <= jami to'langan" edi — 100 000 +
+      // 100 000 to'lovda birinchisi ikki marta qaytarilib, ikkinchisi yo'qolardi
+      const r = await book("2031-10-05", "2031-10-07", "Ikki Tolov", "+99892700007");
+      await api(`/api/reservations/${r.id}/payments`, { method: "POST", body: JSON.stringify({ amount: 100_000, method: "Naqd" }) });
+      const two = await api(`/api/reservations/${r.id}/payments`, { method: "POST", body: JSON.stringify({ amount: 100_000, method: "Karta" }) });
+      const first = two.body.payments.find((p: any) => p.method === "Naqd").id;
+
+      const once = await api(`/api/reservations/${r.id}/payments/${first}/reverse`, { method: "POST" });
+      expect(once.status).toBe(200);
+      expect(once.body.paidAmount).toBe(100_000);
+
+      const twice = await api(`/api/reservations/${r.id}/payments/${first}/reverse`, { method: "POST" });
+      expect(twice.status).toBe(400);
+      const card = await api(`/api/reservations/${r.id}`);
+      expect(card.body.paidAmount).toBe(100_000);          // Karta to'lovi joyida
+
+      // Parallel qaytarish ham faqat bittasi o'tadi
+      const other = card.body.payments.find((p: any) => p.method === "Karta" && p.amount > 0).id;
+      const results = await Promise.all(Array.from({ length: 4 }, () =>
+        api(`/api/reservations/${r.id}/payments/${other}/reverse`, { method: "POST" })));
+      expect(results.filter((x) => x.status === 200)).toHaveLength(1);
+      expect((await api(`/api/reservations/${r.id}`)).body.paidAmount).toBe(0);
+    });
+
+    it("qabulxona (STAFF) to'lovni qaytara olmaydi — 403 (2026-09-27)", async () => {
+      const health = await api("/health");
+      if (health.body?.security?.auth !== true) return;   // AUTH o'chiq — rol tekshirilmaydi
+      const login = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email: "staff@imron.local", password: "admin12345" }) });
+      const staff = { Authorization: `Bearer ${login.body.token}` };
+
+      const r = await book("2031-10-15", "2031-10-16", "Staff Qaytarish", "+99892700008");
+      const paid = await api(`/api/reservations/${r.id}/payments`, {
+        method: "POST", headers: staff, body: JSON.stringify({ amount: 50_000, method: "Naqd" }),
+      });
+      expect(paid.status).toBe(201);                       // qabul qilish — mumkin
+      const pid = paid.body.payments[0].id;
+
+      expect((await api(`/api/reservations/${r.id}/payments/${pid}/reverse`, { method: "POST", headers: staff })).status).toBe(403);
+      expect((await api(`/api/reservations/${r.id}/payments`, {
+        method: "POST", headers: staff, body: JSON.stringify({ amount: -50_000, method: "Naqd" }),
+      })).status).toBe(403);
+      expect((await api(`/api/reservations/${r.id}`)).body.paidAmount).toBe(50_000);
+    });
+
     it("parallel to'lovlar qarzdan oshib ketmaydi (poyga holati)", async () => {
       // 2026-09-26 TUZATISH: ikki kassir bir vaqtda to'liq summani
       // kiritsa, ikkalasi ham o'tib bron ikki marta to'lanardi

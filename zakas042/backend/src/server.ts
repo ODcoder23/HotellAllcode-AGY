@@ -21,6 +21,8 @@ import { isRedisHealthy, getQueueCounts, shutdownQueues } from "./queues/index.j
 import { startRealtimeServer, stopRealtimeServer, getRealtimeStats } from "./realtime/server.js";
 import { authRouter } from "./routes/auth.js";
 import { publicRouter } from "./routes/public.js";
+import { channelRouter } from "./routes/channel.js";
+import { webhooksRouter } from "./routes/webhooks.js";
 import { parseAuth, authRequired, requireAuth, requirePermission } from "./lib/authMiddleware.js";
 import { internalLimiter } from "./lib/rateLimit.js";
 import { scheduleMaintenance } from "./queues/scheduler.js";
@@ -132,7 +134,10 @@ app.use("/api/public", publicRouter);
 app.use("/api/rooms", internalLimiter, roomsRouter);
 app.use("/api/reservations", internalLimiter, reservationsRouter);
 app.use("/api/rate-plans", internalLimiter, ratesRouter);
-app.use("/api/admin", internalLimiter, adminRouter);
+// channelRouter — Channel manager (Beds24 kuzatuvi): faqat FOUNDER,
+// faqat o'qish. Limiter bitta: ikki marta qo'yilsa so'rov ikki hisoblanadi
+app.use("/api/admin", internalLimiter, channelRouter, adminRouter);
+app.use("/api/webhooks", webhooksRouter);
 
 // --- Yuklangan fayllar (tozalash rasmlari) ------------------
 // fileURLToPath — Windows'da URL.pathname oldiga "/" qo'shadi
@@ -147,6 +152,11 @@ app.use("/uploads", express.static(uploadsDir));
 // DIQQAT: bu qator 404 handler'dan OLDIN turishi shart.
 const appDir = fileURLToPath(new URL("../public/app", import.meta.url));
 app.use(express.static(appDir));
+
+// Channel manager alohida sahifalari (/admin/connection.html va h.k.).
+// Sahifaning o'zida ma'lumot yo'q — hammasi founder token'i bilan API'dan
+const adminPagesDir = fileURLToPath(new URL("../public/admin", import.meta.url));
+app.use("/admin", express.static(adminPagesDir));
 
 // "/" → sayt (mehmonlar uchun)
 app.get("/", (_req, res) => {

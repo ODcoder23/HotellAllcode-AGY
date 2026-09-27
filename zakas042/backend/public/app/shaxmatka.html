@@ -391,7 +391,36 @@ const api = {
   mealPrice: () => apiFetch("/api/admin/meal-price"),
   setRates: (from, to, prices) =>
     apiFetch("/api/rate-plans", { method: "PUT", body: JSON.stringify({ from, to, prices }) }),
+
+  // --- Faqat egasi (FOUNDER): Beds24 kuzatuvi va dollar kursi (2026-09-27).
+  // Backend boshqa rolga 403 qaytaradi; UI ularni umuman chaqirmaydi.
+  fxRate: () => apiFetch("/api/reservations/fx-rate"),
+  channelInfo: (id) => apiFetch(`/api/admin/channel/reservation/${id}`),
+  setExternalRef: (id, externalReference) =>
+    apiFetch(`/api/reservations/${id}/external-ref`, { method: "PUT", body: JSON.stringify({ externalReference }) }),
+  channelRates: (from, to) => apiFetch(`/api/admin/rates?from=${from}&to=${to}`),
+  pullChannelRates: () => apiFetch("/api/admin/maintenance/pull-rates", { method: "POST" }),
 };
+
+/**
+ * Joriy foydalanuvchi egasimi (FOUNDER) — bir marta so'raladi.
+ *
+ * Faqat KO'RINISH uchun: egasiga Beds24 kuzatuvi va $ ko'rsatiladi.
+ * Haqiqiy himoya backendda (`channel.read = ["FOUNDER"]`).
+ */
+let mePromise = null;
+function useIsFounder() {
+  const [isFounder, setIsFounder] = useState(false);
+  useEffect(() => {
+    mePromise = mePromise || api.me().catch(() => null);
+    let alive = true;
+    mePromise.then((me) => { if (alive) setIsFounder(me?.user?.role === "FOUNDER"); });
+    return () => { alive = false; };
+  }, []);
+  return isFounder;
+}
+
+const usd = (n) => "$" + (Math.round(Number(n) * 100) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /* ========================================================================
    FAZA 8 — REAL-TIME (WebSocket)
@@ -1477,6 +1506,10 @@ function PricingPanel({ onClose }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
+  // Faqat egasi: Beds24 narxi bilan solishtiruv va $ (kuzatuv)
+  const isFounder = useIsFounder();
+  const [ch, setCh] = useState(null);
+  const [pulling, setPulling] = useState(false);
 
   /**
    * Oraliqdagi narxlarni o'qiydi.
@@ -1514,6 +1547,32 @@ function PricingPanel({ onClose }) {
   }, [from, to]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadChannel = useCallback(() => {
+    if (!isFounder) return;
+    api.channelRates(from, to).then(setCh).catch(() => setCh(null));
+  }, [isFounder, from, to]);
+  useEffect(() => { loadChannel(); }, [loadChannel]);
+
+  const pullAgain = async () => {
+    setPulling(true);
+    try { await api.pullChannelRates(); loadChannel(); }
+    catch (e) { setError(e.message); }
+    finally { setPulling(false); }
+  };
+
+  /** Oraliq bo'yicha Beds24 holati: hammasi mos — ok, biror kun farq — diff ... */
+  const chStatus = (key) => {
+    const t = ch?.types?.find((x) => x.roomTypeId === key);
+    if (!t) return null;
+    const days = Object.values(t.days);
+    const pick = ["closed", "diff", "ok"].find((st) => days.some((d) => d.status === st)) || "none";
+    const b24 = [...new Set(days.map((d) => d.beds24).filter((x) => x != null))];
+    const usdV = [...new Set(days.map((d) => d.usd).filter((x) => x != null))];
+    return { status: pick, beds24: b24, usd: usdV, name: t.beds24[0]?.name };
+  };
+  const DOT = { ok: "bg-emerald-500", diff: "bg-amber-500", closed: "bg-red-500", none: "bg-gray-300" };
+  const DOT_TITLE = { ok: "Beds24 narxi mos", diff: "Beds24 narxi farq qiladi", closed: "Beds24'da narx yo'q (yopiq)", none: "Beds24 ma'lumoti yo'q" };
 
   const save = async () => {
     const prices = {};
@@ -1563,15 +1622,25 @@ function PricingPanel({ onClose }) {
         ) : (
           Object.entries(ROOM_TYPES).map(([key, type]) => {
             const r = rates[key] || {};
+            const c = isFounder && ch ? chStatus(key) : null;
             return (
-              <div key={key} className="flex items-center gap-2">
-                <span className="text-xs text-gray-600 w-24 flex-shrink-0">{type.label}</span>
-                <TextInput
-                  type="number" min={0} step="1000"
-                  placeholder={r.mixed ? "har xil" : r.price != null ? String(r.price) : "—"}
-                  value={draft[key] ?? ""}
-                  onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
-                />
+              <div key={key}>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-600 w-24 flex-shrink-0">{type.label}</span>
+                  <TextInput
+                    type="number" min={0} step="1000"
+                    placeholder={r.mixed ? "har xil" : r.price != null ? String(r.price) : "—"}
+                    value={draft[key] ?? ""}
+                    onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
+                  />
+                  {c && <span title={DOT_TITLE[c.status]} className={`w-2 h-2 rounded-full flex-shrink-0 ${DOT[c.status]}`} />}
+                </div>
+                {c && (
+                  <div className="text-xs text-gray-400 pl-24 ml-2">
+                    {c.usd.length === 1 ? usd(c.usd[0]) : c.usd.length ? "$ har xil" : ""}
+                    {c.name ? ` · Beds24: tur ${c.name}${c.beds24.length === 1 ? " $" + c.beds24[0] : ""}` : " · Beds24: bog'lanmagan"}
+                  </div>
+                )}
               </div>
             );
           })
@@ -1587,6 +1656,13 @@ function PricingPanel({ onClose }) {
       <p className="text-xs text-gray-500">
         Narx so'mda. Yangi narx sayt va yangi bronlarda darhol; mavjud bronlar summasi o'zgarmaydi.
       </p>
+
+      {isFounder && (
+        <div className="flex items-center justify-between text-xs text-gray-500 border-t border-gray-100 pt-2">
+          <span>{ch?.fx ? `1 $ = ${money(ch.fx.rate)}` : "Kurs yo'q"} · Beds24 {ch?.lastPulledAt ? "o'qilgan" : "o'qilmagan"}</span>
+          <Btn variant="subtle" onClick={pullAgain} disabled={pulling}>{pulling ? "O'qilmoqda…" : "Beds24'dan qayta o'qish"}</Btn>
+        </div>
+      )}
 
       <div className="flex items-center justify-end gap-2">
         {saved && <span className="text-xs text-emerald-600 mr-auto">✓ Saqlandi</span>}
@@ -1876,10 +1952,81 @@ function Amount({ n, className = "" }) {
   return <span className={`font-mono ${className}`}>{money(n)}</span>;
 }
 
+/* ============================== BEDS24 KUZATUVI (faqat egasi) ==============================
+ *
+ * 2026-09-27, egasi qarori: Beds24 integratsiyasi olib tashlangan, PMS
+ * OTA bronini o'zgartirmaydi va qulflamaydi (qabulxona qo'lda kiritadi).
+ * Egasi esa har bron uchun ko'radi:
+ *   - summa dollarda (so'm tagida, kurs bilan) — faqat ko'rsatish
+ *   - OTA bron raqami (Booking.com #...) — shu raqam bilan Beds24 broniga
+ *     aniq bog'lanadi
+ *   - Beds24'dagi mos bron va farq (sana, xona, mehmon soni)
+ */
+const MATCH_LABEL = {
+  MATCHED: ["Beds24 bilan mos", "text-emerald-700 bg-emerald-50 border-emerald-200"],
+  MISMATCH: ["Beds24 bilan farq bor", "text-amber-700 bg-amber-50 border-amber-200"],
+  MISSING_IN_PMS: ["PMS'da yo'q", "text-red-700 bg-red-50 border-red-200"],
+  UNMAPPED: ["Bog'lanmagan", "text-gray-600 bg-gray-50 border-gray-200"],
+  INACTIVE: ["Beds24'da faol emas", "text-gray-600 bg-gray-50 border-gray-200"],
+};
+
+function FounderChannelInfo({ res, total, remaining }) {
+  const [info, setInfo] = useState(null);
+  const [ref, setRef] = useState(res.externalReference || "");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const load = useCallback(() => {
+    api.channelInfo(res.id).then(setInfo).catch((e) => setErr(e.message));
+  }, [res.id]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setRef(res.externalReference || ""); }, [res.externalReference]);
+
+  const saveRef = async () => {
+    setSaving(true); setErr(null);
+    try { await api.setExternalRef(res.id, ref.trim() || null); load(); }
+    catch (e) { setErr(e.message); }
+    finally { setSaving(false); }
+  };
+
+  const fx = info?.fx;
+  const b = info?.found ? info.booking : null;
+  const m = b ? MATCH_LABEL[b.matchStatus] || [b.matchStatus, "text-gray-600 bg-gray-50 border-gray-200"] : null;
+
+  return (
+    <div className="rounded-lg border border-gray-200 p-3 space-y-2 text-xs">
+      <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Egasi uchun · Beds24 kuzatuvi</div>
+      {fx ? (
+        <div className="flex justify-between text-gray-600">
+          <span>Dollarda (1 $ = {money(fx.rate)})</span>
+          <span className="font-mono">jami {usd(total / fx.rate)} · qoldiq {usd(remaining / fx.rate)}</span>
+        </div>
+      ) : info && <div className="text-gray-400">Dollar kursi kiritilmagan (Xona turlari → Dollar kursi)</div>}
+
+      <div className="flex items-center gap-2">
+        <span className="text-gray-500 w-28 shrink-0">OTA bron raqami</span>
+        <input className={inputCls + " h-8"} value={ref} placeholder="masalan 4812345678" onChange={(e) => setRef(e.target.value)} />
+        <Btn variant="subtle" onClick={saveRef} disabled={saving || ref === (res.externalReference || "")}>{saving ? "…" : "Saqlash"}</Btn>
+      </div>
+
+      {b ? (
+        <div className={`rounded-md border px-2.5 py-2 space-y-0.5 ${m[1]}`}>
+          <div className="font-semibold">{m[0]}</div>
+          <div>Beds24 #{b.externalId} · {b.source || "—"}{b.apiReference ? ` #${b.apiReference}` : ""} · {b.arrival} → {b.departure} · {b.numAdult} kishi</div>
+          <div className="font-mono">{b.price} {b.currency}{b.priceUzs != null && b.currency !== "UZS" ? ` ≈ ${money(b.priceUzs)}` : ""}</div>
+          {b.matchNote && <div>{b.matchNote}</div>}
+        </div>
+      ) : info && <div className="text-gray-400">Beds24'da bu bronga mos bron topilmadi (yoki Beds24 hali o'qilmagan).</div>}
+      {err && <div className="text-red-600">{err}</div>}
+    </div>
+  );
+}
+
 /* ============================== DETAIL MODAL ============================== */
 
 function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, onOpenPayment, onOpenCharge, onOpenChangeRoom, onOpenChangeDates, onCancel, onReversePayment }) {
   const room = rooms.find((r) => r.id === res.roomId);
+  const isFounder = useIsFounder();
   const { nights, roomTotal, mealTotal, total, paid, remaining, refundDue } = resMoney(res);
   const isCancelledRes = res.status === "cancelled" || res.status === "no_show";
   const guests = res.adults + (res.children || 0);
@@ -1999,6 +2146,8 @@ function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, on
             )}
           </div>
         </div>
+
+        {isFounder && <FounderChannelInfo res={res} total={total} remaining={remaining} />}
       </div>
     </Modal>
   );

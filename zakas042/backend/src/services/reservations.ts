@@ -994,8 +994,20 @@ export async function reversePayment(
       throw new ValidationError("Qaytarilgan to'lovni yana qaytarib bo'lmaydi");
     }
 
-    // Balansni manfiyga tushirmaslik (S2): bir to'lov ikki marta
-    // qaytarilsa yoki qo'lda manfiy to'lov kiritilgan bo'lsa to'sadi
+    /**
+     * Shu to'lov allaqachon qaytarilganmi — ANIQ bog'lanish bo'yicha
+     * (2026-09-27 tuzatish). Ilgari faqat pastdagi umumiy chegara bor
+     * edi: bronda 100 000 + 100 000 to'lov bo'lsa, birinchisini ikki
+     * marta qaytarish mumkin edi (ikkinchi to'lov "yo'qolardi").
+     * `reversedPaymentId` UNIQUE — baza ham ikkinchisiga ruxsat bermaydi.
+     */
+    const already = await tx.payment.findUnique({ where: { reversedPaymentId: paymentId } });
+    if (already) {
+      throw new ValidationError("Bu to'lov allaqachon qaytarilgan");
+    }
+
+    // Balansni manfiyga tushirmaslik (S2): qo'lda manfiy to'lov kiritilgan
+    // yoki eski (bog'lanishsiz) qaytarish bo'lsa to'sadi
     const { paid } = await currentBalance(reservationId, tx);
     if (toCents(amount) > toCents(paid)) {
       throw new ValidationError(
@@ -1011,6 +1023,7 @@ export async function reversePayment(
         paymentDate: hotelToday(),
         note: `Qaytarildi: ${formatMoney(amount)} (${payment.method})`,
         userId: payerId,
+        reversedPaymentId: paymentId,
       },
     });
   });
@@ -1057,6 +1070,22 @@ export async function addCharge(reservationId: string, label: string, amount: nu
 }
 
 // --- O'qish -------------------------------------------------
+
+/**
+ * OTA bron raqami — faqat kanal kuzatuvi uchun (2026-09-27, founder).
+ * Pul, sana, holatga tegmaydi; boshqa bron qoidalari o'zgarmaydi.
+ */
+export async function setExternalReference(id: string, externalReference: string | null) {
+  const exists = await prisma.reservation.findUnique({ where: { id }, select: { id: true } });
+  if (!exists) throw new NotFoundError("Bron");
+  const updated = await prisma.reservation.update({
+    where: { id },
+    data: { externalReference },
+    include: reservationInclude,
+  });
+  await notifyReservation("reservation.updated", id);
+  return updated;
+}
 
 export async function listReservations(from?: string, to?: string) {
   const where: Prisma.ReservationWhereInput = {};

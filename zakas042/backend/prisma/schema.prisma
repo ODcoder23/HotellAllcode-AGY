@@ -184,6 +184,7 @@ model RoomType {
   rooms        Room[]
   ratePlans    RatePlan[]
   availability Availability[]
+  channelMappings ChannelMapping[]   // Beds24 kuzatuvi (faqat founder)
 }
 
 // Q2: Room.id — xona raqamining o'zi ("101"), cuid() EMAS.
@@ -209,6 +210,7 @@ model Room {
   reservations Reservation[]
   dayStatuses  RoomDayStatus[]
   cleaningTasks CleaningTask[]
+  channelMappings ChannelMapping[]   // Beds24 kuzatuvi (faqat founder)
 
   @@index([floorId])
 }
@@ -292,6 +294,13 @@ model Reservation {
    * ketma-ket emasligi kafolatlanmagan.
    */
   code                  String?  @unique
+  /**
+   * OTA bron raqami (Booking.com va h.k.) — qabulxona qo'lda kiritgan
+   * bronni Beds24'dagi bron bilan aniq solishtirish uchun (2026-09-27,
+   * kanal kuzatuvi). Faqat founder kiritadi va ko'radi. Beds24'da
+   * `apiReference` ga teng.
+   */
+  externalReference     String?
 
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -302,6 +311,7 @@ model Reservation {
 
   @@index([roomId, checkIn, checkOut])
   @@index([status])
+  @@index([externalReference])
 }
 
 // Shaxmatkadagi SOURCES bilan aynan bir xil qiymatlar. OTA manbalari
@@ -356,6 +366,16 @@ model Payment {
   // qoladi -> SetNull.
   userId            String?
   user              User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /**
+   * Qaytarish qaysi to'lovniki (2026-09-27). UNIQUE — bitta to'lov
+   * faqat BIR marta qaytariladi (baza darajasida). Ilgari tekshiruv
+   * faqat "qaytarish umumiy to'langandan oshmasin" edi: ikki to'lov
+   * bo'lsa birinchisini ikki marta qaytarib, ikkinchisini "yo'q" qilish
+   * mumkin edi. Eski qaytarishlarda bo'sh (izohdan aniqlab bo'lmaydi).
+   */
+  reversedPaymentId String?  @unique
+  reversedPayment   Payment? @relation("PaymentReversal", fields: [reversedPaymentId], references: [id], onDelete: SetNull)
+  reversal          Payment? @relation("PaymentReversal")
 
   @@index([reservationId])
   @@index([userId])
@@ -604,5 +624,241 @@ model RoomDayStatus {
   updatedAt     DateTime @updatedAt
 
   @@unique([roomId, date])
+  @@index([date])
+}
+
+// ============================================================
+//  KANAL KUZATUVI (Beds24) — 2026-09-27
+//
+//  FAQAT O'QISH va FAQAT FOUNDER (egasi qarori): PMS Beds24'dan
+//  bronlar, kalendar va narxni o'qiydi, o'zidagi ma'lumot bilan
+//  solishtiradi va natijani founder'ga ko'rsatadi. PMS bronlariga,
+//  narxlariga va Beds24'ga HECH NARSA YOZILMAYDI — qabulxona OTA
+//  bronlarini avvalgidek qo'lda kiritadi (BEDS24.md).
+//
+//  Jadval shakllari 2026-09-26 da olib tashlangan jadvallar bilan
+//  bir xil (Channel, ChannelConnection, ChannelMapping, SyncLog,
+//  SyncState, WebhookEvent) — serverdagi zaxiradan eski jurnalni
+//  qaytarish mumkin bo'lsin. ChannelBooking va ChannelCalendar —
+//  Beds24'dan o'qilgan oxirgi holatning nusxasi.
+// ============================================================
+
+model Channel {
+  id        String   @id @default(cuid())
+  code      String   @unique // "beds24"
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  connections ChannelConnection[]
+  mappings    ChannelMapping[]
+  webhooks    WebhookEvent[]
+  syncLogs    SyncLog[]
+  syncStates  SyncState[]
+  bookings    ChannelBooking[]
+  calendar    ChannelCalendar[]
+}
+
+/**
+ * Beds24 ulanishi. Tokenlar AES-256-GCM bilan shifrlangan
+ * (`lib/encryption.ts`, kalit `.env` dagi ENCRYPTION_KEY) va
+ * hech qachon javobga chiqmaydi.
+ */
+model ChannelConnection {
+  id                   String    @id @default(cuid())
+  channelId            String
+  channel              Channel   @relation(fields: [channelId], references: [id])
+  refreshToken         String // shifrlangan
+  accessToken          String? // shifrlangan, 24 soatlik kesh
+  accessTokenExpiresAt DateTime?
+  propertyId           String // Beds24 obyekt ID
+  isActive             Boolean   @default(true)
+  /**
+   * Oxirgi "Ulanishni tekshirish" natijasi
+   */
+  lastCheckedAt        DateTime?
+  lastCheckOk          Boolean?
+  lastError            String?
+  /**
+   * Token ruxsatlari (`GET /authentication/details`)
+   */
+  scopes               Json?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@unique([channelId, propertyId])
+}
+
+/**
+ * Beds24 xona turi/unit <-> PMS tarif/xona bog'lanishi.
+ * Kuzatuvda faqat SOLISHTIRISH uchun: Beds24 broni qaysi PMS
+ * xonasiga to'g'ri kelishini bilish. Unit id faqat `externalRoomTypeId`
+ * bilan birga noyob (Beds24'da har turda 1 dan boshlanadi).
+ */
+model ChannelMapping {
+  id                 String    @id @default(cuid())
+  channelId          String
+  channel            Channel   @relation(fields: [channelId], references: [id])
+  roomTypeId         String?
+  roomType           RoomType? @relation(fields: [roomTypeId], references: [id])
+  roomId             String?
+  room               Room?     @relation(fields: [roomId], references: [id])
+  externalRoomTypeId String // Beds24 "roomId" (xona turi)
+  externalUnitId     String? // Beds24 unit (jismoniy xona)
+  /**
+   * Beds24'dagi nomi — "Beds24: tur ..." yozuvi uchun
+   */
+  externalName       String?
+  /**
+   * Beds24 narxi nonushtani o'z ichiga oladimi — narxni solishtirishda
+   */
+  includesMeal       Boolean   @default(false)
+  isActive           Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([channelId, externalRoomTypeId, externalUnitId])
+  @@unique([channelId, roomId])
+  @@index([channelId, roomTypeId])
+}
+
+/**
+ * Beds24 webhook jurnali — faqat yoziladi va nusxa yangilanadi
+ */
+model WebhookEvent {
+  id           String        @id @default(cuid())
+  channelId    String
+  channel      Channel       @relation(fields: [channelId], references: [id])
+  eventType    String // "booking.new" | "booking.modified" | "booking.cancelled" | ...
+  externalId   String? // Beds24 bookingId
+  payloadHash  String // SHA-256 — takrorni aniqlash
+  rawPayload   Json
+  status       WebhookStatus @default(RECEIVED)
+  attempts     Int           @default(0)
+  processedAt  DateTime?
+  errorMessage String?
+  createdAt    DateTime      @default(now())
+
+  @@unique([channelId, eventType, externalId, payloadHash])
+  @@index([channelId, externalId])
+  @@index([status, createdAt])
+}
+
+enum WebhookStatus {
+  RECEIVED
+  QUEUED
+  PROCESSED
+  FAILED
+  IGNORED_DUPLICATE
+  NEEDS_MANUAL_ACTION
+}
+
+/**
+ * Beds24 bilan har bir muloqot (ping, bron o'qish, kalendar, farq)
+ */
+model SyncLog {
+  id            String        @id @default(cuid())
+  channelId     String
+  channel       Channel       @relation(fields: [channelId], references: [id])
+  action        String // "ping" | "poll_bookings" | "pull_rates" | "drift_check" | "webhook_received" | "fx_refresh"
+  direction     SyncDirection
+  reservationId String?
+  roomId        String?
+  request       Json?
+  response      Json?
+  status        SyncStatus
+  attempt       Int           @default(1)
+  errorMessage  String?
+  durationMs    Int?
+  createdAt     DateTime      @default(now())
+
+  @@index([channelId, status, createdAt])
+  @@index([channelId, action, createdAt])
+  @@index([reservationId])
+}
+
+enum SyncDirection {
+  PMS_TO_CHANNEL
+  CHANNEL_TO_PMS
+}
+
+enum SyncStatus {
+  SUCCESS
+  FAILED
+  RETRYING
+  SKIPPED
+}
+
+model SyncState {
+  id               String    @id @default(cuid())
+  channelId        String
+  channel          Channel   @relation(fields: [channelId], references: [id])
+  key              String // "bookings_pull" | "rates_pull" | "drift_check"
+  lastSuccessfulAt DateTime?
+  lastCursor       String?
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([channelId, key])
+}
+
+/**
+ * Beds24'dagi bron — oxirgi o'qilgan holati va PMS bilan solishtiruv.
+ * `matchStatus`:
+ * MATCHED         PMS'da mos bron bor (xona va sanalar bir xil)
+ * MISMATCH        PMS'da bron bor, lekin xona/sana/mehmon soni farq qiladi
+ * MISSING_IN_PMS  Beds24'da faol bron, PMS'da yo'q — qabulxona kiritishi kerak
+ * UNMAPPED        Beds24 xonasi PMS'ga bog'lanmagan — solishtirib bo'lmaydi
+ * INACTIVE        bekor qilingan / so'rov / yopish (black) — bron emas
+ */
+model ChannelBooking {
+  id                 String    @id @default(cuid())
+  channelId          String
+  channel            Channel   @relation(fields: [channelId], references: [id])
+  externalId         String
+  externalRoomTypeId String
+  externalUnitId     String?
+  status             String
+  subStatus          String?
+  arrival            DateTime  @db.Date
+  departure          DateTime  @db.Date
+  numAdult           Int       @default(1)
+  numChild           Int       @default(0)
+  price              Decimal   @db.Decimal(12, 2) // Beds24 valyutasida (jami)
+  currency           String    @default("USD")
+  guestName          String
+  phone              String?
+  email              String?
+  country            String?
+  source             String? // "Booking.com", "direct"
+  apiReference       String? // OTA bron raqami
+  notes              String?
+  bookedAt           DateTime?
+  modifiedAt         DateTime?
+  matchStatus        String    @default("MISSING_IN_PMS")
+  matchNote          String?
+  reservationId      String? // mos PMS broni (FK emas — faqat ko'rsatish)
+  firstSeenAt        DateTime  @default(now())
+  lastSeenAt         DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([channelId, externalId])
+  @@index([arrival])
+  @@index([matchStatus])
+}
+
+/**
+ * Beds24 kalendari (bo'sh joy, narx) — oxirgi o'qilgan holat
+ */
+model ChannelCalendar {
+  channelId          String
+  channel            Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  externalRoomTypeId String
+  date               DateTime @db.Date
+  numAvail           Int?
+  price1             Decimal? @db.Decimal(12, 2)
+  minStay            Int?
+  fetchedAt          DateTime @default(now())
+
+  @@id([channelId, externalRoomTypeId, date])
   @@index([date])
 }

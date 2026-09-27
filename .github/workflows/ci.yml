@@ -1,0 +1,105 @@
+# Backend: tip tekshiruvi, migratsiyalar, testlar (2026-09-27)
+#
+# Testlar ALOHIDA vaqtinchalik bazada ishlaydi (nomida "test" —
+# vitest.setup.ts himoyasi). Jonli server va uning bazasiga tegmaydi.
+# Kanal kuzatuvi testlari (channel.test.ts) soxta Beds24 va Markaziy
+# bankni o'zi ko'taradi — tashqi internet kerak emas.
+# Ikkala AUTH_REQUIRED rejimida ham hamma test o'tishi shart.
+
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        auth: ["true", "false"]
+    defaults:
+      run:
+        working-directory: zakas042/backend
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: imron_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d imron_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/imron_test
+      SHADOW_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/imron_shadow
+      REDIS_URL: redis://127.0.0.1:6379
+      PORT: "3399"
+      HOST: 127.0.0.1
+      PMS_URL: http://127.0.0.1:3399
+      NODE_ENV: development
+      # Faqat CI uchun — haqiqiy kalitlar emas
+      JWT_SECRET: ci-only-jwt-secret-0123456789abcdef0123
+      ENCRYPTION_KEY: 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+      WEBHOOK_URL_TOKEN: ci-webhook-token-0123456789
+      AUTH_REQUIRED: ${{ matrix.auth }}
+      RATE_LIMIT_DISABLED: "true"
+      # Soxta Beds24 va Markaziy bank channel.test.ts ichida ko'tariladi
+      BEDS24_BASE_URL: http://127.0.0.1:56401/api/v2
+      FX_CBU_URL: http://127.0.0.1:56401/api/v2/cbu
+      PROPERTY_CACHE_TTL_MS: "0"
+      CHANNEL_MONITOR_MINUTES: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: zakas042/backend/package-lock.json
+
+      - name: Paketlar (lock fayl bilan aynan)
+        run: npm ci
+
+      - name: Tip tekshiruvi (testlar bilan)
+        run: npm run typecheck
+
+      - name: Ishlab chiqarish build'i
+        run: npm run build
+
+      - name: Migratsiyalar
+        run: npx prisma migrate deploy
+
+      - name: Sxema va migratsiyalar bir xilmi
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -c "CREATE DATABASE imron_shadow"
+          npx prisma migrate diff --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_DATABASE_URL" --exit-code
+
+      - name: Serverni ishga tushirish
+        run: |
+          SEED_ALLOW_WIPE=true npx tsx prisma/seed.ts
+          nohup npx tsx src/server.ts > server.log 2>&1 &
+          for i in $(seq 1 40); do curl -sf "$PMS_URL/health" && exit 0; sleep 1; done
+          cat server.log; exit 1
+
+      - name: Testlar
+        run: npx vitest run
+
+      - name: Server jurnali (xato bo'lsa)
+        if: failure()
+        run: tail -200 server.log

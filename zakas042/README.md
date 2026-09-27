@@ -110,6 +110,15 @@ AUTH_REQUIRED=false
 RATE_LIMIT_DISABLED=true
 JWT_SECRET=<yangi 64 belgili kalit>
 # barcha TELEGRAM_* BO'SH — aks holda mahalliy bot serverdagi bot bilan to'qnashadi
+
+# Kanal kuzatuvi (channel.test.ts): soxta Beds24 va Markaziy bankni test
+# o'zi 56401-portda ko'taradi — server shu manzilga qarashi kerak
+BEDS24_BASE_URL=http://127.0.0.1:56401/api/v2
+FX_CBU_URL=http://127.0.0.1:56401/api/v2/cbu
+ENCRYPTION_KEY=<openssl rand -hex 32>
+WEBHOOK_URL_TOKEN=test-webhook-token-0123456789
+PROPERTY_CACHE_TTL_MS=0
+CHANNEL_MONITOR_MINUTES=0
 ```
 
 ```bash
@@ -125,7 +134,9 @@ IPv6 (`::1`) ga hal bo'ladi.
 Ishlab chiqarishga yaqin rejim: `test.env` da `AUTH_REQUIRED=true` —
 `vitest.setup.ts` ADMIN tokenini o'zi qo'shadi, `security.test.ts`
 rollar chegarasini (401/403) tekshiradi. **Ikkala rejimda ham hamma test
-o'tishi kerak** (2026-09-26: 13 fayl, 226 test — ikkala rejimda o'tdi).
+o'tishi kerak** (2026-09-27: 14 fayl, 253 test — ikkala rejimda o'tdi).
+GitHub Actions (`.github/workflows/ci.yml`) ham xuddi shuni ikkala rejimda
+ishga tushiradi.
 
 Tashqi xizmat kerak emas: testlar internetsiz ishlaydi.
 

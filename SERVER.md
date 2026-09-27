@@ -140,6 +140,25 @@ tashlash shu tartibda qilingan ([BEDS24.md](BEDS24.md), 4-bo'lim).
 **Tekshiruv:** `/health` 200; sayt, Shaxmatka, admin panel ochiladi;
 `journalctl` da xato yo'q.
 
+### 2026-09-27 yangilanishi: Channel manager (kuzatuv) va to'lov qaytarish
+
+Ikki migratsiya — faqat yangi jadval va bo'sh ustun qo'shadi, mavjud
+ma'lumotga tegmaydi: `20260927050200_channel_monitor`,
+`20260927070000_payment_reversal_link`. Tartib yuqoridagidek (zaxira →
+kod → `npm ci` → `migrate deploy` → build → restart), qo'shimcha:
+
+```bash
+# .env ga (bir marta) — Beds24 tokenini shifrlash kaliti
+echo "ENCRYPTION_KEY=\"$(openssl rand -hex 32)\"" >> /opt/hotel-pms/backend/.env
+# ixtiyoriy: webhook qabul qilish uchun
+# echo "WEBHOOK_URL_TOKEN=\"$(openssl rand -hex 24)\"" >> /opt/hotel-pms/backend/.env
+```
+
+Kalit bo'lmasa server baribir ishlaydi — faqat Beds24'ga ulanib
+bo'lmaydi. Keyin egasi: admin panel → Channel manager → Ulash
+(invite code). Tekshiruv: egasi hisobida Channel manager tugmasi bor,
+admin/menejer/qabulxona hisobida yo'q.
+
 `npm run data:reset` faqat TEST BRONLARINI o'chiradi (narx, maosh,
 sozlama qoladi) — ishga tushirish egasining alohida qarori.
 

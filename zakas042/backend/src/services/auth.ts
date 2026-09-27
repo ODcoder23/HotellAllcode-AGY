@@ -50,7 +50,16 @@ export const PERMISSIONS = {
   "audit.read":         ["FOUNDER", "ADMIN", "MANAGER"],
   "checkin.write":      ["FOUNDER", "ADMIN", "MANAGER", "STAFF"],
   "payment.write":      ["FOUNDER", "ADMIN", "MANAGER", "STAFF"],
+  // Pulni QAYTARISH (manfiy to'lov, to'lovni bekor qilish) — 2026-09-27.
+  // Qabulxona to'lov qabul qiladi, lekin qaytara olmaydi: aks holda naqd
+  // pulni olib, tizimda "qaytarildi" deb yozish mumkin edi
+  "payment.refund":     ["FOUNDER", "ADMIN", "MANAGER"],
   "reservation.read":   ["FOUNDER", "ADMIN", "MANAGER", "STAFF"],
+  // Kanal kuzatuvi (Beds24) va dollar kursi — FAQAT egasi (2026-09-27).
+  // Egasi Beds24 holatini tekshirib, o'rganib turadi; boshqa rollarga
+  // bu bo'lim ko'rinmaydi va kerak emas
+  "channel.read":       ["FOUNDER"],
+  "channel.write":      ["FOUNDER"],
 } as const satisfies Record<string, readonly UserRole[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

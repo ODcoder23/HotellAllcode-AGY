@@ -12,11 +12,12 @@ Mehmonxona boshqaruv tizimi: sayt (mehmonlar broni), bandlik jadvali
    Shaxmatka / Admin panel     Telegram botlar
 ```
 
-Tashqi channel manager YO'Q. Beds24 integratsiyasi 2026-09-26 da egasi
-qarori bilan to'liq olib tashlandi — nima bo'lgani va nima qilingani:
-[BEDS24.md](BEDS24.md) (arxiv). Booking.com va boshqa OTA bronlarini
+Tashqi channel manager bilan integratsiya YO'Q: Beds24 2026-09-26 da
+egasi qarori bilan olib tashlandi, Booking.com va boshqa OTA bronlarini
 qabulxona qo'lda kiritadi (manba "Booking.com" va h.k., komissiya
-avtomatik hisoblanadi).
+avtomatik). 2026-09-27 dan **egasi (FOUNDER)** uchun Channel manager
+**kuzatuv rejimida** qaytdi: PMS Beds24'dan faqat o'qiydi va o'zi bilan
+solishtiradi, hech narsa yozmaydi — [BEDS24.md](BEDS24.md), 0-bo'lim.
 
 ---
 
@@ -106,9 +107,9 @@ HotellAllcode/
 | Tarif (xona turi) | 9 |
 | Valyuta | **Faqat so'm** |
 | Vaqt | Mehmonxona kuni — Toshkent (UTC+5), `lib/hotelTime.ts` |
-| Prisma | 17 model, 7 enum |
-| Migratsiyalar | 22 |
-| Testlar | 13 fayl, 226 test (ikkala AUTH_REQUIRED rejimida o'tadi) |
+| Prisma | 25 model, 10 enum |
+| Migratsiyalar | 24 |
+| Testlar | 14 fayl, 253 test (ikkala AUTH_REQUIRED rejimida o'tadi, CI ham) |
 
 ---
 

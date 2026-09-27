@@ -146,6 +146,7 @@ type ReservationRow = {
   priceReason?: string | null;
   status: string;
   code?: string | null;
+  externalReference?: string | null;
   checkedInAt: Date | null;
   checkedOutAt: Date | null;
   createdAt: Date;
@@ -207,6 +208,8 @@ export function serializeReservation(r: ReservationRow) {
 
     // Sayt broni kodi (IMR-XXXXX) — qabulxona mehmon bilan gaplashganda
     code: r.code ?? null,
+    // OTA bron raqami — Shaxmatka faqat founder'ga ko'rsatadi (kanal kuzatuvi)
+    externalReference: r.externalReference ?? null,
     checkedInAt: r.checkedInAt?.toISOString() ?? null,
     checkedOutAt: r.checkedOutAt?.toISOString() ?? null,
   };

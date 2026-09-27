@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sinxronizatsiya jurnali</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Sinxronizatsiya jurnali</h1>
+  <div class="sub">Beds24 bilan har bir muloqot (faqat o'qish): ulanish, bronlarni o'qish, narx, farq tekshiruvi, webhook, dollar kursi. Faqat egasi uchun.</div>
+
+  <nav>
+    <a href="/admin/connection.html">Ulanish</a>
+    <a href="/admin/mapping.html">Mapping</a>
+    <a href="/admin/sync-log.html" class="on">Sinxronizatsiya jurnali</a>
+    <a href="/admin-panel">← Admin panel</a>
+  </nav>
+
+  <div id="msg" class="msg"></div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <select id="action">
+          <option value="">Hamma amallar</option>
+          <option value="ping">Ulanishni tekshirish</option>
+          <option value="poll_bookings">Bronlarni o'qish</option>
+          <option value="pull_rates">Narx va bo'sh joy</option>
+          <option value="drift_check">Farq tekshiruvi</option>
+          <option value="webhook_received">Webhook</option>
+          <option value="fx_refresh">Dollar kursi</option>
+        </select>
+        <select id="status">
+          <option value="">Hamma holat</option>
+          <option value="SUCCESS">Muvaffaqiyatli</option>
+          <option value="FAILED">Xato</option>
+          <option value="SKIPPED">O'tkazildi</option>
+        </select>
+      </div>
+      <div><button id="pollBtn">Hoziroq tekshirish</button> <button id="driftBtn">Farqni tekshirish</button> <button id="reloadBtn">Yangilash</button></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>Vaqt</th><th>Amal</th><th>Holati</th><th>Natija / xato</th><th>ms</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="5" class="empty">Yuklanmoqda...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="_shared.js"></script>
+<script>
+const BADGE = { SUCCESS: "b-ok", FAILED: "b-err", SKIPPED: "b-mute", RETRYING: "b-warn" };
+
+function summary(r) {
+  if (!r) return "";
+  if (r.fetched !== undefined) return r.fetched + " bron: mos " + r.matched + ", farq " + r.mismatch + ", PMS'da yo'q " + r.missingInPms + ", bog'lanmagan " + r.unmapped;
+  if (r.rows !== undefined) return r.days + " kun, " + r.roomTypes + " xona turi";
+  if (r.compared !== undefined) return "ikki marta sotish xavfi " + r.oversellRisk + ", narx farqi " + r.priceDiff + ", narxsiz " + r.priceMissing;
+  if (r.propertyName) return r.propertyName + " (" + r.currency + ")";
+  if (r.rate) return "1 $ = " + r.rate + " so'm";
+  return JSON.stringify(r).slice(0, 120);
+}
+
+async function load() {
+  const a = document.getElementById("action").value, s = document.getElementById("status").value;
+  const q = "?limit=200" + (a ? "&action=" + a : "") + (s ? "&status=" + s : "");
+  try {
+    const rows = await api("/api/admin/sync-log" + q);
+    document.getElementById("rows").innerHTML = rows.length ? rows.map(l =>
+      "<tr><td class=\"mono\">" + when(l.createdAt) + "</td><td>" + esc(l.action) + '</td><td><span class="badge ' + (BADGE[l.status] || "b-mute") + '">' + esc(l.status) + "</span></td>" +
+      "<td>" + esc(l.errorMessage || summary(l.response)) + '</td><td class="mono">' + (l.durationMs ?? "") + "</td></tr>").join("")
+      : '<tr><td colspan="5" class="empty">Yozuv yo\'q</td></tr>';
+  } catch (e) { msg(e.message, true); }
+}
+async function run(path) {
+  try { const r = await api(path, { method: "POST" }); msg(summary(r)); } catch (e) { msg(e.message, true); }
+  load();
+}
+document.getElementById("action").onchange = load;
+document.getElementById("status").onchange = load;
+document.getElementById("reloadBtn").onclick = load;
+document.getElementById("pollBtn").onclick = () => run("/api/admin/maintenance/poll");
+document.getElementById("driftBtn").onclick = () => run("/api/admin/maintenance/drift");
+load();
+</script>
+</body>
+</html>
