@@ -45,13 +45,13 @@ fi
 
 # --- 3. Seed raqamlari -------------------------------------
 echo "[3/4] Seed raqamlari (18 xona / 9 tarif)..."
-SEED="zakas042/backend/prisma/seed.ts"
+SEED="zakas042/backend/src/lib/hotelLayout.ts"
 ROOMS=$(grep -oE '\["[0-9]+[A-Za-z]?", *"[a-z0-9]+", *[0-9]+\]' "$SEED" | wc -l | tr -d ' ')
 TYPES=$(grep -cE '^\s*\{ id: "[a-z0-9]+",' "$SEED" | tr -d ' ')
 if [ "$ROOMS" = "18" ] && [ "$TYPES" = "9" ]; then
   green "  ✓ 18 xona, 9 tarif"
 else
-  red "  ✗ seed.ts: $ROOMS xona, $TYPES tarif (18 / 9 kutilgan)"
+  red "  ✗ hotelLayout.ts: $ROOMS xona, $TYPES tarif (18 / 9 kutilgan)"
   ERRORS=$((ERRORS+1))
 fi
 

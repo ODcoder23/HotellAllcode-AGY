@@ -12,6 +12,7 @@ import { PrismaClient, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { recalcAllRoomStatuses } from "../src/services/roomStatus.js";
 import { prisma as appPrisma } from "../src/lib/prisma.js";
+import { HOTEL_ROOM_TYPES, HOTEL_ROOMS, createHotelStructure } from "../src/lib/hotelLayout.js";
 
 const prisma = new PrismaClient();
 
@@ -90,105 +91,22 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.settings.deleteMany();
 
-  // --- RoomType (9 tarif — mijoz ro'yxati, 2026-09-16) -----
-  //
-  // `multiplier` — Shaxmatkadagi ROOM_TYPES.multiplier bilan bir xil
-  // ma'noda: standart narxga nisbatan koeffitsient. Haqiqiy narx
-  // `RatePlan` dan olinadi, bu faqat ko'rsatkich.
-  //
-  // `maxAdults` — sayt qidiruvida filtr (13-fayl §2). Mijoz
-  // ro'yxatidagi "Максимальное количество взрослых" qiymati.
-  const roomTypes = [
-    // Narxlar so'mda — namunaviy, haqiqiy narxni admin Narxlar
-    // panelida belgilaydi
-    { id: "standard3",  label: "Standart 3 kishilik",         multiplier: 1.0,  maxAdults: 3, sortOrder: 1, price: 400_000 },
-    { id: "comfort3",   label: "Komfort 3 kishilik",          multiplier: 1.12, maxAdults: 3, sortOrder: 2, price: 450_000 },
-    { id: "semilux",    label: "Oilaviy yarim lyuks",         multiplier: 1.25, maxAdults: 3, sortOrder: 3, price: 500_000 },
-    { id: "comfort4",   label: "Komfort 4 kishilik",          multiplier: 1.38, maxAdults: 4, sortOrder: 4, price: 550_000 },
-    { id: "premium4",   label: "Premium 4 kishilik",          multiplier: 1.5,  maxAdults: 4, sortOrder: 5, price: 600_000 },
-    { id: "deluxe4",    label: "Delyuks 4 kishilik",          multiplier: 1.63, maxAdults: 4, sortOrder: 6, price: 650_000 },
-    { id: "famdeluxe",  label: "Oilaviy Delyuks",             multiplier: 1.75, maxAdults: 3, sortOrder: 7, price: 700_000 },
-    { id: "famlux201",  label: "Oilaviy lyuks balkonli 201",  multiplier: 2.0,  maxAdults: 4, sortOrder: 8, price: 800_000 },
-    { id: "famlux301",  label: "Oilaviy lyuks balkonli 301",  multiplier: 2.0,  maxAdults: 3, sortOrder: 9, price: 800_000 },
-  ];
-
-  await prisma.roomType.createMany({
-    data: roomTypes.map(({ price: _price, ...rt }) => rt),
-  });
-  console.log(`  RoomType: ${roomTypes.length} ta`);
-
-  // --- Room (18 xona — 3 qavat × 6) -------------------------
-  // Room.id = xona raqami (mijoz qarori Q2).
-  // Manba: mijoz yuborgan xona ro'yxati (2026-09-16).
-  const layout: Array<[string, string, number]> = [
-    // 1-qavat
-    ["101", "comfort3",  1], ["102", "standard3", 1], ["103", "comfort4",  1],
-    ["104", "premium4",  1], ["105", "semilux",   1], ["106", "deluxe4",   1],
-    // 2-qavat
-    ["201", "famlux201", 2], ["202", "comfort3",  2], ["203", "premium4",  2],
-    ["204", "premium4",  2], ["205", "famdeluxe", 2], ["206", "deluxe4",   2],
-    // 3-qavat
-    ["301", "famlux301", 3], ["302", "comfort3",  3], ["303", "premium4",  3],
-    ["304", "comfort4",  3], ["305", "semilux",   3], ["306", "deluxe4",   3],
-  ];
-
-  // --- Floor ------------------------------------------------
-  // Qavat ID'si ("F1") barcha tizimlarga shu qiymat bo'lib tarqaladi.
-  // `layout` dagi qavat raqamlaridan hosil qilinadi, shunda xona
-  // ro'yxati o'zgarsa qavatlar avtomatik moslashadi.
-  const floorNumbers = [...new Set(layout.map(([, , f]) => f))].sort((a, b) => a - b);
-  await prisma.floor.createMany({
-    data: floorNumbers.map((n) => ({
-      id: `F${n}`,
-      number: n,
-      label: `${n}-qavat`,
-      sortOrder: n,
-    })),
-    skipDuplicates: true,
-  });
-  console.log(`  Floor: ${floorNumbers.length} ta — ${floorNumbers.map((n) => `F${n}`).join(", ")}`);
-
-  await prisma.room.createMany({
-    data: layout.map(([number, roomTypeId, floor], i) => ({
-      id: number,
-      number,
-      floor,
-      floorId: `F${floor}`,
-      roomTypeId,
-      status: "AVAILABLE" as const,
-      sortOrder: i,
-    })),
-  });
-
-  const counts = layout.reduce<Record<string, number>>((acc, [, t]) => {
+  // --- Tuzilma: tarif, qavat, xona (src/lib/hotelLayout.ts) ---
+  // Ro'yxat production boshlang'ich skripti bilan umumiy — bitta manba.
+  // Narxlar (`price`) namunaviy, haqiqiysini admin Narxlar panelida
+  // belgilaydi.
+  const roomTypes = HOTEL_ROOM_TYPES;
+  const made = await createHotelStructure(prisma);
+  const counts = HOTEL_ROOMS.reduce<Record<string, number>>((acc, [, t]) => {
     acc[t] = (acc[t] ?? 0) + 1;
     return acc;
   }, {});
+  console.log(`  RoomType: ${made.roomTypes} ta`);
+  console.log(`  Floor: ${made.floors} ta`);
   console.log(
-    `  Room: ${layout.length} ta — ` +
+    `  Room: ${made.rooms} ta — ` +
     roomTypes.map((rt) => `${rt.id} ${counts[rt.id] ?? 0}`).join(", ")
   );
-
-  // Yaxlitlik tekshiruvi: har tarifda kamida bitta xona bo'lsin va
-  // jami son kutilganiga teng bo'lsin. Xona ro'yxati qo'lda
-  // tahrirlanganda xato darhol ko'rinadi.
-  const EXPECTED_ROOMS = 18;
-  if (layout.length !== EXPECTED_ROOMS) {
-    throw new Error(
-      `Xona soni mos emas! Kutilgan ${EXPECTED_ROOMS}, olindi ${layout.length}`
-    );
-  }
-  const emptyTypes = roomTypes.filter((rt) => !counts[rt.id]);
-  if (emptyTypes.length > 0) {
-    throw new Error(
-      `Bu tariflarda xona yo'q: ${emptyTypes.map((t) => t.id).join(", ")}`
-    );
-  }
-  const unknownTypes = [...new Set(layout.map(([, t]) => t))]
-    .filter((t) => !roomTypes.some((rt) => rt.id === t));
-  if (unknownTypes.length > 0) {
-    throw new Error(`Noma'lum tarif ishlatilgan: ${unknownTypes.join(", ")}`);
-  }
 
   // --- Settings ---------------------------------------------
   // `skipDuplicates`: sozlamani backend ham yozishi mumkin

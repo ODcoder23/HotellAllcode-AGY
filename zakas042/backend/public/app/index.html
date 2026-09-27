@@ -2176,6 +2176,7 @@ function observeReveals(){
           <div class="bkf-summary-row"><span>${t('summary_nights')}</span><span>${nights} ${t('nights_word')}</span></div>
           <div class="bkf-summary-row"><span>${t('summary_guests')}</span><span>${state.adults} ${String(t('adults')).toLowerCase()}${state.children?(' · '+state.children+' '+String(t('children')).toLowerCase()):''}</span></div>
           <div class="bkf-summary-row"><span>${t('room_price_line')}</span><span>${priceFmt(room.price_per_night||0)} × ${nights} ${t('nights_word')}</span></div>
+          ${room.meal_total ? `<div class="bkf-summary-row"><span>${t('meal_label')}</span><span>${priceFmt(room.meal_total)}</span></div>` : ''}
           <div class="bkf-summary-total"><span>${t('total_label')}</span><b>${priceFmt(total)}</b></div>
         </div>
         <label class="bkf-confirm-check">

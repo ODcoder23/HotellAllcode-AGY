@@ -1,16 +1,28 @@
+# Imron Hotel PMS — server (2026-09-28)
+#
+# Serverda: /srv/projects/hotel/ (shu fayl + backend/ + .env).
+# Qoidalar serverdagi /srv/projects/README.md bo'yicha:
+#   - port faqat 127.0.0.1 da (tashqaridan nginx orqali), registrdan
+#   - alohida tarmoq proj_hotel_net
+#   - Postgres va Redis tashqariga umuman chiqmaydi
+#
+# Sirlar va sozlamalar `.env` da (shu papkada, chmod 600, git'ga kirmaydi):
+#   API_PORT, POSTGRES_PASSWORD (hex), JWT_SECRET, ENCRYPTION_KEY,
+#   WEBHOOK_URL_TOKEN, TELEGRAM_* va h.k. — SERVER.md
+#
+# Ishga tushirish:  docker compose up -d --build
+# Ishga tushishda migratsiyalar o'zi qo'llanadi (`prisma migrate deploy`).
+
+name: hotel
+
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: imron-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: imron
-      POSTGRES_PASSWORD: imron
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD kerak}
       POSTGRES_DB: imron_pms
-    # Tashqi port 5433: bu kompyuterda mahalliy PostgreSQL 16 xizmati
-    # allaqachon 5432 ni egallagan. Konteyner ichida port o'zgarmaydi,
-    # shuning uchun `api` xizmati uchun hech narsa o'zgarmaydi.
-    ports:
-      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,12 +30,17 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    mem_limit: 512m
+    logging: &logging
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
   redis:
     image: redis:7-alpine
-    container_name: imron-redis
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    # Navbatlar (Beds24 sinxroni, davriy vazifalar) qayta ishga
+    # tushganda yo'qolmasin
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redisdata:/data
     healthcheck:
@@ -31,47 +48,51 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    mem_limit: 256m
+    logging: *logging
 
-  # Backend API (11-BOSQICHLAR-ROADMAP.md FAZA 0: api + postgres + redis)
-  #
-  # Ishga tushirishdan oldin migratsiya bajariladi — DB sxemasi
-  # kod bilan bir xil bo'lishi kafolatlanadi.
   api:
     build: ./backend
-    container_name: imron-api
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # Hamma sozlama (Telegram, Beds24, CORS...) `.env` dan; pastdagilar
+    # konteyner ichidagi manzillar — ular ustun
+    env_file: .env
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://imron:imron@postgres:5432/imron_pms?schema=public
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://imron:${POSTGRES_PASSWORD}@postgres:5432/imron_pms?schema=public
       REDIS_URL: redis://redis:6379
-      # Maxfiy qiymatlar .env dan keladi — repoda saqlanmaydi
-      # (TZ 18-band, 10-fayl §1)
+      # Production'da MAJBURIY (config.ts assertProductionSafe)
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET kerak}
-      # Production'da MAJBURIY yoqiladi (config.ts assertProductionSafe)
-      AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
-      RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-false}
-      PENDING_PAYMENT_TIMEOUT_HOURS: ${PENDING_PAYMENT_TIMEOUT_HOURS:-24}
-      # Channel manager (Beds24, ikki tomonlama) — ulash uchun ENCRYPTION_KEY shart
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
-      WEBHOOK_URL_TOKEN: ${WEBHOOK_URL_TOKEN:-}
-      POLL_INTERVAL_MINUTES: ${POLL_INTERVAL_MINUTES:-5}
-      CATCH_UP_INTERVAL_MINUTES: ${CATCH_UP_INTERVAL_MINUTES:-15}
+      AUTH_REQUIRED: "true"
+      RATE_LIMIT_DISABLED: "false"
     ports:
-      - "3000:3000"
+      - "127.0.0.1:${API_PORT:?API_PORT kerak (registrdan)}:3000"
+    volumes:
+      # Tozalash rasmlari — image yangilanganda yo'qolmaydi
+      - uploads:/app/public/uploads
     command: sh -c "npx prisma migrate deploy && node dist/server.js"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 6
-      start_period: 20s
+      start_period: 30s
+    mem_limit: 1g
+    cpus: 1.5
+    logging: *logging
 
 volumes:
   pgdata:
   redisdata:
+  uploads:
+
+networks:
+  default:
+    name: proj_hotel_net

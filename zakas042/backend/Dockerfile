@@ -10,17 +10,18 @@
 # ---------- 1. Build ----------
 FROM node:22-alpine AS build
 
+# Prisma engine Alpine'da OpenSSL'siz ishlamaydi (libssl topilmaydi)
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
-# Avval faqat manifest — kod o'zgarganda npm ci qayta ishlamasligi
-# uchun (Docker layer cache)
+# Avval faqat manifest va sxema — kod o'zgarganda npm ci qayta
+# ishlamasligi uchun (Docker layer cache). Sxema npm ci dan OLDIN:
+# `postinstall` Prisma client'ni yasaydi (TypeScript unga tayanadi),
+# sxemasiz u yiqiladi.
 COPY package*.json ./
-RUN npm ci
-
-# Prisma client kodni kompilyatsiya qilishdan OLDIN yasaladi:
-# TypeScript unga tayanadi
 COPY prisma ./prisma
-RUN npx prisma generate
+RUN npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
@@ -29,20 +30,26 @@ RUN npx tsc
 # ---------- 2. Runtime ----------
 FROM node:22-alpine AS runtime
 
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Faqat ishlab chiqarish paketlari
+# Faqat ishlab chiqarish paketlari. `prisma` CLI ham shu yerda
+# (dependencies): konteyner ishga tushishda `prisma migrate deploy`
+# qiladi. Ilgari u devDependencies'da edi va `npx` CLI'ni internetdan
+# eng oxirgi (mos kelmaydigan) versiyada yuklab olardi.
 COPY package*.json ./
-RUN npm ci --omit=dev
-
-# Prisma client va migratsiyalar
 COPY prisma ./prisma
-RUN npx prisma generate
+RUN npm ci --omit=dev
 
 COPY --from=build /app/dist ./dist
 COPY public ./public
 COPY scripts ./scripts
+
+# Tozalash rasmlari — serverda volume shu papkaga ulanadi. Egasi `node`:
+# bot rasmni yoza olsin (volume birinchi marta shu huquq bilan yaratiladi)
+RUN mkdir -p public/uploads/cleaning && chown -R node:node public/uploads
 
 # Root emas — konteyner buzilsa ham zarar chegaralangan
 USER node

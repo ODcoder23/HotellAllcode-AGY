@@ -14,7 +14,8 @@ Loyiha logikasi: [`../PROJECT_LOGIC.md`](../PROJECT_LOGIC.md)
   constraint'i shunga tayanadi)
 - Redis 7+
 
-Docker bilan: `docker compose up` — uchala xizmat ko'tariladi.
+`docker-compose.yml` — server uchun (portlar faqat `127.0.0.1`, sirlar
+`.env` da): [`../SERVER.md`](../SERVER.md). Lokal ishlash — pastdagi tartib.
 
 ---
 
