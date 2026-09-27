@@ -7,7 +7,7 @@ KEY="$HOME/.ssh/hotel_vps"
 
 ssh -i "$KEY" "$SERVER" 'bash -s' << 'REMOTE'
 echo "=== Xizmatlar (systemd) ==="
-for s in hotel-backend hotel-mock; do
+for s in hotel-backend; do
   state=$(systemctl is-active "$s" 2>/dev/null)
   since=$(systemctl show -p ActiveEnterTimestamp --value "$s" 2>/dev/null | cut -d' ' -f2 | cut -d'.' -f1)
   echo "  $s: $state (${since:-—} dan)"
@@ -20,7 +20,6 @@ docker ps --filter "name=hotel-" --format '  {{.Names}}: {{.Status}}'
 echo
 echo "=== Javoblar ==="
 curl -s -o /dev/null -m 5 -w "  backend (3100): %{http_code}\n" http://localhost:3100/health
-curl -s -o /dev/null -m 5 -w "  mock    (4100): %{http_code}\n" http://localhost:4100/
 
 echo
 echo "=== Baza ==="

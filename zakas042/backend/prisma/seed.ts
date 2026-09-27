@@ -10,20 +10,46 @@
 
 import { PrismaClient, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { recalcAllRoomStatuses } from "../src/services/roomStatus.js";
+import { prisma as appPrisma } from "../src/lib/prisma.js";
 
 const prisma = new PrismaClient();
 
-// Bugundan N kun keyingi sana (soat 00:00)
+/**
+ * Bugundan N kun keyingi sana — Toshkent kuni, UTC yarim tuni
+ * (`@db.Date` va src/lib/hotelTime.ts bilan bir xil o'lchov).
+ *
+ * Ilgari `setHours(0)` edi: mahalliy yarim tun UTC da kechagi kun
+ * (Toshkentda 19:00), `@db.Date` uni kechagi sana qilib yozardi —
+ * seed'dagi "bugungi" bronlar kecha boshlangan bo'lib chiqardi.
+ */
 const day = (n: number): Date => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() + n);
-  return d;
+  const t = new Date(Date.now() + 5 * 3_600_000);
+  return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate() + n));
 };
 
 const dec = (n: number) => new Prisma.Decimal(n);
 
+/**
+ * Seed BAZANI TOZALAYDI. Ishlab chiqarish bazasida tasodifan ishga
+ * tushmasin: baza nomida "test" yo'q va bronlar bor bo'lsa —
+ * `SEED_ALLOW_WIPE=true` talab qilinadi (yangi, bo'sh bazada kerak emas).
+ */
+async function assertSafeToWipe(): Promise<void> {
+  if (process.env.SEED_ALLOW_WIPE === "true") return;
+  let name = "";
+  try { name = new URL(process.env.DATABASE_URL ?? "").pathname.replace(/^\//, ""); } catch { /* bo'sh */ }
+  if (/test/i.test(name)) return;
+  const bookings = await prisma.reservation.count().catch(() => 0);
+  if (bookings === 0) return;
+  throw new Error(
+    `Seed "${name}" bazasini tozalaydi, unda ${bookings} ta bron bor. ` +
+    `Ataylab bo'lsa: SEED_ALLOW_WIPE=true npm run db:seed (oldin pg_dump!)`
+  );
+}
+
 async function main() {
+  await assertSafeToWipe();
   console.log("Seed boshlandi...\n");
 
   // --- Tozalash (bog'liqlik tartibida) ----------------------
@@ -50,26 +76,6 @@ async function main() {
   await prisma.room.deleteMany();
   await prisma.floor.deleteMany();   // Room dan KEYIN: Room.floorId unga ishora qiladi
   await prisma.roomType.deleteMany();
-  await prisma.syncLog.deleteMany();
-  await prisma.webhookEvent.deleteMany();
-  await prisma.syncState.deleteMany();
-
-  /**
-   * Channel zanjiri — Channel'dan OLDIN unga ishora qiluvchilar.
-   *
-   * `channelMapping` ilgari ro'yxat boshida, `ratePlan` yonida
-   * turardi. Backend fonda ishlаyotgan bo'lsa (worker'lar,
-   * `catch_up` vazifasi) u oradagi vaqtda mappingni QAYTA
-   * yaratib ulgurardi va `channel.deleteMany()` foreign key
-   * xatosiga urilardi. Keyin `channel.create()` P2002 berardi:
-   * eski Channel joyida qolgan.
-   *
-   * Uchalasi endi ketma-ket, Channel'ning o'zidan darhol oldin
-   * o'chiriladi — oraliq qolmaydi.
-   */
-  await prisma.channelMapping.deleteMany();
-  await prisma.channelConnection.deleteMany();
-  await prisma.channel.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.user.deleteMany();
@@ -84,6 +90,8 @@ async function main() {
   // `maxAdults` — sayt qidiruvida filtr (13-fayl §2). Mijoz
   // ro'yxatidagi "Максимальное количество взрослых" qiymati.
   const roomTypes = [
+    // Narxlar so'mda — namunaviy, haqiqiy narxni admin Narxlar
+    // panelida belgilaydi
     { id: "standard3",  label: "Standart 3 kishilik",         multiplier: 1.0,  maxAdults: 3, sortOrder: 1, price: 400_000 },
     { id: "comfort3",   label: "Komfort 3 kishilik",          multiplier: 1.12, maxAdults: 3, sortOrder: 2, price: 450_000 },
     { id: "semilux",    label: "Oilaviy yarim lyuks",         multiplier: 1.25, maxAdults: 3, sortOrder: 3, price: 500_000 },
@@ -102,7 +110,7 @@ async function main() {
 
   // --- Room (18 xona — 3 qavat × 6) -------------------------
   // Room.id = xona raqami (mijoz qarori Q2).
-  // Manba: mijoz yuborgan Beds24 xona ro'yxati.
+  // Manba: mijoz yuborgan xona ro'yxati (2026-09-16).
   const layout: Array<[string, string, number]> = [
     // 1-qavat
     ["101", "comfort3",  1], ["102", "standard3", 1], ["103", "comfort4",  1],
@@ -173,33 +181,18 @@ async function main() {
     throw new Error(`Noma'lum tarif ishlatilgan: ${unknownTypes.join(", ")}`);
   }
 
-  // --- Channel (TZ 12-band: kelajakda boshqalar qo'shiladi) -
-  //
-  // `create` emas, `upsert`: backend fonda ishlayotgan bo'lsa
-  // (`webhook.ts`, `mapping.ts`, `beds24/auth.ts` — uchalasi ham
-  // `channel.upsert` qiladi) tozalash bilan shu qator orasida
-  // Channel'ni qayta yaratib ulgurishi mumkin. `create` u holda
-  // P2002 berardi va butun seed yiqilardi — baza yarim
-  // tozalangan, narxsiz holatda qolardi.
-  const beds24 = await prisma.channel.upsert({
-    where: { code: "beds24" },
-    update: { name: "Beds24", isActive: true },
-    create: { code: "beds24", name: "Beds24", isActive: true },
-  });
-  console.log("  Channel: beds24");
-
-  // --- Settings (TZ 7-band: source-of-truth) ---------------
+  // --- Settings ---------------------------------------------
   // `skipDuplicates`: sozlamani backend ham yozishi mumkin
-  // (`services/settings.ts`), Channel bilan bir xil poyga.
+  // (`services/settings.ts`) — seed bilan bir vaqtda ishlasa poyga.
   await prisma.settings.createMany({
     data: [
-      { key: "SOURCE_OF_TRUTH_RATES", value: "pms" },
-      { key: "SOURCE_OF_TRUTH_AVAILABILITY", value: "pms" },
-      { key: "PENDING_PAYMENT_TIMEOUT_HOURS", value: "24" },
+      // Nonushta, kishi boshiga so'm — namunaviy (haqiqiysini admin
+      // Oshxona bo'limida belgilaydi)
+      { key: "MEAL_PRICE_PER_PERSON", value: "25000" },
     ],
     skipDuplicates: true,
   });
-  console.log("  Settings: 3 ta");
+  console.log("  Settings: 1 ta");
 
   // --- User (TZ 18-band: RBAC) ------------------------------
   //
@@ -227,6 +220,7 @@ async function main() {
   const staffUser = await prisma.user.findUnique({ where: { email: "staff@imron.local" } });
 
   const employees = [
+    // Oylik maosh so'mda (Q15) — namunaviy
     { fullName: "Aziz Rustamov",      position: "Bosh administrator", salary: 6_000_000, months: 36 },
     { fullName: "Dilnoza Yoqubova",   position: "Qabulxona xodimi",   salary: 3_500_000, months: 18 },
     { fullName: "Shahzod Qodirov",    position: "Qabulxona xodimi",   salary: 3_500_000, months: 12 },
@@ -270,7 +264,6 @@ async function main() {
         date: day(d),
         price: dec(rt.price),
         minStay: 1,
-        source: "pms",
       });
     }
   }
@@ -311,11 +304,9 @@ async function main() {
         children: 0,
         source: r.src,
         pricePerNight: dec(r.price),
-        currency: "USD",
         status: r.st,
         checkedInAt: r.st === "CHECKED_IN" || r.st === "CHECKED_OUT" ? day(r.ci) : null,
         checkedOutAt: r.st === "CHECKED_OUT" ? day(r.co) : null,
-        syncStatus: "NOT_APPLICABLE",
         payments: {
           create: { amount: dec(r.paid), method: r.method, paymentDate: day(r.ci) },
         },
@@ -325,17 +316,14 @@ async function main() {
   console.log(`  Reservation: ${reservations.length} ta (to'lovlari bilan)`);
 
   // --- Room.status bronlarga qarab yangilanadi --------------
-  // roomStatusForReservation() mantig'i (08-fayl §1)
-  const statusMap: Record<string, "OCCUPIED" | "DIRTY" | "RESERVED"> = {
-    CHECKED_IN: "OCCUPIED",
-    CHECKED_OUT: "DIRTY",
-    CONFIRMED: "RESERVED",
-    PENDING_PAYMENT: "RESERVED",
-  };
+  // Chiqqan mehmon xonasi — iflos (tozalash kutadi). Qolganini
+  // services/roomStatus.ts hal qiladi: RESERVED faqat bugun keladigan
+  // bron uchun. Ilgari har CONFIRMED bron xonasi (kelajakdagisi ham)
+  // RESERVED qilinardi.
   for (const r of reservations) {
-    const st = statusMap[r.st];
-    if (st) await prisma.room.update({ where: { id: r.roomId }, data: { status: st } });
+    if (r.st === "CHECKED_OUT") await prisma.room.update({ where: { id: r.roomId }, data: { status: "DIRTY" } });
   }
+  await recalcAllRoomStatuses();
 
   // --- Availability (07-fayl §2 agregatsiyasi) --------------
   const rooms = await prisma.room.findMany({ where: { isActive: true } });
@@ -367,7 +355,7 @@ async function main() {
   console.log(`  Availability: ${avail.length} ta (30 kun × ${roomTypes.length} tarif)`);
 
   // --- Yakuniy tekshiruv ------------------------------------
-  const today = avail.filter((a) => a.date.getTime() === day(0).getTime());
+  const today = avail.filter((a) => new Date(a.date).getTime() === day(0).getTime());
   console.log("\nBugungi availability:");
   for (const a of today) {
     console.log(
@@ -411,4 +399,5 @@ runWithRetry()
   })
   .finally(async () => {
     await prisma.$disconnect();
+    await appPrisma.$disconnect();   // recalcAllRoomStatuses ilova klientidan foydalanadi
   });

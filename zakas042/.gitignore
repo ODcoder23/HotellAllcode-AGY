@@ -14,7 +14,9 @@ backend/node_modules/
 backend/dist/
 backend/.env
 backend/.pgdata/
-mock-beds24/node_modules/
+# Yuklangan rasmlar (xonalar, tozalash fotolari) — serverda yashaydi,
+# mehmon/xodim fotosi ochiq repoga tushmasin
+backend/public/uploads/
 
 # Redis snapshot — ishlash paytida yaratiladi, repoda saqlanmaydi
 dump.rdb

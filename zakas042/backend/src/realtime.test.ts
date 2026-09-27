@@ -5,24 +5,22 @@
  *              ko'rishi uchun WebSocket/real-time update ishlatilsin."
  * TZ 15-band: oltita event turi talab qilinadi.
  *
- * Mezon (11-BOSQICHLAR-ROADMAP.md, FAZA 8):
- *   "Beds24'da test bron yaratilsa, Shaxmatka ochiq turgan
- *    brauzerda sahifani yangilamasdan paydo bo'ladi."
+ * Mezon: sayt yoki qabulxona bron yaratsa, Shaxmatka ochiq turgan
+ * boshqa brauzerda sahifani yangilamasdan paydo bo'ladi.
  *
  * Test brauzer o'rnida haqiqiy WebSocket klient sifatida ulanadi:
  * agar klient event'ni olsa, brauzer ham oladi — bir xil protokol,
  * bir xil payload.
  *
  * Ishga tushirish:  npx vitest run src/realtime.test.ts
- * Shart: server (:3000), mock (:4000), PostgreSQL
+ * Shart: server, PostgreSQL (test bazasi)
  */
 
-import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import WebSocket from "ws";
 import { prisma } from "./lib/prisma.js";
-import { setupConnection } from "./services/beds24/auth.js";
-import * as mapping from "./services/mapping.js";
-import { PMS_EVENTS, ADMIN_EVENTS } from "./realtime/events.js";
+import { PMS_EVENTS, SYSTEM_EVENTS } from "./realtime/events.js";
+import { hashPassword } from "./services/auth.js";
 
 const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
 
@@ -36,8 +34,6 @@ const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
  * (vitest.setup.ts izohiga qarang).
  */
 const WS_URL = PMS.replace(/^http/, "ws") + "/ws";
-const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
-const TOKEN = "dev-webhook-token";
 
 /**
  * WebSocket uchun JWT token (TZ 18-band, 09-fayl §4).
@@ -141,46 +137,21 @@ const post = async (path: string, body: unknown, headers: Record<string, string>
   return { status: res.status, body: parsed };
 };
 
-const mockControl = (path: string, body?: unknown) =>
-  fetch(`${MOCK}/control/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    ...(body ? { body: JSON.stringify(body) } : {}),
+/** Test bronlari 2029 yilda — seed bronlariga tegmaydi */
+const FAR = new Date("2029-01-01T00:00:00Z");
+
+async function firstRoom(): Promise<{ id: string }> {
+  const rooms = (await (await fetch(`${PMS}/api/rooms`)).json()) as any[];
+  return rooms[0];
+}
+
+async function createBooking(checkIn: string, checkOut: string, guestName: string, phone: string) {
+  const room = await firstRoom();
+  const res = await post("/api/reservations", {
+    roomId: room.id, checkIn, checkOut, guestName, phone, adults: 1, pricePerNight: 100_000,
   });
-
-const webhookPayload = (bookingId: number, over: Record<string, unknown> = {}) => ({
-  event: "booking.new",
-  timestamp: new Date().toISOString(),
-  propertyId: 12345,
-  booking: {
-    id: bookingId,
-    roomId: 101001,
-    status: "confirmed",
-    arrival: "2027-08-10",
-    departure: "2027-08-13",
-    numAdult: 2,
-    numChild: 0,
-    price: 240,
-    firstName: "Realtime",
-    lastName: "Test",
-    modifiedTime: new Date().toISOString(),
-    ...over,
-  },
-});
-
-/**
- * Beds24 room type -> PMS room type bog'lanishi.
- *
- * Mapping bo'lmasa webhook `needs_manual_action` ga tushadi va
- * bron yaratilmaydi (TZ 5-band) — event ham chiqmaydi. Shuning
- * uchun real-time testi mapping bilan boshlanadi.
- */
-const EXT = { standard: "101001", double: "101002", deluxe: "101003" } as const;
-
-async function mapAll() {
-  for (const [pms, ext] of Object.entries(EXT)) {
-    await mapping.upsertMapping({ roomTypeId: pms, externalRoomTypeId: ext });
-  }
+  expect(res.status).toBe(201);
+  return res.body;
 }
 
 let client: TestClient;
@@ -192,30 +163,18 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
     const health = (await res.json()) as any;
     if (!health.realtime) throw new Error("/health'da realtime yo'q — server yangilanmagan");
     await loadWsToken();
-
-    const mockRes = await fetch(`${MOCK}/authentication/setup`, { headers: { code: "mock-invite-code" } });
-    if (!mockRes.ok) throw new Error("Mock server ishlamayapti");
   });
 
   beforeEach(async () => {
-    await prisma.webhookEvent.deleteMany();
-    await prisma.payment.deleteMany({
-      where: { reservation: { externalReservationId: { not: null } } },
-    });
-    await prisma.reservation.deleteMany({ where: { externalReservationId: { not: null } } });
-    await mockControl("reset");
-
-    // Ulanish + mapping — webhook bron yaratishi uchun shart
-    const conn = await prisma.channelConnection.findFirst({
-      where: { channel: { code: "beds24" }, isActive: true },
-    });
-    if (!conn) await setupConnection("mock-invite-code", "12345");
-    await mapAll();
-
+    await prisma.reservation.deleteMany({ where: { checkIn: { gte: FAR } } });
     client = await TestClient.connect();
   });
 
   afterEach(() => { client?.close(); });
+
+  afterAll(async () => {
+    await prisma.reservation.deleteMany({ where: { checkIn: { gte: FAR } } });
+  });
 
   // --- Event ro'yxati: TZ 15-band ------------------------------
   describe("event turlari (TZ 15-band)", () => {
@@ -230,11 +189,9 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
       ]);
     });
 
-    it("admin event'lari alohida — Shaxmatka ularni ko'rsatmaydi", () => {
-      expect(ADMIN_EVENTS).toContain("sync.failed");
-      expect(ADMIN_EVENTS).toContain("webhook.needs_attention");
-      // Aralashmasligi kerak
-      for (const e of ADMIN_EVENTS) expect(PMS_EVENTS).not.toContain(e as never);
+    it("tizim event'i (STOP) alohida — Beds24 sinxron event'lari yo'q", () => {
+      expect(SYSTEM_EVENTS).toEqual(["system.sales_stop"]);
+      for (const e of SYSTEM_EVENTS) expect(PMS_EVENTS).not.toContain(e as never);
     });
   });
 
@@ -322,90 +279,113 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
       expect(r.accepted).toBe(false);
       expect(r.code).toBe(1008);
     }, 15000);
+
+    it("o'chirilgan foydalanuvchining tokeni bilan ulanib bo'lmaydi", async () => {
+      if (!wsToken) return;
+
+      // Alohida xodim hisobi: token olinadi, keyin hisob o'chiriladi
+      const email = "ws-ochirilgan@imron.local";
+      await prisma.user.deleteMany({ where: { email } });
+      await prisma.user.create({
+        data: { email, fullName: "WS Test", role: "STAFF", passwordHash: await hashPassword("parol12345") },
+      });
+      const login = await fetch(`${PMS}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: "parol12345" }),
+      }).then((r) => r.json() as any);
+      expect(login.token).toBeTruthy();
+
+      const ok = await probe(`${WS_URL}?token=${encodeURIComponent(login.token)}`);
+      expect(ok.accepted).toBe(true);
+
+      await prisma.user.update({ where: { email }, data: { isActive: false } });
+      // Sessiya keshi 10 s — kutib o'tiramiz emas, yangi ulanish bazadan tekshiriladi
+      await new Promise((r) => setTimeout(r, 10_500));
+      const denied = await probe(`${WS_URL}?token=${encodeURIComponent(login.token)}`);
+      expect(denied.accepted, "o'chirilgan hisob ulandi").toBe(false);
+
+      await prisma.user.deleteMany({ where: { email } });
+    }, 30000);
   });
 
-  // --- ASOSIY MEZON: Beds24 broni refresh'siz ko'rinadi --------
-  describe("FAZA 8 mezoni — Beds24 broni sahifani yangilamasdan keladi", () => {
-    it("webhook kelganda reservation.created event'i yuboriladi", async () => {
-      const body = webhookPayload(70009001);
-
-      const res = await post(`/api/webhooks/beds24/${TOKEN}`, body);
-      expect(res.status).toBe(200);
-
-      // Brauzer hech narsa so'ramadi — event o'zi keldi
-      const evt = await client.waitFor((m) => m.type === "reservation.created");
-
-      expect(evt.reservation).toBeTruthy();
-      expect(evt.reservation.externalReservationId).toBe("70009001");
-      expect(evt.reservation.guestName).toContain("Realtime");
-    });
-
+  // --- ASOSIY MEZON: bron refresh'siz ko'rinadi -----------------
+  describe("mezon — bron sahifani yangilamasdan keladi", () => {
     it("event payload'i Shaxmatka kutgan shaklda — konvertatsiya kerak emas", async () => {
-      await post(`/api/webhooks/beds24/${TOKEN}`, webhookPayload(70009002));
-      const evt = await client.waitFor((m) => m.type === "reservation.created");
-
+      const created = await createBooking("2029-08-10", "2029-08-13", "Shakl Testi", "+998900000011");
+      const evt = await client.waitFor(
+        (m) => m.type === "reservation.created" && m.reservation.id === created.id
+      );
       const r = evt.reservation;
-      // Massiv elementi bilan aynan bir xil shakl (09-fayl §3)
-      expect(typeof r.id).toBe("string");
-      expect(typeof r.roomId).toBe("string");
-      expect(typeof r.guestName).toBe("string");     // flatten qilingan
-      expect(typeof r.totalPrice).toBe("number");    // Decimal EMAS
-      expect(typeof r.paidAmount).toBe("number");
-      expect(r.checkIn).toMatch(/^\d{4}-\d{2}-\d{2}$/);   // Date EMAS
-      expect(r.checkOut).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(r.status).toBe(String(r.status).toLowerCase());   // enum kichik harf
-
-      // API javobi bilan solishtiramiz — ikkisi bir xil bo'lishi kerak
-      const fromApi = (await (await fetch(`${PMS}/api/reservations/${r.id}`)).json()) as any;
-      expect(r.checkIn).toBe(fromApi.checkIn);
-      expect(r.totalPrice).toBe(fromApi.totalPrice);
-      expect(r.guestName).toBe(fromApi.guestName);
+      // serializeReservation shakli — flatten, kichik harfli kalitlar
+      expect(r.guestName).toBe("Shakl Testi");
+      expect(r.phone).toBe("+998900000011");
+      expect(r.checkIn).toBe("2029-08-10");
+      expect(r.checkOut).toBe("2029-08-13");
+      expect(r.status).toBe("confirmed");
+      expect(r.source).toBe("direct");
+      expect(r.totalPrice).toBe(300_000);
+      // Beds24 olib tashlangan — kanal maydonlari yo'q
+      expect(r.channelOwned).toBeUndefined();
+      expect(r.syncStatus).toBeUndefined();
+      expect(r.currency).toBeUndefined();
     });
 
     it("event bilan birga xona holati ham keladi", async () => {
-      await post(`/api/webhooks/beds24/${TOKEN}`, webhookPayload(70009003));
-      const evt = await client.waitFor((m) => m.type === "reservation.created");
-
+      const created = await createBooking("2029-08-20", "2029-08-21", "Xona Holati", "+998900000012");
+      const evt = await client.waitFor(
+        (m) => m.type === "reservation.created" && m.reservation.id === created.id
+      );
       expect(evt.room).toBeTruthy();
-      expect(evt.room.id).toBe(evt.reservation.roomId);
-      expect(typeof evt.room.status).toBe("string");
+      expect(evt.room.id).toBe(created.roomId);
     });
 
     it("bir necha brauzer ochiq bo'lsa — hammasi oladi", async () => {
-      const b = await TestClient.connect();
-      const c = await TestClient.connect();
+      const second = await TestClient.connect();
       try {
-        await post(`/api/webhooks/beds24/${TOKEN}`, webhookPayload(70009004));
-
-        const [e1, e2, e3] = await Promise.all([
-          client.waitFor((m) => m.type === "reservation.created"),
-          b.waitFor((m) => m.type === "reservation.created"),
-          c.waitFor((m) => m.type === "reservation.created"),
-        ]);
-        expect(e1.reservation.id).toBe(e2.reservation.id);
-        expect(e2.reservation.id).toBe(e3.reservation.id);
+        const created = await createBooking("2029-08-25", "2029-08-26", "Ikki Oyna", "+998900000013");
+        const match = (m: any) => m.type === "reservation.created" && m.reservation.id === created.id;
+        const [a, b] = await Promise.all([client.waitFor(match), second.waitFor(match)]);
+        expect(a.reservation.id).toBe(b.reservation.id);
       } finally {
-        b.close();
-        c.close();
+        second.close();
       }
+    });
+
+    it("xona holati qo'lda o'zgarsa room.status.changed keladi", async () => {
+      // Mehmonsiz xona: band xona "iflos" belgilansa ham OCCUPIED qoladi
+      const rooms = (await (await fetch(`${PMS}/api/rooms`)).json()) as any[];
+      const room = rooms.find((r) => r.status === "available")!;
+      const res = await fetch(`${PMS}/api/rooms/${room.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "dirty" }),
+      });
+      expect(res.status).toBe(200);
+      const evt = await client.waitFor((m) => m.type === "room.status.changed" && m.room.id === room.id);
+      expect(evt.room.status).toBe("dirty");
+
+      // Qaytarish (menejer/admin huquqi — test ADMIN)
+      await fetch(`${PMS}/api/rooms/${room.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "available" }),
+      });
     });
   });
 
   // --- PMS ichidagi amallar ------------------------------------
   describe("PMS amallari ham event yuboradi", () => {
-    const findRoom = async () => {
-      const rooms = (await (await fetch(`${PMS}/api/rooms`)).json()) as any[];
-      return rooms[0];
-    };
+    const findRoom = firstRoom;
 
     it("PMS'da bron yaratilsa reservation.created keladi", async () => {
       const room = await findRoom();
       const res = await post("/api/reservations", {
         roomId: room.id,
-        checkIn: "2027-09-05",
-        checkOut: "2027-09-07",
+        checkIn: "2029-09-05",
+        checkOut: "2029-09-07",
         guestName: "Ichki Mehmon",
-        guestPhone: "+998900000001",
+        phone: "+998900000001",
         adults: 1,
         pricePerNight: 100,
       });
@@ -423,10 +403,10 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
       const room = await findRoom();
       const created = await post("/api/reservations", {
         roomId: room.id,
-        checkIn: "2027-09-20",
-        checkOut: "2027-09-22",
+        checkIn: "2029-09-20",
+        checkOut: "2029-09-22",
         guestName: "Tolov Testi",
-        guestPhone: "+998900000002",
+        phone: "+998900000002",
         adults: 1,
         pricePerNight: 150,
       });
@@ -448,10 +428,10 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
       const room = await findRoom();
       const created = await post("/api/reservations", {
         roomId: room.id,
-        checkIn: "2027-10-01",
-        checkOut: "2027-10-03",
+        checkIn: "2029-10-01",
+        checkOut: "2029-10-03",
         guestName: "Bekor Testi",
-        guestPhone: "+998900000003",
+        phone: "+998900000003",
         adults: 1,
         pricePerNight: 75,
       });
@@ -470,53 +450,28 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
     });
   });
 
-  // --- Ishonchlilik (09-fayl §5, TZ 17-band) -------------------
+  // --- Ishonchlilik (09-fayl §5) --------------------------------
   describe("ishonchlilik", () => {
-    it("WebSocket yo'q bo'lsa ham webhook qabul qilinadi", async () => {
+    it("WebSocket yo'q bo'lsa ham bron yaratiladi", async () => {
       client.close();     // brauzer yopildi
 
-      const res = await post(`/api/webhooks/beds24/${TOKEN}`, webhookPayload(70009010));
-      expect(res.status).toBe(200);
-
-      // Webhook navbat orqali qayta ishlanadi (TZ 11-band) —
-      // javob darhol keladi, bron esa bir necha yuz ms keyin.
-      // WebSocket yopiq bo'lsa ham natija DB'ga yoziladi.
-      let saved = null;
-      for (let i = 0; i < 25 && !saved; i++) {
-        await new Promise((r) => setTimeout(r, 200));
-        saved = await prisma.reservation.findFirst({
-          where: { externalReservationId: "70009010" },
-        });
-      }
+      const created = await createBooking("2029-11-10", "2029-11-11", "Oynasiz", "+998900000021");
+      const saved = await prisma.reservation.findUnique({ where: { id: created.id } });
       expect(saved).toBeTruthy();
 
       client = await TestClient.connect();   // afterEach uchun
     });
 
-    it("takroriy webhook ikkinchi event yubormaydi (TZ 9-band)", async () => {
-      const body = webhookPayload(70009011);
-
-      await post(`/api/webhooks/beds24/${TOKEN}`, body);
-      await client.waitFor((m) => m.type === "reservation.created");
-
-      const before = client.ofType("reservation.created").length;
-      const second = await post(`/api/webhooks/beds24/${TOKEN}`, body);
-      expect(second.body.duplicate).toBe(true);
-
-      // Dedup ishlagan — yangi event chiqmaydi
-      await new Promise((r) => setTimeout(r, 800));
-      expect(client.ofType("reservation.created").length).toBe(before);
-    });
-
-    it("klient uzilsa server yiqilmaydi", async () => {
+    it("klient uzilsa server yiqilmaydi va boshqalarga yuborishda davom etadi", async () => {
       const temp = await TestClient.connect();
       temp.close();
       await new Promise((r) => setTimeout(r, 300));
 
-      // Server hali ham ishlayapti va event yuboradi
-      await post(`/api/webhooks/beds24/${TOKEN}`, webhookPayload(70009012));
-      const evt = await client.waitFor((m) => m.type === "reservation.created");
-      expect(evt.reservation.externalReservationId).toBe("70009012");
+      const created = await createBooking("2029-11-20", "2029-11-21", "Uzilish Testi", "+998900000022");
+      const evt = await client.waitFor(
+        (m) => m.type === "reservation.created" && m.reservation.id === created.id
+      );
+      expect(evt.reservation.guestName).toBe("Uzilish Testi");
     });
   });
 });

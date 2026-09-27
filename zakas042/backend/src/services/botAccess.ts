@@ -154,7 +154,14 @@ export async function deleteBotAccess(id: string): Promise<void> {
  * 1. Avval telegramId bo'yicha qidiradi.
  * 2. Topilmasa va username bo'lsa, username bo'yicha qidiradi.
  * 3. Agar username bo'yicha topilsa va telegramId hali bo'sh bo'lsa,
- *    Telegram ID avtomatik ravishda bazaga yoziladi!
+ *    Telegram ID avtomatik ravishda bazaga yoziladi.
+ *
+ * XAVFSIZLIK (2026-09-26): yozuv allaqachon BOSHQA Telegram ID'ga
+ * bog'langan bo'lsa, username mos kelishi yetarli EMAS. Telegram
+ * username'i o'tkaziladigan narsa: egasi uni o'zgartirsa, boshqa odam
+ * shu nomni olib, botga kirardi — ilgari kod bog'langan ID'ni
+ * yangisiga almashtirib, moliyani begonaga ochib, egasini esa
+ * chiqarib yuborardi.
  */
 export async function resolveAndBindBotUser(
   botType: "FOUNDER" | "KITCHEN",
@@ -195,8 +202,14 @@ export async function resolveAndBindBotUser(
       where: { botType, username: uname, isActive: true },
     });
     if (record) {
-      // AUTO-BINDING: Foydalanuvchining Telegram ID si hali yo'q bo'lsa yoki o'zgargan bo'lsa bog'laymiz
-      if (tgId && record.telegramId !== tgId) {
+      // Boshqa Telegram hisobiga bog'langan — username yetarli emas
+      if (record.telegramId && tgId && record.telegramId !== tgId) {
+        console.warn(`[bot-access] @${uname}: yozuv boshqa Telegram ID'ga bog'langan — kirish rad etildi (${botType})`);
+        return { allowed: false, record: null, role: "none" };
+      }
+
+      // AUTO-BINDING: birinchi kirishda Telegram ID yoziladi
+      if (tgId && !record.telegramId) {
         await prisma.botAccess.update({
           where: { id: record.id },
           data: { telegramId: tgId },

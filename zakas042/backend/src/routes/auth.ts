@@ -7,14 +7,17 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
-import { asyncHandler, ValidationError } from "../lib/errors.js";
+import { asyncHandler, NotFoundError, ValidationError } from "../lib/errors.js";
 import { loginLimiter } from "../lib/rateLimit.js";
 import {
   requireAuth,
   requirePermission,
   type AuthedRequest,
 } from "../lib/authMiddleware.js";
-import { login, createUser, PERMISSIONS, can, type Permission } from "../services/auth.js";
+import {
+  login, createUser, setPassword, verifyPassword, invalidateSessionUser, signToken,
+  PERMISSIONS, can, type Permission,
+} from "../services/auth.js";
 import { audit } from "../services/auditLog.js";
 import type { UserRole } from "@prisma/client";
 
@@ -77,11 +80,45 @@ authRouter.get("/me", requireAuth, asyncHandler(async (req: AuthedRequest, res) 
   });
 }));
 
+/** Parol qoidasi — yaratish, tiklash va o'zgartirishda bir xil */
+const passwordSchema = z.string().min(8, "Parol kamida 8 belgi").max(128, "Parol juda uzun");
+
+// --- POST /api/auth/password — o'z parolini o'zgartirish -----
+//
+// 2026-09-26 gacha parolni o'zgartirishning HECH QANDAY yo'li yo'q edi:
+// seed paroli (hammaga bir xil, repoda ochiq) almashtirilmay qolardi.
+// Joriy parol talab qilinadi — ochiq qolgan kompyuterda boshqa odam
+// parolni almashtirib, egasini chiqarib yubora olmasin.
+authRouter.post("/password", requireAuth, asyncHandler(async (req: AuthedRequest, res) => {
+  const parsed = z.object({
+    currentPassword: z.string().min(1, "Joriy parol kerak"),
+    newPassword: passwordSchema,
+  }).safeParse(req.body);
+  if (!parsed.success) {
+    throw new ValidationError(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
+  }
+  if (!req.user || req.user.id === "dev") throw new ValidationError("Kirish talab qilinadi");
+
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+  if (!user || !(await verifyPassword(parsed.data.currentPassword, user.passwordHash))) {
+    throw new ValidationError("Joriy parol noto'g'ri");
+  }
+  if (parsed.data.currentPassword === parsed.data.newPassword) {
+    throw new ValidationError("Yangi parol eskisidan farq qilishi kerak");
+  }
+
+  await setPassword(user.id, parsed.data.newPassword);
+  await audit({ userId: user.id, action: "user.password_changed", entityType: "User", entityId: user.id, ipAddress: req.ip });
+
+  // Eski token'lar bekor — shu zahoti yangisi beriladi, oyna chiqarib yuborilmasin
+  res.json({ ok: true, token: signToken({ sub: user.id, role: user.role, email: user.email }) });
+}));
+
 // --- POST /api/auth/users — foydalanuvchi yaratish ----------
 const createSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(8, "Parol kamida 8 belgi"),
-  fullName: z.string().min(1),
+  password: passwordSchema,
+  fullName: z.string().trim().min(1).max(200),
   role: z.enum(["FOUNDER", "ADMIN", "MANAGER", "STAFF"]),
 });
 
@@ -158,10 +195,12 @@ authRouter.get(
   })
 );
 
-// --- PATCH /api/auth/users/:id — rol o'zgartirish -----------
+// --- PATCH /api/auth/users/:id — rol, faollik, parolni tiklash --
 const roleSchema = z.object({
   role: z.enum(["FOUNDER", "ADMIN", "MANAGER", "STAFF"]).optional(),
   isActive: z.boolean().optional(),
+  // Parolni tiklash (xodim unutgan). Eski sessiyalari bekor bo'ladi
+  password: passwordSchema.optional(),
 });
 
 authRouter.patch(
@@ -170,14 +209,19 @@ authRouter.patch(
   requirePermission("user.manage"),
   asyncHandler(async (req: AuthedRequest, res) => {
     const parsed = roleSchema.safeParse(req.body);
-    if (!parsed.success) throw new ValidationError("role yoki isActive kerak");
+    if (!parsed.success) {
+      throw new ValidationError(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
+    }
+    if (parsed.data.role === undefined && parsed.data.isActive === undefined && parsed.data.password === undefined) {
+      throw new ValidationError("role, isActive yoki password kerak");
+    }
 
     const id = String(req.params.id);
     const before = await prisma.user.findUnique({
       where: { id },
       select: { role: true, isActive: true, email: true },
     });
-    if (!before) throw new ValidationError("Foydalanuvchi topilmadi");
+    if (!before) throw new NotFoundError("Foydalanuvchi");
 
     const actorRole = req.user?.role;
     if (!actorRole) throw new ValidationError("Kirish talab qilinadi");
@@ -246,21 +290,38 @@ authRouter.patch(
       }
     }
 
+    const { password, ...changes } = parsed.data;
+
     const user = await prisma.user.update({
       where: { id },
-      data: parsed.data,
+      data: changes,
       select: { id: true, email: true, fullName: true, role: true, isActive: true },
     });
+    if (password) await setPassword(id, password);
+    // Rol yoki faollik darhol kuchga kirsin (sessiya keshi)
+    invalidateSessionUser(id);
 
-    await audit({
-      userId: req.user?.id,
-      action: "user.role_changed",
-      entityType: "User",
-      entityId: id,
-      before,
-      after: parsed.data,
-      ipAddress: req.ip,
-    });
+    if (changes.role !== undefined || changes.isActive !== undefined) {
+      await audit({
+        userId: req.user?.id,
+        action: "user.role_changed",
+        entityType: "User",
+        entityId: id,
+        before,
+        after: changes,
+        ipAddress: req.ip,
+      });
+    }
+    if (password) {
+      await audit({
+        userId: req.user?.id,
+        action: "user.password_changed",
+        entityType: "User",
+        entityId: id,
+        after: { resetBy: req.user?.email ?? null },
+        ipAddress: req.ip,
+      });
+    }
 
     res.json(user);
   })

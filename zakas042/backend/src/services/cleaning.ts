@@ -32,8 +32,18 @@ import { NotFoundError, ValidationError } from "../lib/errors.js";
 import {
   getCleaningAuto,
   getCleaningTargetMinutes,
+  getCheckoutHour,
 } from "./settings.js";
 import { notifyRoomStatus } from "../realtime/notify.js";
+import { addDays, hotelNow, hotelToday } from "../lib/hotelTime.js";
+import { recalcRoomStatus } from "./roomStatus.js";
+
+/**
+ * Hali yopilmagan topshiriq holatlari: farrosh olmagan, tozalayapti
+ * yoki admin tasdig'ini kutyapti. Xonada shulardan biri bo'lsa yangi
+ * topshiriq yaratilmaydi va xona "topshiriqsiz" hisoblanmaydi.
+ */
+const OPEN_TASK: CleaningStatus[] = ["NEW", "IN_PROGRESS", "PENDING"];
 
 /** Farosh lavozimi — `Employee.position` dagi qiymat */
 const CLEANER_POSITION = "Farrosh";
@@ -120,7 +130,7 @@ export async function createTask(input: CreateTaskInput) {
   if (!room) throw new NotFoundError(`Xona ${input.roomId}`);
 
   const active = await prisma.cleaningTask.findFirst({
-    where: { roomId: input.roomId, status: { in: ["NEW", "IN_PROGRESS"] } },
+    where: { roomId: input.roomId, status: { in: OPEN_TASK } },
     include: taskInclude,
   });
 
@@ -207,6 +217,61 @@ export async function createOnCheckout(roomId: string): Promise<void> {
   } catch (e) {
     console.error("[cleaning] avtomatik topshiriq:", String(e).slice(0, 150));
   }
+}
+
+/**
+ * Mehmon yashashi muddatidan oldin tugadi (egasi talabi, 2026-09-26):
+ * admin Shaxmatkadan yashash boshlangan bronni bekor qildi — xona
+ * tozalanishi kerak, guruhga xabar ketadi.
+ *
+ * XATO TASHLAMAYDI — asosiy amal (bekor qilish) to'xtamasligi kerak.
+ */
+export async function createStayEndTask(roomId: string, reason: string): Promise<void> {
+  try {
+    if (!(await getCleaningAuto())) return;
+    await createTask({ roomId, reason, isAuto: true });
+  } catch (e) {
+    console.error("[cleaning] muddatidan oldin tugagan bron:", String(e).slice(0, 150));
+  }
+}
+
+/**
+ * Chiqish kuni avtomatik xabar (egasi talabi, 2026-09-26): "mijoz bron
+ * kuni tugagach imroncleaning_bot guruhga tozalash kerakligini yuboradi".
+ *
+ * Ilgari topshiriq faqat xodim "Chiqish" bosganda yaratilardi — bosilmasa
+ * (yoki OTA mehmoni) xona iflos qolib ketardi. Endi chiqish kuni
+ * `CHECKOUT_HOUR` (standart 12:00, Toshkent) dan keyin hali xonada deb
+ * turgan (CHECKED_IN) yoki kirish belgilanmagan (CONFIRMED) bronlar
+ * xonasiga topshiriq yaratiladi. Bir xonaga bir kunda bitta xabar —
+ * "Chiqish" bosilgan bo'lsa yoki bugun allaqachon topshiriq bor bo'lsa
+ * qayta yuborilmaydi. `cleaning_check` (har 10 daqiqa) chaqiradi.
+ */
+export async function createDueCheckoutTasks(now = new Date()): Promise<{ created: number }> {
+  if (!(await getCleaningAuto())) return { created: 0 };
+  const { today, hour, dayStartUtc } = hotelNow(now);
+  if (hour < (await getCheckoutHour())) return { created: 0 };
+
+  const due = await prisma.reservation.findMany({
+    where: { checkOut: today, status: { in: ["CHECKED_IN", "CONFIRMED"] } },
+    select: { roomId: true },
+  });
+
+  let created = 0;
+  for (const roomId of new Set(due.map((r) => r.roomId))) {
+    const already = await prisma.cleaningTask.findFirst({
+      where: { roomId, createdAt: { gte: dayStartUtc } },
+      select: { id: true },
+    });
+    if (already) continue;
+    try {
+      const r = await createTask({ roomId, reason: "Chiqish kuni — mehmon muddati tugadi", isAuto: true });
+      if (r.created) created++;
+    } catch (e) {
+      console.error(`[cleaning] chiqish kuni ${roomId}:`, String(e).slice(0, 150));
+    }
+  }
+  return { created };
 }
 
 // ============================================================
@@ -328,17 +393,6 @@ export async function completeTask(taskId: string, telegramId: string, photoUrl?
   return updated;
 }
 
-/** Tozalash topshirig'iga rasm biriktirish */
-export async function attachCleaningPhoto(taskId: string, photoUrl: string) {
-  const updated = await prisma.cleaningTask.update({
-    where: { id: taskId },
-    data: { photoUrl },
-    include: taskInclude,
-  });
-  emit(taskId, "updated");
-  return updated;
-}
-
 /**
  * Admin tozalashni tasdiqladi (2026-09-17).
  *
@@ -378,24 +432,13 @@ export async function approveTask(taskId: string, userId?: string) {
       include: taskInclude,
     });
 
+    // Iflos xona tozalandi — sotuvga ochiladi. Aniq holatni umumiy qoida
+    // hisoblaydi: xonada mehmon bo'lsa OCCUPIED, bugun mehmon kelsa
+    // RESERVED, aks holda AVAILABLE (services/roomStatus.ts)
     const room = await tx.room.findUnique({ where: { id: t.roomId } });
-
-    // Xonada ayni paytda yashayotgan faol mehmon borligini tekshiramiz.
-    // Agar mehmon yashayotgan bo'lsa xona OCCUPIED qolishi kerak,
-    // aks holda xona AVAILABLE (bo'sh va sotuvga tayyor) bo'ladi.
-    const activeStay = await tx.reservation.findFirst({
-      where: {
-        roomId: t.roomId,
-        status: "CHECKED_IN",
-      },
-      select: { id: true },
-    });
-
     if (room?.status === "DIRTY") {
-      await tx.room.update({
-        where: { id: t.roomId },
-        data: { status: activeStay ? "OCCUPIED" : "AVAILABLE" },
-      });
+      await tx.room.update({ where: { id: t.roomId }, data: { status: "AVAILABLE" } });
+      await recalcRoomStatus(t.roomId, tx);
     }
 
     return t;
@@ -439,56 +482,6 @@ export async function rejectTask(taskId: string, note: string) {
   return updated;
 }
 
-/**
- * Boshqa faroshga berish (TOZALIK-BOT.md §4).
- *
- * Eski topshiriq bekor qilinadi, yangisi yaratiladi. Nega
- * o'zgartirmaymiz: eski xabar allaqachon yuborilgan va uni
- * "sizga emas" ga aylantirish chalkash bo'lardi. Tarix ham
- * saqlanib qoladi.
- */
-export async function reassignTask(taskId: string, employeeId: string) {
-  const old = await prisma.cleaningTask.findUnique({
-    where: { id: taskId },
-    include: taskInclude,
-  });
-  if (!old) throw new NotFoundError("Topshiriq");
-
-  if (old.status === "DONE") {
-    throw new ValidationError("Bajarilgan topshiriqni qayta berib bo'lmaydi");
-  }
-
-  const employee = await prisma.employee.findUnique({
-    where: { id: employeeId },
-    select: { id: true, isActive: true, telegramId: true },
-  });
-  if (!employee) throw new NotFoundError("Xodim");
-  if (!employee.isActive) throw new ValidationError("Xodim faol emas");
-  if (!employee.telegramId) {
-    throw new ValidationError("Bu xodimning Telegram ID'si kiritilmagan");
-  }
-
-  await prisma.cleaningTask.update({
-    where: { id: taskId },
-    data: { status: "CANCELLED" },
-  });
-  emit(taskId, "updated");
-
-  const task = await prisma.cleaningTask.create({
-    data: {
-      roomId: old.roomId,
-      reason: old.reason,
-      isAuto: old.isAuto,
-      employeeId,
-      createdById: old.createdById,
-    },
-    include: taskInclude,
-  });
-
-  emit(task.id, "created");
-  return task;
-}
-
 /** Admin topshiriqni bekor qiladi */
 export async function cancelTask(taskId: string) {
   const task = await prisma.cleaningTask.findUnique({ where: { id: taskId } });
@@ -524,22 +517,9 @@ export async function saveMessageRef(
 //  O'qish
 // ============================================================
 
-/** Farroshning ochiq topshiriqlari */
-export async function tasksForCleaner(telegramId: string) {
-  return prisma.cleaningTask.findMany({
-    where: {
-      employee: { telegramId },
-      status: { in: ["NEW", "IN_PROGRESS"] },
-    },
-    include: taskInclude,
-    orderBy: { createdAt: "asc" },
-  });
-}
-
 /** Admin panel uchun — barcha topshiriqlar */
 export async function listTasks(status?: CleaningStatus) {
-  const dayStart = new Date();
-  dayStart.setDate(dayStart.getDate() - 7);
+  const dayStart = new Date(Date.now() - 7 * 86_400_000);
 
   return prisma.cleaningTask.findMany({
     where: {
@@ -657,10 +637,13 @@ export async function dirtyWithoutTask(): Promise<
 
   if (dirty.length === 0) return [];
 
+  // Tasdiq kutayotgan (PENDING) topshiriq ham "bor" — farrosh
+  // tozalagan, admin tekshirishi kerak. Ilgari bunday xona "topshiriqsiz
+  // iflos" deb ogohlantirilardi va admin ikkinchi topshiriq yuborardi
   const open = await prisma.cleaningTask.findMany({
     where: {
       roomId: { in: dirty.map((r) => r.id) },
-      status: { in: ["NEW", "IN_PROGRESS"] },
+      status: { in: OPEN_TASK },
     },
     select: { roomId: true },
   });
@@ -690,10 +673,9 @@ export async function todayPlan(): Promise<{
   pendingArrivals: number;
   needCleaning: number;
 }> {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+  // Mehmonxona (Toshkent) kuni — server vaqt zonasi emas
+  const start = hotelToday();
+  const end = addDays(start, 1);
 
   const [departures, arrivals, pendingArrivals, needCleaning] =
     await Promise.all([
@@ -743,10 +725,8 @@ export async function arrivalsReadiness(): Promise<
     hasTask: boolean;
   }>
 > {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(start);
-  end.setDate(end.getDate() + 1);
+  const start = hotelToday();
+  const end = addDays(start, 1);
 
   const arrivals = await prisma.reservation.findMany({
     where: {
@@ -767,7 +747,7 @@ export async function arrivalsReadiness(): Promise<
   const tasks = await prisma.cleaningTask.findMany({
     where: {
       roomId: { in: arrivals.map((a) => a.roomId) },
-      status: { in: ["NEW", "IN_PROGRESS"] },
+      status: { in: OPEN_TASK },
     },
     select: { roomId: true },
   });

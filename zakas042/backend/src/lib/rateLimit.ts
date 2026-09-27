@@ -3,13 +3,7 @@
  *
  * Manba: 10-SECURITY-VA-SYNCLOG.md §7
  *
- * MUHIM FARQ: bu BIZNING himoyamiz — tashqi hujumdan. Beds24'ning
- * bizga qo'ygan kredit cheklovi butunlay boshqa narsa va
- * `services/beds24/client.ts` da boshqariladi (03-fayl §3).
- * Ikkalasini aralashtirmaslik kerak.
- *
- * Cheklovlar (10-fayl §7 jadvali):
- *   webhook        100/daqiqa   tashqi hujumdan
+ * Cheklovlar (10-fayl §7 jadvali), IP bo'yicha:
  *   login          5/daqiqa     brute-force
  *   public GET     30/daqiqa    scraping
  *   public POST    5/soat       spam bron
@@ -35,13 +29,6 @@ const base: Partial<Options> = {
   skip: () => config.rateLimitDisabled,
   message: { error: "So'rovlar juda tez-tez. Birozdan keyin urinib ko'ring.", code: "RATE_LIMITED" },
 };
-
-/** Webhook — tashqi, eng katta hujum yuzasi */
-export const webhookLimiter = rateLimit({
-  ...base,
-  windowMs: 60_000,
-  limit: 100,
-});
 
 /**
  * Login — brute-force himoyasi.

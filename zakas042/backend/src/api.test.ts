@@ -139,7 +139,7 @@ describe("FAZA 2A — ichki REST API", () => {
 
     it("1. bron yaratish", async () => {
       // Narx va to'lov BAZADAN kelgan tarifdan hisoblanadi:
-      // qattiq yozilgan "35" USD davridan qolgan edi
+      // qattiq yozilgan "35" eski USD davridan qolgan edi
       const price = await tariffFor(R[5]);
       const nights = 3;
       const prepay = Math.round(price / 2);
@@ -171,7 +171,8 @@ describe("FAZA 2A — ichki REST API", () => {
     it("2. bronni o'zgartirish (mehmon soni, narx)", async () => {
       // Tarifdan YUQORI narx — chegirma sababi talab qilinmaydi
       // (SAVOLLAR.md S4)
-      const newPrice = (await tariffFor(R[5])) + 50_000;
+      // Tarifdan yuqori, narx chegarasidan (50 mln so'm) past
+      const newPrice = (await tariffFor(R[5])) + 50;
 
       const { body } = await api(`/api/reservations/${id}`, {
         method: "PATCH",
@@ -199,7 +200,6 @@ describe("FAZA 2A — ichki REST API", () => {
         body: JSON.stringify({ roomId: R[1] }),   // double — bugun bo'sh
       });
       expect(body.roomId).toBe(R[1]);
-      expect(body.syncStatus).toBe("pending");     // Beds24'ga yuborilishi kerak
     });
 
     it("5. to'lov qo'shish", async () => {
@@ -231,7 +231,19 @@ describe("FAZA 2A — ichki REST API", () => {
       expect(body.remainingAmount).toBe(before.remainingAmount + extra);
     });
 
-    it("7. check-in — status va vaqt yoziladi", async () => {
+    it("7. check-in — kelajakdagi bronga emas, kirish kuni kelganda", async () => {
+      // 2026-09-26 qoidasi: 40 kun keyingi bronni bugun "kirdi" qilib
+      // bo'lmaydi (xona holati, oshxona hisobi buzilardi)
+      const early = await api(`/api/reservations/${id}/check-in`, { method: "POST" });
+      expect(early.status).toBe(400);
+
+      // Mehmon kirish kuni keldi — sana bugunga ko'chiriladi (R[1] bugun bo'sh)
+      const moved = await api(`/api/reservations/${id}/change-dates`, {
+        method: "POST",
+        body: JSON.stringify({ checkIn: day(0), checkOut: day(3) }),
+      });
+      expect(moved.status).toBe(200);
+
       const { body } = await api(`/api/reservations/${id}/check-in`, { method: "POST" });
       expect(body.status).toBe("checked_in");
       expect(body.checkedInAt).toBeTruthy();
@@ -435,7 +447,7 @@ describe("FAZA 2A — ichki REST API", () => {
           phone: "+998900000010",
           checkIn: day(10),
           checkOut: day(12),
-          pricePerNight: await tariffFor("999"),
+          pricePerNight: 100,     // xona yo'q — tarif ham yo'q
         }),
       });
       expect(status).toBe(404);
@@ -476,16 +488,19 @@ describe("FAZA 2A — ichki REST API", () => {
       const { body } = await api(`/api/rate-plans?from=${day(0)}&to=${day(2)}`);
       expect(body.length).toBeGreaterThan(0);
       expect(typeof body[0].price).toBe("number");
-      expect(body[0].source).toBe("pms");
+      // Beds24 olib tashlangan — sinxron maydonlari javobda yo'q
+      expect(body[0].source).toBeUndefined();
+      expect(body[0].syncStatus).toBeUndefined();
     });
 
-    it("narx belgilanadi va sync kutadi", async () => {
+    it("narx belgilanadi va o'qiladi", async () => {
       // Tur ID'lari BAZADAN: "standard"/"deluxe" eski 12 xonali
       // tuzilishdan qolgan nomlar edi
       const typeA = await someType(0);
       const typeB = await someType(1);
-      const priceA = 450_000;
-      const priceB = 650_000;
+      // Kasrli narx ham saqlanadi (2 xona) — valyutadan qat'i nazar
+      const priceA = 45;
+      const priceB = 65.5;
 
       const { body } = await api("/api/rate-plans", {
         method: "PUT",
@@ -496,12 +511,11 @@ describe("FAZA 2A — ichki REST API", () => {
         }),
       });
       expect(body.updated).toBe(6);          // 3 kun × 2 tur
-      expect(body.syncStatus).toBe("pending");
 
       const { body: check } = await api(`/api/rate-plans?from=${day(100)}&to=${day(100)}`);
       const std = check.find((p: any) => p.roomTypeId === typeA);
       expect(std.price).toBe(priceA);
-      expect(std.syncStatus).toBe("pending");
+      expect(check.find((p: any) => p.roomTypeId === typeB).price).toBe(priceB);
     });
   });
 });

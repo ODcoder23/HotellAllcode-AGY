@@ -60,17 +60,17 @@ else
   MODELS=$(grep -c '^model ' "$SCHEMA")
   ENUMS=$(grep -c '^enum ' "$SCHEMA")
   green "  ✓ $MODELS model, $ENUMS enum"
-  # TZ 13-band majburiy 12 jadval
-  for m in Channel ChannelConnection ChannelMapping WebhookEvent SyncLog \
-           Reservation Room RoomType Guest Payment RatePlan Availability; do
+  # TZ 13-band jadvallari. Kanal jadvallari (Channel*, WebhookEvent,
+  # SyncLog) Beds24 bilan birga olib tashlangan — mijoz qarori Q18
+  for m in Reservation Room RoomType Guest Payment RatePlan Availability; do
     grep -q "^model $m " "$SCHEMA" || {
       red "  ✗ TZ 13-band talab qilgan '$m' modeli yo'q"
       ERRORS=$((ERRORS+1))
     }
   done
   # Raw SQL constraint eslatmasi yo'qolmaganmi
-  grep -q 'btree_gist' 02-DATABASE-SXEMA.md || {
-    red "  ✗ Overbooking constraint (btree_gist) 02-faylda yo'q — TZ 3-band buziladi"
+  grep -qs 'reservation_no_overlap' backend/prisma/migrations/*/migration.sql || {
+    red "  ✗ Overbooking constraint (reservation_no_overlap) migratsiyalarda yo'q — TZ 3-band buziladi"
     ERRORS=$((ERRORS+1))
   }
 fi

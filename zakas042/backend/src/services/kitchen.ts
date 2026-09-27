@@ -16,6 +16,7 @@
  */
 
 import { prisma } from "../lib/prisma.js";
+import { addDays, hotelToday } from "../lib/hotelTime.js";
 
 export type RoomMeals = {
   roomId: string;
@@ -48,18 +49,15 @@ const SOURCE_LABEL: Record<string, string> = {
   BOOKING_COM: "Booking.com",
   AIRBNB: "Airbnb",
   EXPEDIA: "Expedia",
+  OSTROVOK: "Ostrovok",
   PHONE: "Telefon",
   WALK_IN: "Kelgan mehmon",
   OTHER: "Boshqa",
 };
 
-/** Kun boshi (O'zbekiston / Toshkent vaqti bo'yicha UTC chegarasi) */
+/** Toshkent bo'yicha kun (`@db.Date` bilan mos) — lib/hotelTime.ts */
 function dayStart(offset = 0): Date {
-  const d = new Date(Date.now() + 5 * 3_600_000);
-  const y = d.getUTCFullYear();
-  const m = d.getUTCMonth();
-  const day = d.getUTCDate() + offset;
-  return new Date(Date.UTC(y, m, day, 0, 0, 0, 0));
+  return addDays(hotelToday(), offset);
 }
 
 /**
@@ -149,27 +147,4 @@ export async function kitchenOverview(): Promise<{
   ]);
 
   return { today, tomorrow };
-}
-
-/**
- * Beds24'dan kelgan bron ovqatli bo'ladimi (BOTLAR-REJA.md).
- *
- * Beds24 standart maydon bermaydi — ular "nonushta bilan" va
- * "nonushtasiz" alohida tariflar yaratadi. Mapping paytida
- * `includesMeal` belgilanadi.
- *
- * Mapping topilmasa `false`: noma'lum holatda ovqat
- * tayyorlamaganimiz, ortiqcha tayyorlagandan yaxshiroq —
- * mehmon so'rasa qo'shib beriladi.
- */
-export async function channelBookingHasMeal(
-  channelId: string,
-  externalRoomTypeId: string
-): Promise<boolean> {
-  const mapping = await prisma.channelMapping.findFirst({
-    where: { channelId, externalRoomTypeId, isActive: true },
-    select: { includesMeal: true },
-  });
-
-  return mapping?.includesMeal ?? false;
 }

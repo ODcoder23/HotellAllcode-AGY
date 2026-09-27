@@ -31,6 +31,22 @@
 <style>
   html, body, #root { height: 100%; margin: 0; }
   body { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+
+  /* Bandlik jadvali chiziqlari (2026-09-26, egasi talabi: "katak borderi
+     juda nozik — qalinroq va rangi hozirgidan sezilarli bo'lsin").
+     Ilgari 1px #f3f4f6 edi — deyarli ko'rinmasdi. Tailwind class emas:
+     rang va qalinlik shu yerda, bitta joyda o'zgartiriladi. */
+  :root { --sx-line: #b4bcc8; --sx-line-strong: #7f8a99; }
+  .sx-cell  { border-right: 2px solid var(--sx-line); border-bottom: 2px solid var(--sx-line); }
+  .sx-room  { border-right: 2px solid var(--sx-line-strong); border-bottom: 2px solid var(--sx-line); }
+  .sx-hcell { border-right: 2px solid var(--sx-line); border-bottom: 2px solid var(--sx-line-strong); }
+  .sx-hleft { border-right: 2px solid var(--sx-line-strong); border-bottom: 2px solid var(--sx-line-strong); }
+
+  /* STOP (Sozlamalar -> Tizim nazorati): to'xtatilgan xona qatori
+     xiralashadi. Mavjud bron bloklari bosiladi (kirish/chiqish/to'lov),
+     bo'sh katak esa yangi bron ochmaydi */
+  .sx-stopped { opacity: .42; filter: grayscale(1); }
+  .sx-stopped .sx-cell { cursor: not-allowed; background-image: repeating-linear-gradient(135deg, transparent 0 7px, rgba(120,120,120,.18) 7px 9px); }
 </style>
 </head>
 <body>
@@ -126,6 +142,7 @@ const SOURCES = {
   booking_com: { label: "Booking.com", bar: "bg-indigo-700", text: "text-white" },
   airbnb: { label: "Airbnb", bar: "bg-rose-500", text: "text-white" },
   expedia: { label: "Expedia", bar: "bg-yellow-500", text: "text-gray-900" },
+  ostrovok: { label: "Ostrovok", bar: "bg-orange-500", text: "text-white" },
   phone: { label: "Telefon", bar: "bg-teal-600", text: "text-white" },
   walk_in: { label: "Bevosita kelgan", bar: "bg-slate-600", text: "text-white" },
   other: { label: "Boshqa", bar: "bg-gray-500", text: "text-white" },
@@ -151,7 +168,22 @@ const HEADER_HEIGHT = 44;
 const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const diffDays = (a, b) => Math.round((startOfDay(a) - startOfDay(b)) / 86400000);
-const toKey = (d) => startOfDay(d).toISOString().slice(0, 10);
+/**
+ * Sana → "YYYY-MM-DD", MAHALLIY kun bo'yicha (ISH_REJASI.md S2).
+ *
+ * `toISOString()` ishlatilmaydi: u UTC bo'yicha yozadi. Toshkentda
+ * (UTC+5) mahalliy yarim tun UTC bo'yicha kechagi kun 19:00, shuning
+ * uchun `toKey(fromKey("2026-09-25"))` "2026-09-24" qaytarardi —
+ * bo'sh katak bosilganda oyna bir kun erta sanani ko'rsatardi.
+ * `fromKey` ham mahalliy kunni yasaydi, ikkalasi bir-birini
+ * aynan qaytarishi shart.
+ */
+const toKey = (d) => {
+  const x = new Date(d);
+  const mm = String(x.getMonth() + 1).padStart(2, "0");
+  const dd = String(x.getDate()).padStart(2, "0");
+  return `${x.getFullYear()}-${mm}-${dd}`;
+};
 const fromKey = (k) => { const [y, m, d] = k.split("-").map(Number); return new Date(y, m - 1, d); };
 const UZ_MONTHS_SHORT = ["Yan", "Fev", "Mar", "Apr", "May", "Iyun", "Iyul", "Avg", "Sen", "Okt", "Noy", "Dek"];
 const UZ_WEEKDAYS_SHORT = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
@@ -160,14 +192,34 @@ const fmtWeekday = (d) => UZ_WEEKDAYS_SHORT[d.getDay()];
 const isSameDay = (a, b) => toKey(a) === toKey(b);
 const nightsBetween = (ci, co) => Math.max(1, diffDays(co, ci));
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
-// Valyuta: so'm (2026-09-16 qarori). Uzun raqamlar uchun bo'shliq
-// bilan ajratiladi: 450 000 so'm.
+// Valyuta — so'm: "450 000 so'm" (backend lib/money.ts formatMoney bilan bir xil)
 const money = (n) => {
   const v = Number(n);
-  if (!Number.isFinite(v)) return "0 so'm";
-  return Math.round(v).toLocaleString("ru-RU").replace(/ /g, " ") + " so'm";
+  const x = Number.isFinite(v) ? v : 0;
+  return Math.round(x).toLocaleString("ru-RU").replace(/[\u00a0\u202f]/g, " ") + " so'm";
 };
+// Sentda hisoblash — 0.1 + 0.2 kabi float qoldig'i "qarz $0.00" ni
+// qizil qilib qo'ymasin (backend lib/money.ts bilan bir xil qoida)
+const toCents = (n) => { const v = Number(n) || 0; return Math.sign(v) * Math.round(Math.abs(v) * 100 + 1e-7); };
+const round2 = (n) => toCents(n) / 100;
+const sumMoney = (arr) => arr.reduce((c, v) => c + toCents(v), 0) / 100;
+/* Bron summasi — BACKENDDAN (serializeReservation, lib/money.ts):
+   xona + nonushta + xizmatlar; bekor qilingan bron = jarima.
+   Mahalliy hisob faqat eski javob uchun zaxira. */
+function resMoney(res) {
+  const nights = res.nights || nightsBetween(fromKey(res.checkIn), fromKey(res.checkOut));
+  const chargesTotal = sumMoney((res.charges || []).map((c) => c.amount));
+  const roomTotal = res.roomTotal != null ? res.roomTotal : round2(res.pricePerNight * nights);
+  const mealTotal = res.mealTotal || 0;
+  const total = res.totalPrice != null ? res.totalPrice : sumMoney([roomTotal, mealTotal, chargesTotal]);
+  const paid = res.paidAmount != null ? res.paidAmount : sumMoney((res.payments || []).map((p) => p.amount));
+  const remaining = res.remainingAmount != null ? res.remainingAmount : Math.max(0, (toCents(total) - toCents(paid)) / 100);
+  const refundDue = res.refundDue != null ? res.refundDue : Math.max(0, (toCents(paid) - toCents(total)) / 100);
+  return { nights, roomTotal, mealTotal, chargesTotal, total, paid, remaining, refundDue };
+}
 const uid = () => Math.random().toString(36).slice(2, 10);
+// Xona / sana o'zgartirish faqat faol bronda (backend ham shunday tekshiradi)
+const isMovable = (res) => res.status === "pending_payment" || res.status === "confirmed" || res.status === "checked_in";
 
 /* ============================== SEED DATA ============================== */
 
@@ -327,16 +379,18 @@ const api = {
     apiFetch(`/api/reservations/${id}/change-dates`, { method: "POST", body: JSON.stringify({ checkIn, checkOut }) }),
   addPayment: (id, amount, method, note) =>
     apiFetch(`/api/reservations/${id}/payments`, { method: "POST", body: JSON.stringify({ amount, method, note }) }),
+  // STOP holati (Sozlamalar -> Tizim nazorati)
+  salesStop: () => apiFetch("/api/admin/sales-stop"),
   reversePayment: (id, pid) =>
     apiFetch(`/api/reservations/${id}/payments/${pid}/reverse`, { method: "POST" }),
   addCharge: (id, label, amount) =>
     apiFetch(`/api/reservations/${id}/charges`, { method: "POST", body: JSON.stringify({ label, amount }) }),
 
   ratePlans: (from, to) => apiFetch(`/api/rate-plans?from=${from}&to=${to}`),
+  // Nonushta narxi (kishi boshiga, so'm) — admin panel "Oshxona" bo'limida o'zgaradi
+  mealPrice: () => apiFetch("/api/admin/meal-price"),
   setRates: (from, to, prices) =>
     apiFetch("/api/rate-plans", { method: "PUT", body: JSON.stringify({ from, to, prices }) }),
-  resyncRates: (roomTypeIds, from, to) =>
-    apiFetch("/api/rate-plans/resync", { method: "POST", body: JSON.stringify({ roomTypeIds, from, to }) }),
 };
 
 /* ========================================================================
@@ -651,10 +705,10 @@ function App() {
   const [conflictMsg, setConflictMsg] = useState(null);
   /** FAZA 8: 'online' | 'offline' — real-time ulanish holati */
   const [wsStatus, setWsStatus] = useState("offline");
+  /** STOP (tizim nazorati): { active, allRooms, roomIds, reason, since } */
+  const [salesStop, setSalesStop] = useState(null);
 
   const gridRef = useRef(null);
-  const dragRef = useRef(null);
-  const [dragPreview, setDragPreview] = useState(null);
 
   const days = useMemo(() => Array.from({ length: rangeLen }, (_, i) => addDays(viewStart, i)), [viewStart, rangeLen]);
 
@@ -663,14 +717,17 @@ function App() {
   const reload = useCallback(async () => {
     try {
       const todayKey = toKey(today);
-      const [roomsData, resData, rateRows, typeRows] = await Promise.all([
+      const [roomsData, resData, rateRows, typeRows, stopState] = await Promise.all([
         api.rooms(),
         api.reservations(),
         // Bugungi narxlar — yangi bron uchun taklif (Q8)
         api.ratePlans(todayKey, todayKey).catch(() => []),
         // Xona turlari — nomi va koeffitsienti (yuqoridagi ROOM_TYPES)
         api.roomTypes().catch(() => []),
+        // STOP holati — o'qib bo'lmasa jadval odatdagidek
+        api.salesStop().catch(() => null),
       ]);
+      setSalesStop(stopState);
 
       // ROOM_TYPES ni o'rnida to'ldiramiz: obyekt havolasi o'zgarmaydi,
       // shuning uchun uni o'qiydigan komponentlar tegilmaydi.
@@ -712,6 +769,19 @@ function App() {
   const handleApiError = useCallback((e) => {
     setConflictMsg(e.message || "Amalni bajarib bo'lmadi.");
   }, []);
+
+  /**
+   * STOP: xona to'xtatilganmi. Yangi bron oynasi ochilmaydi — backend
+   * baribir 409 qaytaradi, xodim bekorga forma to'ldirmasin.
+   */
+  const isStopped = useCallback((roomId) =>
+    !!(salesStop && salesStop.active && (salesStop.allRooms || (salesStop.roomIds || []).includes(roomId))),
+  [salesStop]);
+  const STOP_MSG = "Tizim vaqtincha to'xtatilgan (STOP) — yangi bron qabul qilinmaydi. Sozlamalar → Tizim nazorati'dan stopdan chiqaring.";
+  const openCreate = useCallback((draft) => {
+    if (isStopped(draft.roomId)) { setConflictMsg(STOP_MSG); return; }
+    setCreateDraft(draft);
+  }, [isStopped]);
 
   /** Bitta bronni javobdagi yangi holat bilan almashtiradi */
   const applyReservation = useCallback((updated) => {
@@ -779,9 +849,16 @@ function App() {
         // Website/Admin panel uchun. E'tiborsiz qoldiramiz.
         break;
 
+      case "system.sales_stop":
+        // STOP bosildi / stopdan chiqarildi — jadval darhol xiralashadi
+        // yoki qayta faollashadi (Sozlamalar -> Tizim nazorati)
+        setSalesStop((s) => ({ ...(s || {}), active: msg.active, allRooms: msg.allRooms, roomIds: msg.roomIds || [], reason: msg.reason, since: msg.since }));
+        // Stopdan chiqarildi — eski "tizim to'xtatilgan" ogohlantirishi ham yopiladi
+        if (!msg.active) setConflictMsg((m) => (m && m.startsWith("Tizim vaqtincha to'xtatilgan") ? null : m));
+        break;
+
       default:
-        // sync.failed, webhook.needs_attention, rate.sync.updated —
-        // admin panel event'lari, Shaxmatka ko'rsatmaydi.
+        // Noma'lum event — e'tiborsiz
         break;
     }
   }, [reload, applyReservation]);
@@ -978,96 +1055,15 @@ function App() {
     } catch (e) { handleApiError(e); }
   }
 
-  /* ------------------------------ drag & drop ------------------------------ */
-  function beginDrag(e, res, mode) {
-    e.preventDefault();
-    e.stopPropagation();
-    const rowIndex = visibleRooms.findIndex((r) => r.id === res.roomId);
-    dragRef.current = {
-      resId: res.id, mode, startX: e.clientX, startY: e.clientY,
-      origCheckIn: res.checkIn, origCheckOut: res.checkOut, origRoomId: res.roomId, origRowIndex: rowIndex,
-    };
-    setDragPreview({ resId: res.id, roomId: res.roomId, checkIn: res.checkIn, checkOut: res.checkOut, valid: true });
-    window.addEventListener("mousemove", onDragMove);
-    window.addEventListener("mouseup", onDragEnd);
-  }
+  /* ------------------------------ sichqoncha bilan surish YO'Q ------------------------------
+     2026-09-25 da olib tashlandi (ISH_REJASI.md S1).
 
-  function onDragMove(e) {
-    const d = dragRef.current;
-    if (!d) return;
-    const dxDays = Math.round((e.clientX - d.startX) / cellWidth);
-    let newRoomId = d.origRoomId;
-    let newCheckIn = fromKey(d.origCheckIn);
-    let newCheckOut = fromKey(d.origCheckOut);
-
-    if (d.mode === "move") {
-      newCheckIn = addDays(newCheckIn, dxDays);
-      newCheckOut = addDays(newCheckOut, dxDays);
-      const dyRows = Math.round((e.clientY - d.startY) / ROW_HEIGHT);
-      const targetRow = clamp(d.origRowIndex + dyRows, 0, visibleRooms.length - 1);
-      newRoomId = visibleRooms[targetRow]?.id || d.origRoomId;
-    } else if (d.mode === "resize-left") {
-      newCheckIn = addDays(newCheckIn, dxDays);
-      if (diffDays(newCheckOut, newCheckIn) < 1) newCheckIn = addDays(newCheckOut, -1);
-    } else if (d.mode === "resize-right") {
-      newCheckOut = addDays(newCheckOut, dxDays);
-      if (diffDays(newCheckOut, newCheckIn) < 1) newCheckOut = addDays(newCheckIn, 1);
-    }
-
-    const ciK = toKey(newCheckIn), coK = toKey(newCheckOut);
-    const valid = isRoomAvailable(newRoomId, ciK, coK, d.resId);
-    setDragPreview({ resId: d.resId, roomId: newRoomId, checkIn: ciK, checkOut: coK, valid });
-  }
-
-  /**
-   * Drag&drop natijasini backendga yuboradi.
-   * Sana va xona bir vaqtda o'zgarishi mumkin — ketma-ket ikki chaqiruv.
-   * Xato bo'lsa to'liq qayta yuklanadi (holat aralashib ketmasligi uchun).
-   */
-  async function applyDragChange(resId, preview, datesChanged, roomChanged) {
-    try {
-      let updated;
-      if (datesChanged) {
-        updated = await api.changeDates(resId, preview.checkIn, preview.checkOut);
-        applyReservation(updated);
-      }
-      if (roomChanged) {
-        updated = await api.changeRoom(resId, preview.roomId);
-        applyReservation(updated);
-      }
-      await refreshRooms();
-    } catch (e) {
-      handleApiError(e);
-      reload();   // server bilan holat farq qilmasligi uchun
-    }
-  }
-
-  function onDragEnd() {
-    window.removeEventListener("mousemove", onDragMove);
-    window.removeEventListener("mouseup", onDragEnd);
-    const d = dragRef.current;
-    dragRef.current = null;
-    setDragPreview((preview) => {
-      if (d && preview && preview.valid) {
-        const roomChanged = preview.roomId !== d.origRoomId;
-        const datesChanged = preview.checkIn !== d.origCheckIn || preview.checkOut !== d.origCheckOut;
-        if (roomChanged || datesChanged) {
-          // FAZA 3: backend orqali. Sana avval o'zgartiriladi, keyin xona —
-          // shunda oraliq tekshiruvi to'g'ri bo'ladi.
-          applyDragChange(d.resId, preview, datesChanged, roomChanged);
-        }
-      } else if (d && preview && !preview.valid) {
-        setConflictMsg("XONA TO'QNASHUVI — bu xona ushbu sanalarda allaqachon band.");
-      }
-      return null;
-    });
-  }
-
-  useEffect(() => () => {
-    window.removeEventListener("mousemove", onDragMove);
-    window.removeEventListener("mouseup", onDragEnd);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+     Ilgari bron blokini surib sana va xonani o'zgartirish mumkin
+     edi. Bosish paytida sichqoncha 1 piksel qimirlasa ham bron
+     ko'chib ketardi — qabulxona buni sezmasdi ham. Endi sana faqat tafsilot oynasidagi
+     "Sanalarni o'zgartirish", xona esa "Xonani almashtirish"
+     tugmasi orqali o'zgaradi. Qayta qo'shilmasin.
+  */
 
   /* ------------------------------ navigation ------------------------------ */
   const goToday = () => setViewStart(addDays(today, -1));
@@ -1124,14 +1120,32 @@ function App() {
         filtersOpen={filtersOpen} setFiltersOpen={setFiltersOpen} filters={filters} setFilters={setFilters}
         pricingOpen={pricingOpen} setPricingOpen={setPricingOpen}
         wsStatus={wsStatus}
-        onAddReservation={() => setCreateDraft({ roomId: rooms[0].id, checkIn: toKey(today), checkOut: toKey(addDays(today, 1)) })}
+        onAddReservation={() => {
+          // Birinchi to'xtatilmagan xona; hammasi to'xtatilgan bo'lsa — xabar
+          const open = rooms.find((r) => !isStopped(r.id)) || rooms[0];
+          openCreate({ roomId: open.id, checkIn: toKey(today), checkOut: toKey(addDays(today, 1)) });
+        }}
       />
+
+      {salesStop && salesStop.active && (
+        /* STOP banneri — faqat stopdan chiqarilganda yo'qoladi */
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-red-600 text-white text-sm z-40">
+          <Ban size={16} />
+          <div className="flex-1">
+            <span className="font-semibold">Tizim vaqtincha to'xtatilgan</span>
+            {" · "}{salesStop.allRooms ? "barcha xonalar" : `${(salesStop.roomIds || []).length} ta xona`}
+            {salesStop.reason ? ` · ${salesStop.reason}` : ""}
+            <span className="opacity-90"> — sayt va qabulxona yangi bron qabul qilmaydi. Mavjud bronlar (kirish, chiqish, to'lov) ishlaydi.</span>
+          </div>
+          <span className="text-xs opacity-90 whitespace-nowrap">Stopdan chiqarish: Sozlamalar → Tizim nazorati</span>
+        </div>
+      )}
 
       <div className="flex-1 overflow-auto" ref={gridRef}>
         <div style={{ width: LEFT_WIDTH + days.length * cellWidth }}>
           {/* header row */}
           <div className="flex sticky top-0 z-30">
-            <div className="sticky left-0 z-40 bg-gray-100 border-r border-b border-gray-200 flex items-center px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: LEFT_WIDTH, height: HEADER_HEIGHT, minWidth: LEFT_WIDTH }}>
+            <div className="sx-hleft sticky left-0 z-40 bg-gray-100 flex items-center px-3 text-xs font-semibold text-gray-500 uppercase tracking-wide" style={{ width: LEFT_WIDTH, height: HEADER_HEIGHT, minWidth: LEFT_WIDTH }}>
               Xona
             </div>
             {days.map((d) => {
@@ -1139,7 +1153,7 @@ function App() {
               const isWeekend = [0, 6].includes(d.getDay());
               return (
                 <div key={toKey(d)}
-                  className={`flex flex-col items-center justify-center border-r border-b border-gray-200 text-xs ${isToday ? "bg-blue-600 text-white" : isWeekend ? "bg-gray-100 text-gray-500" : "bg-gray-50 text-gray-500"}`}
+                  className={`sx-hcell flex flex-col items-center justify-center text-xs ${isToday ? "bg-blue-600 text-white" : isWeekend ? "bg-gray-100 text-gray-500" : "bg-gray-50 text-gray-500"}`}
                   style={{ width: cellWidth, height: HEADER_HEIGHT, minWidth: cellWidth }}>
                   <span className="font-semibold leading-tight">{fmtShort(d)}</span>
                   <span className="leading-tight opacity-80">{fmtWeekday(d)}</span>
@@ -1160,9 +1174,9 @@ function App() {
               (r) => r.roomId === room.id && (showCancelled ? true : r.status !== "cancelled")
             );
             return (
-              <div key={room.id} className="flex relative border-b border-gray-100" style={{ height: ROW_HEIGHT }}>
+              <div key={room.id} className={`flex relative ${isStopped(room.id) ? "sx-stopped" : ""}`} style={{ height: ROW_HEIGHT }}>
                 <div
-                  className="sticky left-0 z-20 bg-white border-r border-gray-200 flex flex-col justify-center px-3 cursor-pointer hover:bg-gray-50"
+                  className="sx-room sticky left-0 z-20 bg-white flex flex-col justify-center px-3 cursor-pointer hover:bg-gray-50"
                   style={{ width: LEFT_WIDTH, minWidth: LEFT_WIDTH }}
                   onClick={(e) => setRoomMenu({ roomId: room.id, x: e.clientX, y: e.clientY })}
                 >
@@ -1177,17 +1191,14 @@ function App() {
                   {days.map((d, i) => (
                     <div
                       key={i}
-                      onClick={() => setCreateDraft({ roomId: room.id, checkIn: toKey(d), checkOut: toKey(addDays(d, 1)) })}
-                      className={`absolute top-0 border-r border-gray-100 hover:bg-blue-50 cursor-cell ${isSameDay(d, today) ? "bg-blue-50" : ""}`}
+                      onClick={() => openCreate({ roomId: room.id, checkIn: toKey(d), checkOut: toKey(addDays(d, 1)) })}
+                      className={`sx-cell absolute top-0 hover:bg-blue-50 cursor-cell ${isSameDay(d, today) ? "bg-blue-50" : ""}`}
                       style={{ left: i * cellWidth, width: cellWidth, height: ROW_HEIGHT }}
                     />
                   ))}
 
                   {roomReservations.map((res) => {
-                    const isDragging = dragPreview && dragPreview.resId === res.id;
-                    if (isDragging && dragPreview.roomId !== room.id) return null;
-                    const showRes = isDragging ? { ...res, roomId: dragPreview.roomId, checkIn: dragPreview.checkIn, checkOut: dragPreview.checkOut } : res;
-                    const ci = fromKey(showRes.checkIn), co = fromKey(showRes.checkOut);
+                    const ci = fromKey(res.checkIn), co = fromKey(res.checkOut);
                     const startOffset = diffDays(ci, viewStart);
                     const nights = nightsBetween(ci, co);
                     const left = startOffset * cellWidth;
@@ -1200,12 +1211,9 @@ function App() {
                     return (
                       <ReservationBlock
                         key={res.id}
-                        res={showRes} left={left} width={width}
+                        res={res} left={left} width={width}
                         dimmed={dimmed} highlighted={highlighted}
-                        invalid={isDragging && !dragPreview.valid}
-                        dragging={isDragging}
-                        onOpen={() => !dragRef.current && setDetailId(res.id)}
-                        onDragStart={(e, mode) => beginDrag(e, res, mode)}
+                        onOpen={() => setDetailId(res.id)}
                       />
                     );
                   })}
@@ -1225,7 +1233,7 @@ function App() {
           today={today}
           priceForType={priceForType}
           onClose={() => setRoomMenu(null)}
-          onNewReservation={(roomId) => { setRoomMenu(null); setCreateDraft({ roomId, checkIn: toKey(today), checkOut: toKey(addDays(today, 1)) }); }}
+          onNewReservation={(roomId) => { setRoomMenu(null); openCreate({ roomId, checkIn: toKey(today), checkOut: toKey(addDays(today, 1)) }); }}
           onViewReservation={(id) => { setRoomMenu(null); setDetailId(id); }}
           onChangeStatus={(roomId, status) => { updateRoom(roomId, { status }); setRoomMenu(null); }}
           onMaintenanceBlock={(roomId) => { updateRoom(roomId, { status: "out_of_order" }); setRoomMenu(null); }}
@@ -1294,7 +1302,7 @@ function App() {
           onAdd={(amt, method, note) => { addPayment(detailRes, amt, method, note); setSubPanel(null); }} />
       )}
       {detailRes && subPanel === "charge" && (
-        <ChargeModal onClose={() => setSubPanel(null)}
+        <ChargeModal res={detailRes} onClose={() => setSubPanel(null)}
           onAdd={(label, amt) => { addCharge(detailRes, label, amt); setSubPanel(null); }} />
       )}
       {detailRes && subPanel === "changeRoom" && (
@@ -1455,20 +1463,9 @@ function FilterPanel({ filters, setFilters, onClose }) {
    Booking.com'da sotilmaydigan darajaga chiqardi. TZ'da bunday
    mexanizm yo'q.
 
-   Endi: admin narxni QO'LDA belgilaydi, o'zgarish Beds24 orqali
-   OTA'ga ketadi. Har narx yonida sync holati ko'rinadi:
-     ● yuborildi   ○ kutmoqda   ⚠ xato [↻]
+   Endi: admin narxni QO'LDA belgilaydi (so'm). Yangi narx darhol
+   sayt, Shaxmatka va yangi bronlarda; mavjud bronlar summasi o'zgarmaydi.
 ========================================================================== */
-
-function RateSyncDot({ status }) {
-  const m = {
-    synced:  { cls: "bg-emerald-500", title: "Beds24 qabul qildi" },
-    pending: { cls: "bg-gray-300",    title: "Navbatda — Beds24'ga yuborilmoqda" },
-    error:   { cls: "bg-red-500",     title: "Yuborilmadi — qayta urinib ko'ring" },
-  }[status] || { cls: "bg-gray-200", title: "Narx belgilanmagan" };
-
-  return <span className={`inline-block h-2 w-2 rounded-full ${m.cls}`} title={m.title} />;
-}
 
 function PricingPanel({ onClose }) {
   const today = useMemo(() => startOfDay(new Date()), []);
@@ -1502,15 +1499,9 @@ function PricingPanel({ onClose }) {
       for (const key of Object.keys(ROOM_TYPES)) {
         const list = byType[key] || [];
         const prices = [...new Set(list.map((r) => r.price))];
-        const statuses = new Set(list.map((r) => r.syncStatus));
         summary[key] = {
           price: prices.length === 1 ? prices[0] : null,
           mixed: prices.length > 1,
-          // Eng "yomon" holat ko'rsatiladi: xato > kutmoqda > yuborildi
-          status: list.length === 0 ? null
-            : statuses.has("error") ? "error"
-            : statuses.has("pending") ? "pending"
-            : "synced",
           days: list.length,
         };
       }
@@ -1528,15 +1519,14 @@ function PricingPanel({ onClose }) {
     const prices = {};
     for (const [key, v] of Object.entries(draft)) {
       const n = Number(v);
-      if (v !== "" && Number.isFinite(n) && n >= 0) prices[key] = n;
+      // 0 — "sotilmaydi" degani: backend rad etadi, bo'sh maydon kabi o'tkaziladi
+      if (v !== "" && Number.isFinite(n) && n > 0) prices[key] = n;
     }
     if (Object.keys(prices).length === 0) return;
 
     setSaving(true);
     setError(null);
     try {
-      // DB'ga darhol yoziladi, Beds24'ga fonda ketadi (07-fayl §8) —
-      // admin kutmaydi
       await api.setRates(from, to, prices);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -1545,15 +1535,6 @@ function PricingPanel({ onClose }) {
       setError(e.message);
     } finally {
       setSaving(false);
-    }
-  };
-
-  const resync = async (roomTypeId) => {
-    try {
-      await api.resyncRates([roomTypeId], from, to);
-      await load();
-    } catch (e) {
-      setError(e.message);
     }
   };
 
@@ -1586,18 +1567,11 @@ function PricingPanel({ onClose }) {
               <div key={key} className="flex items-center gap-2">
                 <span className="text-xs text-gray-600 w-24 flex-shrink-0">{type.label}</span>
                 <TextInput
-                  type="number" min={0}
+                  type="number" min={0} step="1000"
                   placeholder={r.mixed ? "har xil" : r.price != null ? String(r.price) : "—"}
                   value={draft[key] ?? ""}
                   onChange={(e) => setDraft((d) => ({ ...d, [key]: e.target.value }))}
                 />
-                <div className="flex items-center gap-1 w-10 flex-shrink-0">
-                  <RateSyncDot status={r.status} />
-                  {r.status === "error" && (
-                    <button onClick={() => resync(key)} title="Qayta yuborish"
-                      className="text-gray-400 hover:text-blue-600"><RotateCcw size={12} /></button>
-                  )}
-                </div>
               </div>
             );
           })
@@ -1611,7 +1585,7 @@ function PricingPanel({ onClose }) {
       )}
 
       <p className="text-xs text-gray-500">
-        O'zgarish Beds24 orqali OTA'larga yuboriladi.
+        Narx so'mda. Yangi narx sayt va yangi bronlarda darhol; mavjud bronlar summasi o'zgarmaydi.
       </p>
 
       <div className="flex items-center justify-end gap-2">
@@ -1638,36 +1612,29 @@ function GuestDots({ count }) {
   );
 }
 
-function ReservationBlock({ res, left, width, dimmed, highlighted, invalid, dragging, onOpen, onDragStart }) {
-  const src = SOURCES[res.source];
+/**
+ * Bron bloki — faqat bosiladi, surilmaydi (ISH_REJASI.md S1).
+ * Bosilganda tafsilot oynasi ochiladi.
+ */
+function ReservationBlock({ res, left, width, dimmed, highlighted, onOpen }) {
+  // Noma'lum manba (yangi OTA) oynani yiqitmasin
+  const src = SOURCES[res.source] || SOURCES.other;
   /* Backend hisoblagan summa: nonushta va bekor qilish jarimasi
-     ham kiradi (SAVOLLAR.md S10, S11). Eski javob uchun zaxira. */
-  const total = res.totalPrice != null
-    ? res.totalPrice
-    : res.pricePerNight * nightsBetween(fromKey(res.checkIn), fromKey(res.checkOut)) + (res.charges || []).reduce((s, c) => s + c.amount, 0);
-  const paid = (res.payments || []).reduce((s, p) => s + p.amount, 0);
-  const remaining = total - paid;
+     ham kiradi (SAVOLLAR.md S10, S11) — resMoney() */
+  const { remaining } = resMoney(res);
   const isPast = res.status === "checked_out";
   const isCancelled = res.status === "cancelled";
 
   return (
     <div
       onClick={onOpen}
-      className={`absolute top-1 bottom-1 rounded-md shadow-sm ${src.bar} ${src.text} px-2 py-1 flex flex-col justify-between overflow-hidden cursor-pointer
+      className={`absolute top-1 bottom-1 rounded-md shadow-sm ${src.bar} ${src.text} px-2 py-1 flex flex-col justify-between overflow-hidden cursor-pointer z-10
         ${dimmed ? "opacity-25" : "opacity-100"} ${highlighted ? "ring-2 ring-yellow-400" : ""}
-        ${invalid ? "ring-2 ring-red-500 bg-red-500" : ""} ${dragging ? "shadow-2xl z-30" : "z-10"}
         ${isPast ? "opacity-60" : ""} ${isCancelled ? "opacity-30 line-through" : ""}`}
-      style={{ left, width: Math.max(width - 4, 20), marginLeft: 2, transform: dragging ? "scale(1.02)" : undefined }}
+      style={{ left, width: Math.max(width - 4, 20), marginLeft: 2 }}
       title={`${res.guestName} • ${src.label}`}
     >
-      <div
-        className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize"
-        onMouseDown={(e) => onDragStart(e, "resize-left")}
-      />
-      <div
-        onMouseDown={(e) => onDragStart(e, "move")}
-        className="flex-1 min-w-0"
-      >
+      <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-1">
           <span className="text-xs font-semibold truncate">{res.guestName}</span>
           <div className="flex items-center gap-1 flex-shrink-0">
@@ -1684,10 +1651,6 @@ function ReservationBlock({ res, left, width, dimmed, highlighted, invalid, drag
           <Check size={13} strokeWidth={3} />
         )}
       </div>
-      <div
-        className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize"
-        onMouseDown={(e) => onDragStart(e, "resize-right")}
-      />
     </div>
   );
 }
@@ -1763,16 +1726,59 @@ function CreateReservationModal({ draft, rooms, today, priceForType, isRoomAvail
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const selectedRoom = rooms.find((r) => r.id === form.roomId);
   const nights = nightsBetween(fromKey(form.checkIn), fromKey(form.checkOut));
-  const total = nights * Number(form.price || 0);
-  const available = form.roomId && form.checkIn && form.checkOut && fromKey(form.checkOut) > fromKey(form.checkIn)
+  const datesOk = form.checkIn && form.checkOut && fromKey(form.checkOut) > fromKey(form.checkIn);
+  const available = form.roomId && datesOk
     ? isRoomAvailable(form.roomId, form.checkIn, form.checkOut) : true;
 
+  /* Tarif — butun oraliq bo'yicha (backend lib/money.ts
+     stayPriceFromRates bilan bir xil): har kecha o'z narxi,
+     narxsiz kecha — belgilanganlar o'rtachasi. Ilgari faqat bugungi
+     narx olinardi — juma/shanba narxi farq qilsa bron summasi va
+     "chegirma" tekshiruvi backenddan boshqacha chiqardi. */
+  const [stayTariff, setStayTariff] = useState(null);   // { total, perNight } | null
+  const [priceTouched, setPriceTouched] = useState(false);
+  useEffect(() => {
+    if (!selectedRoom || !datesOk) { setStayTariff(null); return; }
+    let alive = true;
+    const lastNight = toKey(addDays(fromKey(form.checkOut), -1));
+    api.ratePlans(form.checkIn, lastNight)
+      .then((rows) => {
+        if (!alive) return;
+        const prices = (rows || []).filter((r) => r.roomTypeId === selectedRoom.type).map((r) => r.price);
+        if (prices.length === 0) { setStayTariff(null); return; }
+        const known = sumMoney(prices);
+        const missing = Math.max(0, nights - prices.length);
+        const total = missing > 0 ? round2(known + (known / prices.length) * missing) : known;
+        // Kechalik narx 4 xona (sayt bilan bir xil): 350 / 3 = 116.6667,
+        // x3 = $350.00 — tarif jamisiga aynan teng, sent ortiq olinmaydi
+        const perNight = Math.round((total / nights) * 10000) / 10000;
+        setStayTariff({ total, perNight });
+        if (!priceTouched) setForm((f) => ({ ...f, price: perNight }));
+      })
+      .catch(() => { if (alive) setStayTariff(null); });
+    return () => { alive = false; };
+  }, [form.roomId, form.checkIn, form.checkOut]);   // eslint-disable-line
+
+  /* Nonushta narxi — joriy sozlama (admin panel → Oshxona). Bron
+     yaratilganda backend uni bronga ko'chiradi (S10). */
+  const [mealPrice, setMealPrice] = useState(null);
+  useEffect(() => {
+    api.mealPrice().then((i) => setMealPrice(Number(i.price) || 0)).catch(() => setMealPrice(null));
+  }, []);
+
+  const guests = (Number(form.adults) || 0) + (Number(form.children) || 0);
+  const roomTotal = round2(Number(form.price || 0) * nights);
+  const mealTotal = form.withMeal && mealPrice ? round2(mealPrice * guests * nights) : 0;
+  const total = sumMoney([roomTotal, mealTotal]);
+
   /* Chegirma: narx tarifdan past bo'lsa sabab talab qilinadi.
-     Backend ham shu qoidani tekshiradi (SAVOLLAR.md S4) — bu
-     yerdagi tekshiruv faqat qulaylik uchun: xodim "Bron yaratish"
-     ni bosgandan keyin emas, darhol ko'radi. */
-  const tariffPrice = selectedRoom ? priceForType(selectedRoom.type) : 0;
-  const isDiscounted = tariffPrice > 0 && Number(form.price) < tariffPrice;
+     Backend ham shu qoidani tekshiradi (SAVOLLAR.md S4) — jami
+     summalar sentda solishtiriladi. Bu yerdagi tekshiruv faqat
+     qulaylik uchun: xodim darhol ko'radi. */
+  const tariffPrice = stayTariff ? stayTariff.perNight : (selectedRoom ? priceForType(selectedRoom.type) : 0);
+  const isDiscounted = stayTariff
+    ? toCents(roomTotal) < toCents(stayTariff.total)
+    : tariffPrice > 0 && toCents(form.price) < toCents(tariffPrice);
   const reasonOk = !isDiscounted || form.priceReason.trim().length >= 3;
 
   const canSubmit = form.guestName.trim() && fromKey(form.checkOut) > fromKey(form.checkIn) && available && Number.isFinite(Number(form.price)) && Number(form.price) >= 0 && reasonOk;
@@ -1796,13 +1802,13 @@ function CreateReservationModal({ draft, rooms, today, priceForType, isRoomAvail
           <Field label="Kattalar"><TextInput type="number" min={1} value={form.adults} onChange={(e) => set("adults", Number(e.target.value))} /></Field>
           <Field label="Bolalar"><TextInput type="number" min={0} value={form.children} onChange={(e) => set("children", Number(e.target.value))} /></Field>
           <Field label="Xona">
-            <SelectInput value={form.roomId} onChange={(e) => { set("roomId", e.target.value); const r = rooms.find((x) => x.id === e.target.value); set("price", priceForType(r.type)); }}>
+            <SelectInput value={form.roomId} onChange={(e) => { set("roomId", e.target.value); setPriceTouched(false); const r = rooms.find((x) => x.id === e.target.value); set("price", priceForType(r.type)); }}>
               {rooms.map((r) => <option key={r.id} value={r.id}>{r.number} · {typeLabel(r.type)}</option>)}
             </SelectInput>
           </Field>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Kechalik narx"><TextInput type="number" min={0} step="1" value={form.price} onChange={(e) => set("price", e.target.value)} /></Field>
+          <Field label="Kechalik narx, so'm"><TextInput type="number" min={0} step="1000" value={form.price} onChange={(e) => { setPriceTouched(true); set("price", e.target.value); }} /></Field>
           <Field label="Bron manbasi">
             <SelectInput value={form.source} onChange={(e) => set("source", e.target.value)}>
               {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -1815,7 +1821,7 @@ function CreateReservationModal({ draft, rooms, today, priceForType, isRoomAvail
             rad etiladi (SAVOLLAR.md S4). Maydon shu yerda
             ko'rinmasa, xodim tushunarsiz xato olardi. */}
         {isDiscounted && (
-          <Field label={"Chegirma sababi (tarif " + money(tariffPrice) + ")"}>
+          <Field label={"Chegirma sababi (tarif " + (stayTariff ? money(stayTariff.total) + " / " + nights + " kecha" : money(tariffPrice)) + ")"}>
             <TextInput
               value={form.priceReason}
               onChange={(e) => set("priceReason", e.target.value)}
@@ -1828,7 +1834,12 @@ function CreateReservationModal({ draft, rooms, today, priceForType, isRoomAvail
             className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
           <ChefHat size={15} className="text-gray-500" /> Ovqat bilan
         </label>
-        <Field label="Hozir to'langan"><TextInput type="number" min={0} value={form.paid} onChange={(e) => set("paid", e.target.value)} /></Field>
+        {form.withMeal && mealPrice === 0 && (
+          <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-2">
+            <AlertTriangle size={13} /> Nonushta narxi belgilanmagan — admin panel → Oshxona bo'limida kiriting.
+          </div>
+        )}
+        <Field label="Hozir to'langan, so'm"><TextInput type="number" min={0} step="1000" value={form.paid} onChange={(e) => set("paid", e.target.value)} /></Field>
         <Field label="Izoh"><textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} rows={2} className={inputCls} /></Field>
 
         {!available && (
@@ -1837,28 +1848,43 @@ function CreateReservationModal({ draft, rooms, today, priceForType, isRoomAvail
           </div>
         )}
 
-        <div className="rounded-md bg-gray-50 border border-gray-200 p-2.5 flex justify-between text-sm">
-          <span className="text-gray-500">{nights} kecha × {money(form.price || 0)}</span>
-          <span className="font-mono font-semibold">{money(total)}</span>
+        <div className="rounded-md bg-gray-50 border border-gray-200 p-2.5 space-y-1 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-500">{nights} kecha × {money(form.price || 0)}</span>
+            <span className="font-mono">{money(roomTotal)}</span>
+          </div>
+          {mealTotal > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-500">Nonushta: {guests} kishi × {nights} kecha × {money(mealPrice)}</span>
+              <span className="font-mono">{money(mealTotal)}</span>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-gray-200 pt-1">
+            <span className="text-gray-700 font-medium">Jami</span>
+            <span className="font-mono font-semibold">{money(total)}</span>
+          </div>
         </div>
       </div>
     </Modal>
   );
 }
 
+/* ============================== SUMMA ============================== */
+
+/* Bron summasi — so'mda */
+function Amount({ n, className = "" }) {
+  return <span className={`font-mono ${className}`}>{money(n)}</span>;
+}
+
 /* ============================== DETAIL MODAL ============================== */
 
 function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, onOpenPayment, onOpenCharge, onOpenChangeRoom, onOpenChangeDates, onCancel, onReversePayment }) {
   const room = rooms.find((r) => r.id === res.roomId);
-  const nights = nightsBetween(fromKey(res.checkIn), fromKey(res.checkOut));
-  const chargesTotal = (res.charges || []).reduce((s, c) => s + c.amount, 0);
-  const mealTotal = res.mealTotal || 0;
-  const total = res.totalPrice != null
-    ? res.totalPrice
-    : res.pricePerNight * nights + chargesTotal + mealTotal;
-  const paid = (res.payments || []).reduce((s, p) => s + p.amount, 0);
-  const remaining = total - paid;
-  const src = SOURCES[res.source];
+  const { nights, roomTotal, mealTotal, total, paid, remaining, refundDue } = resMoney(res);
+  const isCancelledRes = res.status === "cancelled" || res.status === "no_show";
+  const guests = res.adults + (res.children || 0);
+  // Noma'lum manba (yangi OTA) oynani yiqitmasin
+  const src = SOURCES[res.source] || SOURCES.other;
 
   return (
     <Modal
@@ -1895,6 +1921,10 @@ function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, on
           )}
           <div className="flex items-center gap-2 text-gray-600"><CalendarClock size={14} className="text-gray-400" /> {fmtShort(fromKey(res.checkIn))} → {fmtShort(fromKey(res.checkOut))}</div>
           <div className="flex items-center gap-2 text-gray-600"><DollarSign size={14} className="text-gray-400" /> {money(res.pricePerNight)}/kecha × {nights}</div>
+          {res.code && (
+            /* Sayt broni kodi — mehmon telefonda aytadi */
+            <div className="flex items-center gap-2 text-gray-600 col-span-2"><StickyNote size={14} className="text-gray-400" /> Bron kodi: <span className="font-mono">{res.code}</span></div>
+          )}
         </div>
 
         {/* Chegirma sababi (SAVOLLAR.md S4) — nega arzon sotilgani */}
@@ -1917,10 +1947,11 @@ function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, on
           </div>
         )}
 
+        {/* Tarix (chiqqan, bekor, kelmagan) o'zgartirilmaydi — backend rad etadi */}
         <div className="flex gap-2 flex-wrap">
-          <Btn onClick={onOpenChangeRoom}><ArrowLeftRight size={13} /> Xonani almashtirish</Btn>
-          <Btn onClick={onOpenChangeDates}><CalendarClock size={13} /> Sanalarni o'zgartirish</Btn>
-          <Btn onClick={onOpenCharge}><Plus size={13} /> Qo'shimcha xarajat</Btn>
+          {isMovable(res) && <Btn onClick={onOpenChangeRoom}><ArrowLeftRight size={13} /> Xonani almashtirish</Btn>}
+          {isMovable(res) && <Btn onClick={onOpenChangeDates}><CalendarClock size={13} /> Sanalarni o'zgartirish</Btn>}
+          {!isCancelledRes && <Btn onClick={onOpenCharge}><Plus size={13} /> Qo'shimcha xarajat</Btn>}
         </div>
 
         <div className="rounded-lg border border-gray-200 overflow-hidden">
@@ -1929,13 +1960,26 @@ function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, on
             <Btn variant="subtle" onClick={onOpenPayment}><CreditCard size={13} /> To'lov qo'shish</Btn>
           </div>
           <div className="p-3 space-y-2 text-sm">
-            <div className="flex justify-between"><span className="text-gray-500">Xona ({nights} kecha)</span><span className="font-mono">{money(res.pricePerNight * nights)}</span></div>
-            {(res.charges || []).map((c) => (
-              <div key={c.id} className="flex justify-between text-gray-500"><span>+ {c.label}</span><span className="font-mono">{money(c.amount)}</span></div>
-            ))}
-            <div className="flex justify-between font-semibold border-t border-gray-100 pt-2"><span>Jami</span><span className="font-mono">{money(total)}</span></div>
-            <div className="flex justify-between text-emerald-700"><span>To'langan</span><span className="font-mono">{money(paid)}</span></div>
-            <div className={`flex justify-between font-semibold ${remaining > 0 ? "text-red-600" : "text-gray-400"}`}><span>Qoldiq</span><span className="font-mono">{money(Math.max(remaining, 0))}</span></div>
+            {isCancelledRes ? (
+              /* Bekor qilingan bron summasi — faqat jarima (S11) */
+              <div className="flex justify-between"><span className="text-gray-500">Bekor qilish jarimasi</span><Amount n={res.cancellationFee || 0} /></div>
+            ) : (
+              <>
+                <div className="flex justify-between"><span className="text-gray-500">Xona ({nights} kecha)</span><Amount n={roomTotal} /></div>
+                {mealTotal > 0 && (
+                  <div className="flex justify-between text-gray-500"><span>+ Nonushta ({guests} kishi × {nights} kecha × {money(res.mealPricePerPerson)})</span><span className="font-mono">{money(mealTotal)}</span></div>
+                )}
+                {(res.charges || []).map((c) => (
+                  <div key={c.id} className="flex justify-between text-gray-500"><span>+ {c.label}</span><span className="font-mono">{money(c.amount)}</span></div>
+                ))}
+              </>
+            )}
+            <div className="flex justify-between font-semibold border-t border-gray-100 pt-2"><span>Jami</span><Amount n={total} /></div>
+            <div className="flex justify-between text-emerald-700"><span>To'langan</span><Amount n={paid} /></div>
+            <div className={`flex justify-between font-semibold ${remaining > 0 ? "text-red-600" : "text-gray-400"}`}><span>Qoldiq</span><Amount n={remaining} /></div>
+            {refundDue > 0 && (
+              <div className="flex justify-between font-semibold text-amber-700"><span>Qaytarilishi kerak</span><Amount n={refundDue} /></div>
+            )}
 
             {res.payments && res.payments.length > 0 && (
               <div className="pt-2 mt-2 border-t border-gray-100 space-y-1">
@@ -1964,21 +2008,22 @@ function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, on
 
 function PaymentModal({ res, onClose, onAdd }) {
   /* Backend hisoblagan summa: nonushta va bekor qilish jarimasi
-     ham kiradi (SAVOLLAR.md S10, S11). Eski javob uchun zaxira. */
-  const total = res.totalPrice != null
-    ? res.totalPrice
-    : res.pricePerNight * nightsBetween(fromKey(res.checkIn), fromKey(res.checkOut)) + (res.charges || []).reduce((s, c) => s + c.amount, 0);
-  const paid = (res.payments || []).reduce((s, p) => s + p.amount, 0);
-  const [amount, setAmount] = useState(Math.max(total - paid, 0));
+     ham kiradi (SAVOLLAR.md S10, S11) — resMoney() */
+  const { remaining } = resMoney(res);
+  const [amount, setAmount] = useState(remaining);
   const [method, setMethod] = useState("Naqd");
   const [note, setNote] = useState("");
 
   return (
-    <Modal title="To'lov qo'shish" subtitle={res.guestName} onClose={onClose} width={380}
+    <Modal title="To'lov qo'shish" subtitle={res.guestName} onClose={onClose} width={400}
       footer={<><Btn onClick={onClose}>Bekor qilish</Btn><Btn variant="primary" disabled={!amount || amount <= 0} onClick={() => onAdd(amount, method, note)}>To'lov qo'shish</Btn></>}>
       <div className="space-y-3">
-        <div className="text-xs text-gray-500">Qolgan qarz: <span className="font-mono font-semibold text-gray-800">{money(Math.max(total - paid, 0))}</span></div>
-        <Field label="Summa"><TextInput type="number" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></Field>
+        <div className="text-xs text-gray-500">
+          Qolgan qarz: <span className="font-mono font-semibold text-gray-800">{money(remaining)}</span>
+        </div>
+        <Field label="Summa, so'm">
+          <TextInput type="number" min={0} step="1000" value={amount} onChange={(e) => setAmount(Number(e.target.value))} />
+        </Field>
         <Field label="To'lov usuli">
           <SelectInput value={method} onChange={(e) => setMethod(e.target.value)}>
             {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -1992,13 +2037,13 @@ function PaymentModal({ res, onClose, onAdd }) {
 
 function ChargeModal({ onClose, onAdd }) {
   const [label, setLabel] = useState("Minibar");
-  const [amount, setAmount] = useState(10);
+  const [amount, setAmount] = useState(50000);
   return (
     <Modal title="Qo'shimcha xarajat" onClose={onClose} width={360}
       footer={<><Btn onClick={onClose}>Bekor qilish</Btn><Btn variant="primary" disabled={!label || !amount} onClick={() => onAdd(label, amount)}>Qo'shish</Btn></>}>
       <div className="space-y-3">
         <Field label="Tavsif"><TextInput value={label} onChange={(e) => setLabel(e.target.value)} /></Field>
-        <Field label="Summa"><TextInput type="number" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></Field>
+        <Field label="Summa, so'm"><TextInput type="number" min={0} step="1000" value={amount} onChange={(e) => setAmount(Number(e.target.value))} /></Field>
       </div>
     </Modal>
   );
@@ -2006,7 +2051,8 @@ function ChargeModal({ onClose, onAdd }) {
 
 function ChangeRoomModal({ res, rooms, availableRoomsFor, onClose, onConfirm }) {
   const current = rooms.find((r) => r.id === res.roomId);
-  const available = availableRoomsFor(res.checkIn, res.checkOut, res.id).filter((r) => r.id !== res.roomId);
+  const available = availableRoomsFor(res.checkIn, res.checkOut, res.id)
+    .filter((r) => r.id !== res.roomId);
   const [selected, setSelected] = useState(null);
   return (
     <Modal title="Xonani almashtirish" subtitle={`Hozirda Xona ${current?.number}`} onClose={onClose} width={400}
@@ -2043,34 +2089,23 @@ function ChangeDatesModal({ res, onClose, onConfirm }) {
 }
 
 function CheckoutModal({ res, onClose, onConfirm }) {
-  const nights = nightsBetween(fromKey(res.checkIn), fromKey(res.checkOut));
-  const chargesTotal = (res.charges || []).reduce((s, c) => s + c.amount, 0);
-
   /* Jami summa BACKENDDAN olinadi: u nonushtani ham hisoblaydi
      (SAVOLLAR.md S10). Mahalliy hisob eski formulada qolib,
-     mehmon kam to'lardi. `totalPrice` bo'lmasa (eski javob)
-     mahalliy hisobga qaytamiz. */
-  const mealTotal = res.mealTotal || 0;
-  const total = res.totalPrice != null
-    ? res.totalPrice
-    : res.pricePerNight * nights + chargesTotal + mealTotal;
-  const paid = res.paidAmount != null
-    ? res.paidAmount
-    : (res.payments || []).reduce((s, p) => s + p.amount, 0);
-  const remaining = total - paid;
+     mehmon kam to'lardi — resMoney() */
+  const { roomTotal, mealTotal, chargesTotal, total, paid, remaining } = resMoney(res);
   return (
     <Modal title="Chiqish" subtitle={res.guestName} onClose={onClose} width={380}
       footer={<><Btn onClick={onClose}>Bekor qilish</Btn><Btn variant="primary" onClick={onConfirm}><LogOut size={14} /> Chiqishni tasdiqlash</Btn></>}>
       <div className="space-y-2 text-sm">
-        <div className="flex justify-between"><span className="text-gray-500">Xona narxi</span><span className="font-mono">{money(res.pricePerNight * nights)}</span></div>
+        <div className="flex justify-between"><span className="text-gray-500">Xona narxi</span><span className="font-mono">{money(roomTotal)}</span></div>
         {mealTotal > 0 && (
           <div className="flex justify-between"><span className="text-gray-500">Nonushta</span><span className="font-mono">{money(mealTotal)}</span></div>
         )}
         <div className="flex justify-between"><span className="text-gray-500">Qo'shimcha xarajatlar</span><span className="font-mono">{money(chargesTotal)}</span></div>
-        <div className="flex justify-between border-t border-gray-100 pt-2"><span className="text-gray-500">Jami</span><span className="font-mono font-semibold">{money(total)}</span></div>
-        <div className="flex justify-between"><span className="text-gray-500">To'langan</span><span className="font-mono">{money(paid)}</span></div>
+        <div className="flex justify-between border-t border-gray-100 pt-2"><span className="text-gray-500">Jami</span><Amount n={total} className="font-semibold" /></div>
+        <div className="flex justify-between"><span className="text-gray-500">To'langan</span><Amount n={paid} /></div>
         <div className={`flex justify-between font-semibold border-t border-gray-100 pt-2 ${remaining > 0 ? "text-red-600" : "text-emerald-600"}`}>
-          <span>Qolgan qarz</span><span className="font-mono">{money(Math.max(remaining, 0))}</span>
+          <span>Qolgan qarz</span><Amount n={remaining} />
         </div>
         {remaining > 0 && (
           <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-2">

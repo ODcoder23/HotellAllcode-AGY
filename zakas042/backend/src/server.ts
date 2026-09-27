@@ -1,7 +1,8 @@
 /**
  * Imron Hotel PMS — backend server
  *
- * FAZA 2A: ichki REST API (Shaxmatka uchun)
+ * REST API (sayt, Shaxmatka, admin panel), WebSocket, davriy
+ * vazifalar va Telegram botlar. Frontend ham shu serverdan beriladi.
  *
  * Ishga tushirish:  npm run dev
  */
@@ -16,31 +17,33 @@ import { roomsRouter } from "./routes/rooms.js";
 import { reservationsRouter } from "./routes/reservations.js";
 import { ratesRouter } from "./routes/rates.js";
 import { adminRouter } from "./routes/admin.js";
-import { webhooksRouter } from "./routes/webhooks.js";
 import { isRedisHealthy, getQueueCounts, shutdownQueues } from "./queues/index.js";
 import { startRealtimeServer, stopRealtimeServer, getRealtimeStats } from "./realtime/server.js";
 import { authRouter } from "./routes/auth.js";
 import { publicRouter } from "./routes/public.js";
-import { parseAuth, authRequired } from "./lib/authMiddleware.js";
-import { internalLimiter, webhookLimiter } from "./lib/rateLimit.js";
-import "./queues/workers.js";     // worker'lar ishga tushadi
+import { parseAuth, authRequired, requireAuth, requirePermission } from "./lib/authMiddleware.js";
+import { internalLimiter } from "./lib/rateLimit.js";
 import { scheduleMaintenance } from "./queues/scheduler.js";
-import "./queues/deadLetter.js";   // TZ 11-band: beds24-retry navbati
 import { startBot, stopBot } from "./bot/index.js";
 import { startCleaningBot, stopCleaningBot } from "./bot/cleaning-bot.js";
 import { startKitchenBot, stopKitchenBot } from "./bot/kitchen-bot.js";
 
 const app = express();
 
-// raw body saqlanadi — webhook signature (HMAC) tekshiruvi uchun
-// (04-fayl §9). JSON.stringify(req.body) ishlatib bo'lmaydi:
-// kalitlar tartibi va bo'sh joylar o'zgarib, hash mos kelmaydi.
-app.use(express.json({
-  limit: "2mb",
-  verify: (req, _res, buf) => {
-    (req as express.Request & { rawBody?: string }).rawBody = buf.toString("utf8");
-  },
-}));
+// 2 MB: xodim va xona turi rasmlari `data:` URL bo'lib keladi
+app.use(express.json({ limit: "2mb" }));
+
+// Brauzer xavfsizlik sarlavhalari — barcha javoblarga.
+// `nosniff`: brauzer javob turini taxmin qilmasin (yuklangan fayl
+// skript bo'lib ishlamasin). `SAMEORIGIN`: sahifalar begona saytda
+// iframe ichida ochilmasin (clickjacking); admin panel Shaxmatkani
+// o'z iframe'ida ochadi — u bir xil origin.
+app.use((_req, res, next) => {
+  res.header("X-Content-Type-Options", "nosniff");
+  res.header("X-Frame-Options", "SAMEORIGIN");
+  res.header("Referrer-Policy", "same-origin");
+  next();
+});
 
 // CORS (TZ 18-band)
 //
@@ -93,9 +96,9 @@ app.get("/health", async (_req, res) => {
     isRedisHealthy(),
   ]);
 
-  // TZ 17, 19-band: Redis yo'q bo'lsa ham PMS ishlashda davom etadi.
-  // Webhook'lar DB'da QUEUED holatida to'planadi, Redis qaytganda
-  // yuboriladi. Shuning uchun "degraded", "down" emas.
+  // Redis yo'q bo'lsa ham PMS ishlashda davom etadi (bron, to'lov,
+  // Shaxmatka) — faqat davriy vazifalar kechikadi. Shuning uchun
+  // "degraded", "down" emas.
   res.status(dbOk ? 200 : 503).json({
     status: dbOk ? (redisOk ? "ok" : "degraded") : "down",
     database: dbOk ? "connected" : "disconnected",
@@ -106,13 +109,12 @@ app.get("/health", async (_req, res) => {
       auth: authRequired(),
       rateLimit: !config.rateLimitDisabled,
     },
-    phase: "14",
     timestamp: new Date().toISOString(),
   });
 });
 
-/** Navbat holati (05-fayl §8) */
-app.get("/api/admin/queues", async (_req, res) => {
+/** Navbat holati (05-fayl §8). Auth bilan — ISH_REJASI 1.2 */
+app.get("/api/admin/queues", requireAuth, requirePermission("audit.read"), async (_req, res) => {
   try {
     res.json({ redis: await isRedisHealthy(), queues: await getQueueCounts() });
   } catch (e) {
@@ -131,18 +133,11 @@ app.use("/api/rooms", internalLimiter, roomsRouter);
 app.use("/api/reservations", internalLimiter, reservationsRouter);
 app.use("/api/rate-plans", internalLimiter, ratesRouter);
 app.use("/api/admin", internalLimiter, adminRouter);
-app.use("/api/webhooks", webhookLimiter, webhooksRouter);
 
-// --- Admin sahifalari (backend ichida) ----------------------
-// ISH CHEGARASI: mavjud Admin Panel kodiga kirish yo'q, shuning
-// uchun mapping/ulanish/log sahifalari shu yerda. Oddiy HTML+fetch,
-// framework yo'q. Keyinroq mavjud panelga ko'chirish mumkin.
+// --- Yuklangan fayllar (tozalash rasmlari) ------------------
 // fileURLToPath — Windows'da URL.pathname oldiga "/" qo'shadi
-// --- Yuklangan fayllar (tozalash rasmlari va b.) -------------
 const uploadsDir = fileURLToPath(new URL("../public/uploads", import.meta.url));
 app.use("/uploads", express.static(uploadsDir));
-
-app.use("/admin", express.static(fileURLToPath(new URL("../public/admin", import.meta.url))));
 
 // --- Frontend (sayt, admin panel, Shaxmatka) ----------------
 // Birlashtirishdan keyin uchala frontend shu serverdan xizmat
@@ -158,8 +153,7 @@ app.get("/", (_req, res) => {
   res.sendFile(join(appDir, "index.html"));
 });
 
-// "/admin-panel" → xodimlar paneli.
-// "/admin" band: yuqoridagi mapping/connection/sync-log sahifalari.
+// "/admin-panel" → xodimlar paneli
 app.get(["/admin-panel", "/panel"], (_req, res) => {
   res.sendFile(join(appDir, "admin-panel.html"));
 });
@@ -171,7 +165,7 @@ app.get("/shaxmatka", (_req, res) => {
 
 // --- 404 ----------------------------------------------------
 app.use((req, res) => {
-  res.status(404).json({ error: `Endpoint topilmadi: ${req.method} ${req.path}` });
+  res.status(404).json({ error: `Endpoint topilmadi: ${req.method} ${req.path}`, code: "NOT_FOUND" });
 });
 
 // --- Xato handler (oxirgi) ----------------------------------
@@ -180,9 +174,8 @@ app.use(errorHandler);
 // --- Ishga tushirish ----------------------------------------
 //
 // Ishlab chiqarishda xavfsiz bo'lmagan sozlama bilan ishga
-// tushirmaymiz: `AUTH_REQUIRED=false` yoki dev webhook tokeni
-// bilan chiqish mehmonlar ma'lumotini ochiq qoldirardi.
-// Dev rejimida hech narsa tekshirilmaydi.
+// tushirmaymiz: `AUTH_REQUIRED=false` bilan chiqish mehmonlar
+// ma'lumotini ochiq qoldirardi. Dev rejimida hech narsa tekshirilmaydi.
 assertProductionSafe();
 
 // `config.host` berilsa faqat o'sha interfeysda tinglaydi
@@ -192,7 +185,7 @@ const server = (config.host
   : app.listen(config.port, onReady));
 
 function onReady() {
-  console.log(`\n  Imron PMS backend — FAZA 14`);
+  console.log(`\n  Imron PMS backend`);
   console.log(`  http://localhost:${config.port}`);
   console.log(`  DB: ${config.databaseUrl.replace(/:[^:@]*@/, ":***@")}`);
 }
@@ -201,12 +194,12 @@ function onReady() {
 // emas, Nginx ham bitta proxy qoidasi bilan o'tkazadi (09-fayl §4).
 startRealtimeServer(server);
 
-// Davriy vazifalar (13-fayl §5): to'lanmagan bronlarni tozalash.
-// Redis yo'q bo'lsa jim o'tkazib yuboriladi (TZ 17, 19-band).
+// Davriy vazifalar (queues/scheduler.ts). Redis yo'q bo'lsa jim
+// o'tkazib yuboriladi — PMS ishlayveradi.
 void scheduleMaintenance();
 
 // Telegram botlar. Token yo'q bo'lsa jim o'tkazib yuboriladi —
-// botlar ixtiyoriy qism (TZ 19-band ruhida).
+// botlar ixtiyoriy qism.
 //
 //   1-bot: boshqaruv (egasi/menejer) — moliya, bronlar
 //   2-bot: tozalik (farroshlar guruhi) — topshiriqlar

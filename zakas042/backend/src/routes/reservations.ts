@@ -18,12 +18,25 @@ import { z } from "zod";
 import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
 import { audit } from "../services/auditLog.js";
 import { asyncHandler, ValidationError } from "../lib/errors.js";
-import { serializeReservation } from "../lib/serialize.js";
+import { fromDateKey, isValidDateKey, serializeReservation } from "../lib/serialize.js";
+import { addDays, hotelToday } from "../lib/hotelTime.js";
 import * as svc from "../services/reservations.js";
+import {
+  MONEY_LIMITS, moneyAmount, nightPriceAmount, positiveMoney, signedMoney,
+} from "../lib/moneySchema.js";
 
 export const reservationsRouter = Router();
 
-const dateKey = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Sana 'YYYY-MM-DD' shaklida bo'lishi kerak");
+/**
+ * "YYYY-MM-DD" va haqiqiy kalendar sanasi. "2026-02-31" shaklan
+ * to'g'ri, lekin ilgari jimgina 3-martga aylanib bron yaratardi.
+ */
+const dateKey = z.string().refine(isValidDateKey, "Sana 'YYYY-MM-DD' shaklida va haqiqiy bo'lishi kerak");
+
+/** Bron manbalari — Shaxmatka SOURCES kalitlari (Prisma enum bilan bir xil) */
+const SOURCE_KEYS = [
+  "direct", "website", "booking_com", "airbnb", "expedia", "ostrovok", "phone", "walk_in", "other",
+] as const;
 
 const parse = <T>(schema: z.ZodType<T>, data: unknown): T => {
   const r = schema.safeParse(data);
@@ -33,9 +46,13 @@ const parse = <T>(schema: z.ZodType<T>, data: unknown): T => {
   return r.data;
 };
 
-// --- GET /api/reservations ----------------------------------
+// --- GET /api/reservations?from=&to= ------------------------
+// Ikkalasi berilmasa — hammasi. Noto'g'ri sana 400 (ilgari 500 edi)
 reservationsRouter.get("/", requireAuth, requirePermission("reservation.read"), asyncHandler(async (req, res) => {
-  const { from, to } = req.query;
+  const { from, to } = parse(
+    z.object({ from: dateKey.optional(), to: dateKey.optional() }),
+    req.query
+  );
   const list = await svc.listReservations(from, to);
   res.json(list.map(serializeReservation));
 }));
@@ -48,15 +65,8 @@ reservationsRouter.get("/:id", requireAuth, requirePermission("reservation.read"
 
 // --- POST /api/reservations ---------------------------------
 
-/**
- * Narx yuqori chegarasi (SAVOLLAR.md S5).
- *
- * Ilgari 1 000 000 edi — eng qimmat tarif 800 000 bo'lgani uchun
- * sig'ardi, lekin bayram narxi yoki inflyatsiyada yetmay qolardi.
- * 50 mln — real narxdan ancha yuqori, lekin xato kiritilgan
- * "450000000" ni hali ham to'sadi.
- */
-const MAX_PRICE = 50_000_000;
+/** Narx va to'lov chegaralari (SAVOLLAR.md S5) — so'm (`lib/moneySchema.ts`) */
+const nightPrice = nightPriceAmount(MONEY_LIMITS.pricePerNight);
 
 /**
  * O'tmishga bron qilish chegarasi (SAVOLLAR.md S8).
@@ -67,17 +77,10 @@ const MAX_PRICE = 50_000_000;
  */
 const MAX_BACKDATE_DAYS = 30;
 
-/** Bugungi kun (UTC yarim tuni) — @db.Date bilan bir xil o'lchov */
-function todayUtc(): Date {
-  const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
-}
-
 function assertNotTooOld(checkIn: string): void {
-  const date = new Date(checkIn + "T00:00:00.000Z");
-  const limit = todayUtc();
-  limit.setUTCDate(limit.getUTCDate() - MAX_BACKDATE_DAYS);
+  const date = fromDateKey(checkIn);
+  // Mehmonxona (Toshkent) kuni bo'yicha
+  const limit = addDays(hotelToday(), -MAX_BACKDATE_DAYS);
 
   if (date < limit) {
     throw new ValidationError(
@@ -91,9 +94,8 @@ function assertNotTooOld(checkIn: string): void {
  * Matn maydonlari uzunligi cheklangan.
  *
  * NEGA: cheklovsiz 10 000 belgilik ism DB'ga tushib, Shaxmatka
- * jadvalini buzadi va Beds24 so'rovini rad ettiradi (POST payload
- * ~1MB chegarasi, 03-fayl §3). Yuzlab shunday bron esa DB'ni
- * shishiradi. Bu hujum emas, lekin himoyasi arzon.
+ * jadvalini buzadi. Yuzlab shunday bron esa DB'ni shishiradi.
+ * Bu hujum emas, lekin himoyasi arzon.
  */
 /**
  * Telefon MAJBURIY (2026-09-17 qarori, SAVOLLAR.md S7).
@@ -120,15 +122,22 @@ const createSchema = z.object({
   checkOut: dateKey,
   adults: z.number().int().min(1).max(20).optional(),
   children: z.number().int().min(0).max(20).optional(),
-  source: z.string().max(50).optional(),
-  pricePerNight: z.number().min(0).max(MAX_PRICE),
+  // Noma'lum qiymat ilgari Prisma enum xatosi bilan 500 berardi
+  source: z.string().transform((v) => v.toLowerCase()).pipe(z.enum(SOURCE_KEYS)).optional(),
+  pricePerNight: nightPrice,
   // Narx tarifdan past bo'lsa sabab (S4) — servis qatlami talab qiladi
   priceReason: z.string().max(200).optional(),
   notes: z.string().max(2000).optional(),
   withMeal: z.boolean().optional(),
-  status: z.string().optional(),
-  initialPayment: z.number().min(0).optional(),
-  paymentMethod: z.string().optional(),
+  /**
+   * Faqat boshlang'ich holatlar. Ilgari istalgan status qabul qilinardi —
+   * bronni to'g'ridan-to'g'ri "chiqib ketgan" yoki "bekor qilingan"
+   * holatda yaratib, status o'tish qoidalarini (va tozalash, xona
+   * holatini) chetlab o'tish mumkin edi. Kirish — alohida amal.
+   */
+  status: z.string().transform((v) => v.toLowerCase()).pipe(z.enum(["confirmed", "pending_payment"])).optional(),
+  initialPayment: moneyAmount(MONEY_LIMITS.payment).optional(),
+  paymentMethod: z.string().max(50).optional(),
 });
 
 reservationsRouter.post("/", requireAuth, requirePermission("reservation.write"), asyncHandler(async (req: AuthedRequest, res) => {
@@ -146,7 +155,7 @@ const patchSchema = z.object({
   phone: z.string().max(30).optional(),
   adults: z.number().int().min(1).max(20).optional(),
   children: z.number().int().min(0).max(20).optional(),
-  pricePerNight: z.number().min(0).max(MAX_PRICE).optional(),
+  pricePerNight: nightPrice.optional(),
   priceReason: z.string().max(200).optional(),
   notes: z.string().max(2000).optional(),
   withMeal: z.boolean().optional(),
@@ -237,12 +246,12 @@ reservationsRouter.post("/:id/change-dates", requireAuth, requirePermission("res
 }));
 
 // --- To'lov va xarajat --------------------------------------
-// To'lov summasi ham cheklangan: bir kechada 50 mln dan ortiq
-// naqd qabul qilish xato kiritish belgisi
+// To'lov summasi ham cheklangan: juda katta summa — xato kiritish
+// belgisi (qo'shimcha nol). Manfiy — qaytarish.
 reservationsRouter.post("/:id/payments", requireAuth, requirePermission("payment.write"), asyncHandler(async (req: AuthedRequest, res) => {
   const { amount, method, note } = parse(
     z.object({
-      amount: z.number().min(-MAX_PRICE).max(MAX_PRICE),
+      amount: signedMoney(MONEY_LIMITS.payment),
       method: z.string().min(1).max(50),
       note: z.string().max(500).optional(),
     }),
@@ -283,7 +292,7 @@ reservationsRouter.post("/:id/charges", requireAuth, requirePermission("payment.
   const { label, amount } = parse(
     z.object({
       label: z.string().min(1).max(200),
-      amount: z.number().positive("Summa musbat bo'lishi kerak").max(MAX_PRICE),
+      amount: positiveMoney(MONEY_LIMITS.payment),
     }),
     req.body
   );

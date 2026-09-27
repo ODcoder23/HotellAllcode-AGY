@@ -22,8 +22,7 @@ import type { Server } from "node:http";
 import IORedis from "ioredis";
 import { config } from "../lib/config.js";
 import { now, type RealtimeMessage } from "./events.js";
-import { verifyToken, can } from "../services/auth.js";
-import { ADMIN_EVENTS } from "./events.js";
+import { verifyToken, resolveSessionUser } from "../services/auth.js";
 import type { UserRole } from "@prisma/client";
 
 const CHANNEL = "pms:realtime";
@@ -32,10 +31,9 @@ const SERVER_STARTED_AT = now();
 /**
  * Ulangan klientlar va ularning rollari.
  *
- * Rol saqlanadi, chunki event yuborishda RBAC qo'llanadi (09-fayl
- * §4): `STAFF` texnik event'larni (`sync.failed`,
- * `webhook.needs_attention`) olmaydi — ular unga tushunarsiz va
- * ish jarayoniga aloqasi yo'q.
+ * Rol va email ulanish jurnali uchun saqlanadi. Hozirgi hamma event
+ * (bron, to'lov, xona, STOP) `reservation.read` huquqi doirasida —
+ * u to'rtala rolda bor.
  */
 type ClientInfo = { role: UserRole; email: string };
 
@@ -60,13 +58,8 @@ function sendLocal(message: RealtimeMessage): void {
   const json = JSON.stringify(message);
   let sent = 0;
 
-  // Texnik event'lar faqat `synclog.read` huquqi borlarga
-  // (09-fayl §4, 10-fayl §3): ADMIN va MANAGER
-  const isTechnical = (ADMIN_EVENTS as readonly string[]).includes(message.type);
-
-  for (const [ws, info] of clients) {
+  for (const [ws] of clients) {
     if (ws.readyState !== WebSocket.OPEN) continue;
-    if (isTechnical && !can(info.role, "synclog.read")) continue;
 
     ws.send(json);
     sent++;
@@ -100,7 +93,7 @@ export function broadcast(message: RealtimeMessage): void {
 export function startRealtimeServer(httpServer: Server): void {
   wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
-  wss.on("connection", (ws, req) => {
+  wss.on("connection", async (ws, req) => {
     const ip = req.socket.remoteAddress;
 
     /**
@@ -121,8 +114,12 @@ export function startRealtimeServer(httpServer: Server): void {
       (header?.startsWith("Bearer ") ? header.slice(7).trim() : null);
 
     const payload = token ? verifyToken(token) : null;
+    // HTTP bilan bir xil qoida: o'chirilgan hisob, eski parol token'i — rad
+    const session = payload
+      ? await resolveSessionUser(payload).catch(() => null)
+      : null;
 
-    if (config.authRequired && !payload) {
+    if (config.authRequired && !session) {
       // 1008 = Policy Violation. Klient buni ko'rib login sahifasiga
       // yo'naltiradi va qayta ulanishga urinmaydi.
       ws.close(1008, "Autentifikatsiya talab qilinadi");
@@ -130,8 +127,8 @@ export function startRealtimeServer(httpServer: Server): void {
       return;
     }
 
-    const info: ClientInfo = payload
-      ? { role: payload.role, email: payload.email }
+    const info: ClientInfo = session
+      ? { role: session.role, email: session.email }
       : { role: "ADMIN", email: "dev@local" };
 
     clients.set(ws, info);

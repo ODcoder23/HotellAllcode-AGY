@@ -1,27 +1,21 @@
 /**
  * FAZA 13 — Website public API
  *
- * TZ 3-band:  Website -> PMS -> Database -> Shaxmatka -> Beds24 -> OTA.
- *             "Bron qilingan xona boshqa kanallarda mavjud bo'lmagan
- *             holatga o'tishi kerak. OVERBOOKING BO'LMASLIGI SHART."
- * TZ 20-band: yakuniy natijaning birinchi qismi.
+ * TZ 3-band:  Website -> PMS -> Database -> Shaxmatka.
+ *             "OVERBOOKING BO'LMASLIGI SHART."
  *
- * Mezon (11-BOSQICHLAR-ROADMAP.md, FAZA 13):
- *   "POST /api/public/reservations chaqirilganda -> Shaxmatkada
- *    darhol ko'rinadi -> xona band bo'ladi -> mock Beds24'ga
- *    yuboriladi -> availability kamayadi."
+ * Mezon: "POST /api/public/reservations chaqirilganda -> Shaxmatkada
+ *   darhol ko'rinadi -> xona band bo'ladi -> availability kamayadi."
  *
  * ISH CHEGARASI: Website kodiga kirish yo'q — API va uning kontrakti
  * topshiriladi, ulash scope'dan tashqarida (13-fayl §8).
  *
  * Ishga tushirish:  npx vitest run src/public.test.ts
- * Shart: server (:3000), mock (:4000), PostgreSQL, Redis
+ * Shart: server, PostgreSQL (test bazasi), Redis
  */
 
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { prisma } from "./lib/prisma.js";
-import { setupConnection } from "./services/beds24/auth.js";
-import { upsertMapping } from "./services/mapping.js";
 import {
   generateCode, validateRange, pickRoom,
   searchAvailability, createPublicBooking, findByCode,
@@ -29,11 +23,9 @@ import {
 } from "./services/publicBooking.js";
 import { fromDateKey } from "./lib/serialize.js";
 import { TYPES, loadTypes, tariffFor } from "./testUtils.js";
+import { getMealPrice } from "./services/settings.js";
 
 const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
-const MOCK = process.env.MOCK_URL ?? "http://127.0.0.1:4000";
-
-const EXT = { standard: "101001", double: "101002", deluxe: "101003" } as const;
 
 /**
  * Tur bo'yicha xona soni — BAZADAN.
@@ -83,59 +75,28 @@ const api = async (path: string, init: RequestInit = {}) => {
   return { status: res.status, body };
 };
 
-const mockControl = async (path: string, body?: unknown) =>
-  (await fetch(`${MOCK}/control/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  })).json() as any;
-
-const mockState = async () =>
-  (await fetch(`${MOCK}/control/state`).then((r) => r.json())) as {
-    bookings: Array<Record<string, any>>;
-    calendarPushes: Array<{ roomId: number; entries: Array<{ from: string; to: string; numAvail?: number }> }>;
-  };
-
-async function mapAll() {
-  // EXT kalitlari tarixiy nomlar — ular faqat tashqi Beds24
-  // ID'sini topish uchun. PMS turi TYPES dan keladi.
-  const pairs: Array<[string, string]> = [
-    [TYPES.a, EXT.standard],
-    [TYPES.b, EXT.double],
-    [TYPES.c, EXT.deluxe],
-  ];
-
-  for (const [pms, external] of pairs) {
-    await upsertMapping({ roomTypeId: pms, externalRoomTypeId: external });
-  }
-}
-
-/** Test sanalari — bugundan boshlab, validatsiya o'tishi uchun */
+/**
+ * Test sanalari — bugundan boshlab. "Bugun" — mehmonxona (Toshkent)
+ * kuni, server validatsiyasi bilan bir xil (lib/hotelTime.ts)
+ */
 const day = (offset: number): string => {
-  const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
-  d.setUTCDate(d.getUTCDate() + offset);
-  return d.toISOString().slice(0, 10);
+  const t = new Date(Date.now() + 5 * 3_600_000);
+  return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate() + offset))
+    .toISOString().slice(0, 10);
 };
 
 /** Test oraliqlari uchun narx qo'yadi — narxsiz tur ko'rsatilmaydi */
+/** setPrices() narxlari (so'm, kichik — formula tekshiruvi) — shu oraliqdagi qabulxona broni tarifdan past bo'lmasin */
+const SET_PRICE = { a: 40, b: 55, c: 90 } as const;
+
 async function setPrices(from: string, to: string) {
   await api("/api/rate-plans", {
     method: "PUT",
     body: JSON.stringify({
       from, to,
-      prices: { [TYPES.a]: 40, [TYPES.b]: 55, [TYPES.c]: 90 },
+      prices: { [TYPES.a]: SET_PRICE.a, [TYPES.b]: SET_PRICE.b, [TYPES.c]: SET_PRICE.c },
     }),
   });
-}
-
-async function waitFor(check: () => Promise<boolean>, timeoutMs = 15000): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    if (await check()) return true;
-    if (Date.now() >= deadline) return false;
-    await new Promise((r) => setTimeout(r, 250));
-  }
 }
 
 /** Test yaratgan bronlarni tozalash */
@@ -158,45 +119,15 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
     await loadTypes();
     await loadTotals();
     const health = await fetch(`${PMS}/health`).then((r) => r.json() as any);
-    if (health.redis !== "connected") throw new Error("Redis ishlamayapti");
-    const mock = await fetch(`${MOCK}/authentication/setup`, { headers: { code: "mock-invite-code" } });
-    if (!mock.ok) throw new Error("Mock server ishlamayapti");
+    if (health.database !== "connected") throw new Error("Baza ishlamayapti");
   });
 
   beforeEach(async () => {
-    await prisma.syncLog.deleteMany();
-    await prisma.webhookEvent.deleteMany();
     await cleanupWebsiteBookings();
-    await mockControl("reset");
-    // Kredit cheklovi test oqimini to'xtatmasin (03-fayl §3)
-    await fetch(`${MOCK}/control/refill-credits`, { method: "POST" }).catch(() => {});
-
-    const conn = await prisma.channelConnection.findFirst({
-      where: { channel: { code: "beds24" }, isActive: true },
-    });
-    if (!conn) await setupConnection("mock-invite-code", "12345");
-
-    // Mapping O'CHIRILMAYDI, faqat yangilanadi: o'chirish va
-    // qayta yaratish orasidagi bo'shliqda oldingi test faylidan
-    // qolgan job ishga tushib "mapping topilmadi" bilan
-    // yiqilardi — keyingi test esa worker'ni kutib qolardi.
-    // `upsertMapping` idempotent, o'chirish shart emas.
-    await mapAll();
   });
 
-  /**
-   * Mapping'ni TIKLAB ketamiz.
-   *
-   * Ba'zi testlar mapping YO'QLIGINI sinaydi va uni o'chiradi.
-   * Fayl shu holatda tugasa — keyingi fayllarning sync
-   * worker'lari "mapping topilmadi" bilan yiqiladi va ular
-   * worker'ni kutib 20 soniya o'tirib qoladi.
-   *
-   * Server worker'lari testlar orasida ham ishlab turadi, ya'ni
-   * holat fayllar orasida oqib o'tadi.
-   */
   afterAll(async () => {
-    await mapAll();
+    await cleanupWebsiteBookings();
   });
 
   // --- Bron kodi (13-fayl §6) --------------------------------
@@ -314,7 +245,9 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
           phone: "+99892200001",
           guestPhone: "+998900000090",
           adults: 1,
-          pricePerNight: await tariffFor(room.id),
+          // Oraliq tarifi setPrices() dan (seed narxi emas) — seed
+          // narxi bilan solishtirilsa "chegirma sababi" talab qilinardi
+          pricePerNight: SET_PRICE.c,
         }),
       });
       expect(created.status).toBe(201);
@@ -411,7 +344,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
   });
 
   // --- FAZA 13 ASOSIY MEZONI ---------------------------------
-  describe("FAZA 13 mezoni — Website -> Shaxmatka -> Beds24", () => {
+  describe("FAZA 13 mezoni — Website -> Shaxmatka", () => {
     it("bron yaratiladi, kod va xona qaytadi", async () => {
       await setPrices(day(80), day(83));
 
@@ -431,7 +364,10 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       expect(res.body.roomNumber).toBeTruthy();
       // 13-fayl §5: darhol CONFIRMED emas — mijoz hali to'lamagan
       expect(res.body.status).toBe("pending_payment");
-      expect(res.body.totalPrice).toBe(270);      // 90 x 3
+      // 90 x 3 + nonushta: sayt broni HAR DOIM ovqat bilan
+      // (PROJECT_LOGIC 5-bo'lim) — kishi boshiga, har kecha
+      const meal = await getMealPrice();
+      expect(res.body.totalPrice).toBe(270 + meal * 2 * 3);
     });
 
     it("Shaxmatkada DARHOL ko'rinadi", async () => {
@@ -482,99 +418,35 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       expect(deluxeAfter).toBe(deluxeBefore - 1);
     });
 
-    it("Beds24'ga yuboriladi va availability kamayadi", async () => {
+    it("sayt, bron kartasi va \"bronimni tekshirish\" bir xil summani ko'rsatadi", async () => {
       await setPrices(day(95), day(97));
+
+      const search = await publicApi(`/api/public/availability?from=${day(95)}&to=${day(97)}&adults=2&children=1`);
+      const offer = search.body.roomTypes.find((t: any) => t.id === TYPES.c);
+      expect(offer, "tur qidiruvda yo'q").toBeTruthy();
 
       const created = await publicApi("/api/public/reservations", {
         method: "POST",
         body: JSON.stringify({
-          roomTypeId: TYPES.c,
-          checkIn: day(95),
-          checkOut: day(97),
-          adults: 2,
-          guest: { fullName: "Beds24 Zanjiri", phone: "+998901110004" },
+          roomTypeId: TYPES.c, checkIn: day(95), checkOut: day(97), adults: 2, children: 1,
+          guest: { fullName: "Summa Mosligi", phone: "+998901110004" },
         }),
       });
       expect(created.status).toBe(201);
+      expect(created.body.totalPrice).toBe(offer.totalPrice);
+      expect(created.body.currency).toBe("UZS");
 
-      // Worker'lar yuborishini kutamiz.
-      //
-      // Mock kredit cheklovi 100/5daqiqa (03-fayl §3). Ko'p test
-      // ketma-ket ishlaganda kredit tugab, job KECHIKTIRILADI —
-      // bu xato emas, kutilgan xatti-harakat (05-fayl §3).
-      //
-      // `refill-credits`, `reset` EMAS (2026-09-17): `reset`
-      // BRONLARNI HAM o'chiradi (mock-beds24/server.ts §112).
-      // Bron yaratilgandan keyin chaqirilgani uchun test o'z
-      // bronini o'chirib yuborardi va keyin uni 60 soniya
-      // kutardi — "bron Beds24'ga yetmadi" deb yiqilardi,
-      // aslida zanjir ishlardi.
-      await mockControl("refill-credits");
-      await mapAll();
+      const byCode = await publicApi(`/api/public/reservations/${created.body.reservationCode}`);
+      expect(byCode.body.totalPrice).toBe(offer.totalPrice);
+      expect(byCode.body.remainingAmount).toBe(offer.totalPrice);
 
-      /**
-       * Oxirgi turtki xatosi — sababni ko'rsatish uchun.
-       *
-       * Ilgari `.catch(() => {})` xatoni butunlay yutardi va
-       * test "bron Beds24'ga yetmadi" deb yiqilardi, sabab esa
-       * ko'rinmasdi. Endi xabar assert'ga qo'shiladi.
-       */
-      let lastPushError = "";
-
-      const sent = await waitFor(async () => {
-        const { bookings } = await mockState();
-        if (bookings.some((b) => String(b.firstName).includes("Beds24"))) return true;
-
-        // Job kechiktirilgan bo'lsa qo'lda turtki beramiz
-        const r = await prisma.reservation.findUnique({
-          where: { code: created.body.reservationCode },
-          select: { id: true, externalReservationId: true },
-        });
-        if (r && !r.externalReservationId) {
-          const { pushReservation } = await import("./services/reservationSync.js");
-          await pushReservation(r.id).catch((e) => {
-            lastPushError = e instanceof Error ? e.message : String(e);
-          });
-        }
-        return false;
-      }, 60000);
-
-      /**
-       * Kutish 60 s (ilgari 25 s).
-       *
-       * Baza SSH tunnel orqali kelganda har so'rov ~700 ms
-       * (o'lchangan), bitta bron yaratish ~11 s. Worker
-       * navbatdan olib, Beds24'ga yuborishi ham shuncha.
-       * 25 s yetmasdi va test "bron Beds24'ga yetmadi" deb
-       * yiqilardi — aslida zanjir ishlardi, jonli sinovda
-       * `push_reservation` `success` qaytaradi.
-       */
-      expect(
-        sent,
-        `bron Beds24'ga yetmadi${lastPushError ? ` — ${lastPushError}` : ""}`
-      ).toBe(true);
-
-      const { bookings } = await mockState();
-      const booking = bookings.find((b) => String(b.firstName).includes("Beds24"))!;
-
-      // PENDING_PAYMENT -> Beds24'da "request" (08-fayl §2)
-      expect(booking.status).toBe("request");
-      expect(booking.referer).toBe("PMS");
-
-      // Availability ham ketishi kerak. Lekin yuqorida kreditni
-      // tiklash uchun `reset` qilingan bo'lishi mumkin, u esa
-      // `calendarPushes` ni tozalaydi. Shuning uchun alohida
-      // kutamiz: hisob DB'da to'g'ri, yuborish navbat orqali.
-      const availSent = await waitFor(async () => {
-        const { calendarPushes: pushes } = await mockState();
-        return pushes.some(
-          (p) => p.roomId === Number(EXT.deluxe) &&
-                 p.entries.some((e) => typeof e.numAvail === "number")
-        );
-      }, 20000);
-
-      expect(availSent, "availability yuborilmadi").toBe(true);
-    }, 90000);
+      const internal = await prisma.reservation.findUniqueOrThrow({
+        where: { code: created.body.reservationCode }, select: { id: true },
+      });
+      const card = await api(`/api/reservations/${internal.id}`);
+      expect(card.body.totalPrice).toBe(offer.totalPrice);
+      expect(card.body.code).toBe(created.body.reservationCode);
+    });
   });
 
   // --- PENDING_PAYMENT (13-fayl §5) --------------------------
@@ -730,7 +602,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       const res = await publicApi(`/api/public/reservations/${created.body.reservationCode}`);
       const text = JSON.stringify(res.body).toLowerCase();
 
-      // Ichki id, Beds24 bookingId, sync holati — mijozga kerak emas
+      // Ichki id va xizmat maydonlari — mijozga kerak emas
       expect(text).not.toContain("externalreservationid");
       expect(text).not.toContain("syncstatus");
       expect(text).not.toContain("channelid");
@@ -902,7 +774,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
             // "Toliq" halqasida
             phone: `+9989221${r.number}`,
             adults: 1,
-            pricePerNight: await tariffFor(r.id),
+            pricePerNight: SET_PRICE.c,
           }),
         });
         if (res.status === 201) ids.push(res.body.id);

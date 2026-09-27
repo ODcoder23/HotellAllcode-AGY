@@ -52,17 +52,10 @@ services:
       REDIS_URL: redis://redis:6379
       # Maxfiy qiymatlar .env dan keladi — repoda saqlanmaydi
       # (TZ 18-band, 10-fayl §1)
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY kerak}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET kerak}
-      WEBHOOK_URL_TOKEN: ${WEBHOOK_URL_TOKEN:-}
-      WEBHOOK_AUTH_MODE: ${WEBHOOK_AUTH_MODE:-ip_token}
-      BEDS24_BASE_URL: ${BEDS24_BASE_URL:-https://api.beds24.com/v2}
-      # Production'da MAJBURIY yoqiladi
+      # Production'da MAJBURIY yoqiladi (config.ts assertProductionSafe)
       AUTH_REQUIRED: ${AUTH_REQUIRED:-true}
       RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-false}
-      SOURCE_OF_TRUTH_RATES: ${SOURCE_OF_TRUTH_RATES:-pms}
-      SOURCE_OF_TRUTH_AVAILABILITY: ${SOURCE_OF_TRUTH_AVAILABILITY:-pms}
-      POLL_INTERVAL_MINUTES: ${POLL_INTERVAL_MINUTES:-15}
       PENDING_PAYMENT_TIMEOUT_HOURS: ${PENDING_PAYMENT_TIMEOUT_HOURS:-24}
     ports:
       - "3000:3000"

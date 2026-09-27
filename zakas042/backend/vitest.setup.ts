@@ -1,57 +1,41 @@
 /**
- * Testlar uchun .env ni yuklaydi.
+ * Testlar uchun muhit.
  *
- * `npm run dev` da bu `--env-file` orqali bo'ladi, lekin vitest
- * o'z jarayonini ishga tushiradi va flagni ko'rmaydi. setupFiles
- * modul importlaridan OLDIN ishlaydi — shuning uchun config.ts
+ * `npm run dev` da env `--env-file` orqali keladi, lekin vitest o'z
+ * jarayonini ishga tushiradi va flagni ko'rmaydi. setupFiles modul
+ * importlaridan OLDIN ishlaydi — shuning uchun config.ts
  * o'zgaruvchilarni topadi.
+ *
+ * Tartib: jarayon muhiti (masalan `set -a; . test.env`) ustun, `.env`
+ * faqat yetishmaganini to'ldiradi.
  */
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { execSync } from "node:child_process";
 
 const envPath = resolve(process.cwd(), ".env");
 
-if (!existsSync(envPath)) {
-  throw new Error(`.env topilmadi: ${envPath}`);
-}
-
-const raw = readFileSync(envPath, "utf8");
-let loaded = 0;
-
-for (const line of raw.split(/\r?\n/)) {
-  const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
-  if (!m) continue;
-  const key = m[1];
-  const value = m[2].trim().replace(/^["']|["']$/g, "");
-  if (process.env[key] === undefined) {
-    process.env[key] = value;
-    loaded++;
+if (existsSync(envPath)) {
+  const raw = readFileSync(envPath, "utf8");
+  for (const line of raw.split(/\r?\n/)) {
+    const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/);
+    if (!m) continue;
+    const key = m[1];
+    const value = m[2].trim().replace(/^["']|["']$/g, "");
+    if (process.env[key] === undefined) process.env[key] = value;
   }
 }
 
-if (loaded === 0) {
-  throw new Error(".env o'qildi, lekin hech qanday o'zgaruvchi topilmadi");
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL yo'q — test.env ni yuklang (zakas042/README.md, \"Testlar\")");
 }
 
 /**
- * Server manzillari — BIR JOYDA.
+ * Server manzili — BIR JOYDA.
  *
- * NEGA: ilgari "http://localhost:3000" va ":4000" bu faylda ham,
- * har test faylida ham qattiq yozilgan edi. Backend boshqa portga
- * ko'chganda (masalan 3000 ni boshqa loyiha egallasa) seed, token
- * olish va mock tiklash jimgina ishlamay qolardi — testlar esa
- * tushunarsiz "fetch failed" berardi.
- *
- * Tartib: PMS_URL -> .env dagi PORT -> 3000.
- *
- * `127.0.0.1`, `localhost` EMAS (2026-09-17): Node 18+ da
- * `localhost` avval IPv6 (`::1`) ga hal bo'ladi, SSH tunnel esa
- * IPv4 da tinglaydi. Natijada tunnel ochiq bo'lsa ham
- * `connect ECONNREFUSED ::1:4100` chiqadi va butun test fayli
- * jimgina skip bo'ladi. Bir marta kuzatilgan: 28 test birdan.
- *
- * `BEDS24_BASE_URL` `.env` dan kelganda `localhost` bo'lishi
- * mumkin — shuning uchun almashtiriladi.
+ * `127.0.0.1`, `localhost` EMAS: Node 18+ da `localhost` avval IPv6
+ * (`::1`) ga hal bo'ladi va test fayllari tushunarsiz "fetch failed"
+ * bilan yiqiladi.
  */
 const ipv4 = (url: string) => url.replace("//localhost:", "//127.0.0.1:");
 
@@ -59,126 +43,55 @@ const PMS_ORIGIN = ipv4(
   process.env.PMS_URL ?? `http://127.0.0.1:${process.env.PORT ?? 3000}`
 );
 
-const MOCK_ORIGIN = ipv4(
-  process.env.MOCK_URL ?? process.env.BEDS24_BASE_URL ?? "http://127.0.0.1:4000"
-);
-
 // Test fayllari ham shu manzilni ko'rsin
 process.env.PMS_URL ??= PMS_ORIGIN;
-process.env.MOCK_URL ??= MOCK_ORIGIN;
 
 /**
- * Test muhitini tozalash — har test fayli uchun.
+ * JONLI BAZANI TOZALASHDAN HIMOYA.
  *
- * Ikki sabab:
- *   1. Mock kredit oynasi 5 daqiqa davom etadi — oldingi ishga
- *      tushishdan qolgan sarf keyingisini 429 bilan yiqitadi.
- *   2. Oldingi test bronlari DB'da qolsa, yangi bron 409 oladi
- *      (xona band).
- */
-import { execSync } from "node:child_process";
-
-// Mock kreditini tiklash
-try {
-  await fetch(`${MOCK_ORIGIN}/control/reset`, { method: "POST" });
-} catch {
-  // Mock ishlamasa — beds24 testlari o'zi aytadi
-}
-
-/**
- * DB'ni toza seed holatiga qaytarish.
+ * Har test fayli oldidan seed ishlaydi va bazadagi BARCHA bron, narx,
+ * foydalanuvchini o'chiradi. Lokal `.env` SSH tunnel orqali serverdagi
+ * JONLI bazaga (`localhost:5433/imron_pms`) ulanadi. Ilgari himoya
+ * faqat host nomini ("localhost") tekshirardi — tunnel orqali jonli
+ * baza ham "localhost" bo'lib ko'rinardi va test uni o'chirib yuborardi.
  *
- * DIQQAT: bu `.env` dagi `DATABASE_URL` ni ishlatadi — ya'ni
- * ishlab turgan bazani. Test har fayldan oldin BARCHA bronlarni,
- * narxlarni, mappingni va Beds24 ulanishini o'chiradi.
- *
- * 2026-09-17 auditida shu sodir bo'ldi: test fonda ishlayotganda
- * sayt bo'sh ro'yxat qaytardi va Shaxmatka xonalarni ko'rsatmadi.
- * Sabab kodda deb o'ylash oson edi.
- *
- * `ALLOW_TEST_DB_WIPE=true` bo'lmasa, baza mahalliy emasligiga
- * shubha bo'lganda to'xtaymiz. Bu to'liq himoya emas (mahalliy
- * baza ham ishlatilayotgan bo'lishi mumkin), lekin eng og'ir
- * xatoni — ishlab chiqarish bazasini tozalashni — to'sadi.
- *
- * Seed'dan keyin Beds24 mappingni tiklash: `npm run beds24:mock`
+ * Endi baza NOMIDA "test" bo'lishi shart (`imron_test`). Boshqa nom —
+ * testlar umuman boshlanmaydi. Ataylab bo'lsa: ALLOW_TEST_DB_WIPE=true.
  */
 const dbUrl = process.env.DATABASE_URL ?? "";
-const looksLocal = /@(localhost|127\.0\.0\.1|\[::1\])[:/]/.test(dbUrl);
+let dbName = "";
+try { dbName = new URL(dbUrl).pathname.replace(/^\//, ""); } catch { /* pastda xato */ }
 
-if (!looksLocal && process.env.ALLOW_TEST_DB_WIPE !== "true") {
+if (!/test/i.test(dbName) && process.env.ALLOW_TEST_DB_WIPE !== "true") {
   throw new Error(
-    `Testlar bazani TOZALAYDI, lekin DATABASE_URL mahalliy emas:\n` +
+    `Testlar bazani TOZALAYDI, lekin baza nomida "test" yo'q: "${dbName}"\n` +
     `  ${dbUrl.replace(/:[^:@]*@/, ":***@")}\n\n` +
-    `Bu ishlab chiqarish bazasi bo'lsa barcha bronlar yo'qoladi.\n` +
-    `Ataylab shunday bo'lsa: ALLOW_TEST_DB_WIPE=true`
+    `Bu ishlab chiqarish bazasi bo'lishi mumkin — barcha bronlar yo'qoladi.\n` +
+    `Alohida test bazasi: zakas042/README.md, "Testlar" bo'limi.`
   );
 }
 
+/**
+ * DB'ni toza seed holatiga qaytarish — har test fayli uchun: oldingi
+ * test bronlari DB'da qolsa, yangi bron 409 oladi (xona band).
+ */
 try {
-  execSync("npx tsx prisma/seed.ts", { stdio: "pipe" });
+  execSync("npx tsx prisma/seed.ts", { stdio: "pipe", env: { ...process.env, SEED_ALLOW_WIPE: "true" } });
 } catch (e) {
-  console.warn("[test] seed ishlamadi:", String(e).slice(0, 120));
+  console.warn("[test] seed ishlamadi:", String(e).slice(0, 300));
 }
 
 /**
- * Navbatni tozalash — REDIS ORQALI, BullMQ API'siz.
- *
- * `queue.obliterate()` ishlatib bo'lmaydi: u test jarayonida yangi
- * ulanish ochadi va serverdagi worker'larni buzadi. To'g'ridan-to'g'ri
- * kalitlarni o'chirish xavfsiz — worker'lar bunga chidaydi.
- *
- * Nima uchun kerak: oldingi test faylidan qolgan job keyingisining
- * DB holatiga tegib, o'tkinchi xatolarga olib keladi.
- */
-try {
-  const { execSync: exec } = await import("node:child_process");
-  const cli = "/c/Users/Abdur/scoop/apps/redis/current/redis-cli.exe";
-  exec(`"${cli}" --scan --pattern "bull:beds24-*" | xargs -r "${cli}" del`, {
-    stdio: "pipe",
-    shell: "bash",
-  });
-} catch {
-  // Redis yo'q yoki kalit yo'q — muammo emas
-}
-
-/**
- * Worker'lar tinchishini kutish.
- *
- * Testlar bitta server bilan ishlaydi va uning webhook worker'i
- * doimiy ishlab turadi. Seed DB'ni tozalaganda worker hali eski
- * event'ni ishlab turgan bo'lishi mumkin — natijada keyingi test
- * kutilmagan holatni ko'radi.
- *
- * FAZA 13 dan keyin uzaytirildi: `public.test.ts` o'nlab bron
- * yaratadi, ularning har biri reservation-sync va availability-sync
- * job'i qo'yadi. Fayl tugaganda bu job'lar hali navbatda turadi va
- * keyingi faylning worker'ini band qiladi — natijada FAZA 10
- * testlari "Beds24'ga yetmadi" deb yiqiladi.
- *
- * Yuqoridagi kalit tozalash navbatni bo'shatadi, bu pauza esa
- * ishlab turgan job tugashini kutadi.
- */
-await new Promise((r) => setTimeout(r, 1500));
-
-
-/**
- * Testlar uchun avtomatik ADMIN token (TZ 18-band, FAZA 12).
+ * Testlar uchun avtomatik ADMIN token (TZ 18-band).
  *
  * MUAMMO: `AUTH_REQUIRED=true` bo'lganda barcha `/api/*` so'rovlar
- * token talab qiladi. Mavjud test fayllari (FAZA 2A dan beri)
- * to'g'ridan-to'g'ri `fetch` chaqiradi va token yubormaydi —
- * hammasi 401 oladi.
+ * token talab qiladi. Test fayllari to'g'ridan-to'g'ri `fetch`
+ * chaqiradi va token yubormaydi — hammasi 401 oladi.
  *
- * YECHIM: global `fetch` ni bir marta o'raymiz. Agar so'rov shu
- * serverga ketayotgan bo'lsa va `Authorization` sarlavhasi
- * qo'yilmagan bo'lsa, ADMIN token qo'shiladi.
- *
- * NEGA HAR TESTNI TAHRIRLAMAYMIZ: auth ilova darajasidagi kesib
- * o'tuvchi masala, uni har testga qo'lda ulash 200+ joyda
- * takrorlash demakdir va bittasi esdan chiqsa test sababsiz
- * yiqiladi. Auth mantig'ining o'zi `security.test.ts` da aniq
- * tekshiriladi — u yerda token ataylab yuborilmaydi.
+ * YECHIM: global `fetch` ni bir marta o'raymiz. So'rov shu serverga
+ * ketayotgan bo'lsa va `Authorization` qo'yilmagan bo'lsa, ADMIN token
+ * qo'shiladi. Auth mantig'ining o'zi `security.test.ts` da aniq
+ * tekshiriladi — u yerda token ataylab yuboriladi yoki yuborilmaydi.
  */
 const healthRes = await fetch(`${PMS_ORIGIN}/health`).catch(() => null);
 const health = healthRes?.ok ? ((await healthRes.json()) as { security?: { auth?: boolean } }) : null;
@@ -200,8 +113,6 @@ if (health?.security?.auth === true) {
     globalThis.fetch = ((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
 
-      // Faqat PMS'ga ketayotgan so'rovlar. Mock server o'z
-      // autentifikatsiyasini ishlatadi, unga tegmaymiz.
       if (url.startsWith(PMS_ORIGIN)) {
         const headers = new Headers(init?.headers ?? (typeof input === "object" && "headers" in input ? input.headers : undefined));
         if (!headers.has("Authorization")) {
@@ -217,18 +128,3 @@ if (health?.security?.auth === true) {
     console.warn("[test] auth yoqilgan, lekin login bo'lmadi — testlar 401 olishi mumkin");
   }
 }
-
-
-/**
- * Mock Beds24 kreditini tiklaymiz.
- *
- * Mock 100 kredit / 5 daqiqa cheklovini haqiqiy Beds24 kabi
- * qo'llaydi (03-fayl §3). Testlar ketma-ket ishlaganda cheklov
- * tugab qoladi va sync job'lari KECHIKTIRILADI — bu to'g'ri
- * xatti-harakat, lekin keyingi test faylini yiqitadi.
- *
- * Cheklovning o'zi `beds24.test.ts` da ataylab sinaladi
- * (`/control/drain-credits`), shuning uchun uni bu yerda tiklash
- * qopqoqni yopmaydi.
- */
-await fetch(`${MOCK_ORIGIN}/control/refill-credits`, { method: "POST" }).catch(() => {});

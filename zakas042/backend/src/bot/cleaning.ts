@@ -16,6 +16,7 @@
 import { InlineKeyboard } from "grammy";
 import type { CleaningStatus } from "@prisma/client";
 import { esc } from "./format.js";
+import { hotelClock } from "../lib/hotelTime.js";
 
 /** `taskInclude` bilan o'qilgan topshiriq shakli */
 export type TaskView = {
@@ -32,13 +33,12 @@ export type TaskView = {
   employee: { fullName: string } | null;
 };
 
-/** "14:32" */
+/**
+ * "14:32" — Toshkent vaqti. Ilgari server vaqt zonasida chiqardi
+ * (Europe/Berlin): farrosh 14:32 da olgan xona "11:32" bo'lib ko'rinardi.
+ */
 export function hhmm(d: Date): string {
-  return d.toLocaleTimeString("uz-UZ", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
+  return hotelClock(d);
 }
 
 /** Ikki vaqt orasidagi daqiqa */

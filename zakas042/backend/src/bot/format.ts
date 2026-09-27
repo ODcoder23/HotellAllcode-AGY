@@ -6,6 +6,8 @@
  * ishonchli.
  */
 
+import { formatMoney } from "../lib/money.js";
+
 /** Telegram HTML uchun xavfsiz matn */
 export function esc(v: unknown): string {
   if (v === null || v === undefined) return "";
@@ -15,15 +17,18 @@ export function esc(v: unknown): string {
     .replace(/>/g, "&gt;");
 }
 
-/** 450000 -> "450 000 so'm" */
-export function som(n: number): string {
-  return Math.round(n).toLocaleString("ru-RU").replace(/ /g, " ") + " so'm";
+/**
+ * 1250000 -> "1 250 000 so'm". Formula lib/money.ts da — panel, xato
+ * xabarlari va bot bir xil yozadi.
+ */
+export function money(n: number): string {
+  return formatMoney(n);
 }
 
-/** 1600000 -> "1.6 mln" (katta summalar uchun) */
-export function mln(n: number): string {
-  if (n < 1_000_000) return som(n);
-  return (n / 1_000_000).toFixed(1) + " mln so'm";
+/** 16 400 000 -> "16.4 mln so'm" (dashboard satri uchun qisqa), kichik summa — to'liq */
+export function moneyShort(n: number): string {
+  if (Math.abs(n) < 1_000_000) return money(n);
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")} mln so'm`;
 }
 
 /** "2026-09-16" -> "16.09" */
@@ -48,6 +53,7 @@ export const SOURCE_LABEL: Record<string, string> = {
   direct: "To'g'ridan-to'g'ri",
   website: "Veb-sayt",
   booking_com: "Booking.com",
+  ostrovok: "Ostrovok",
   airbnb: "Airbnb",
   expedia: "Expedia",
   phone: "Telefon",

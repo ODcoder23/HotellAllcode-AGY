@@ -1,7 +1,7 @@
 /**
  * FAZA 12 — Xavfsizlik va audit
  *
- * TZ 16-band: SyncLog. TZ 18-band: to'qqiz xavfsizlik talabi.
+ * TZ 18-band: to'qqiz xavfsizlik talabi.
  *
  * Mezon (11-BOSQICHLAR-ROADMAP.md, FAZA 12):
  *   "10-fayl §1 jadvalidagi 9 ta talab ham 'bajarildi'."
@@ -24,7 +24,6 @@ import {
 } from "./services/auth.js";
 import { audit, listAudit, AUDIT_ACTIONS } from "./services/auditLog.js";
 import { sanitizeForLog } from "./lib/sanitize.js";
-import { encrypt, decrypt } from "./lib/encryption.js";
 import type { UserRole } from "@prisma/client";
 
 const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
@@ -51,16 +50,26 @@ const created: string[] = [];
  * `AUTH_REQUIRED=false`, production tekshiruvida `true`.
  */
 let adminAuth: Record<string, string> = {};
+/**
+ * FOUNDER token — foydalanuvchi boshqaruvi (`user.manage`) 2026-09-16
+ * dan faqat FOUNDER'da. ADMIN token bilan bu amallar 403 oladi.
+ */
+let founderAuth: Record<string, string> = {};
 
 async function loadAdminToken(): Promise<void> {
   const health = await api("/health");
   if (health.body?.security?.auth !== true) return;
 
-  const res = await api("/api/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email: "admin@imron.local", password: "admin12345" }),
-  });
-  if (res.body?.token) adminAuth = { Authorization: `Bearer ${res.body.token}` };
+  for (const [email, set] of [
+    ["admin@imron.local", (t: string) => { adminAuth = { Authorization: `Bearer ${t}` }; }],
+    ["founder@imron.local", (t: string) => { founderAuth = { Authorization: `Bearer ${t}` }; }],
+  ] as const) {
+    const res = await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password: "admin12345" }),
+    });
+    if (res.body?.token) set(res.body.token);
+  }
 }
 
 describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
@@ -81,40 +90,42 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
     }
   });
 
-  // --- 1. Credentials faqat backendda (TZ 18-band, 1-talab) ---
-  describe("1. API credentials backendda qoladi", () => {
-    it("ChannelConnection javobida token maydonlari YO'Q", async () => {
-      const res = await api("/api/admin/connection", { headers: adminAuth });
+  // --- 1. Beds24 olib tashlangan (2026-09-26) -----------------
+  describe("1. Tashqi integratsiya yuzasi yopilgan", () => {
+    it("Beds24 endpoint'lari mavjud emas (404)", async () => {
+      const paths: Array<[string, string]> = [
+        ["POST", "/api/webhooks/beds24/dev-webhook-token"],
+        ["POST", "/api/webhooks/beds24"],
+        ["GET", "/api/admin/mapping"],
+        ["GET", "/api/admin/connection"],
+        ["GET", "/api/admin/sync-log"],
+        ["GET", "/api/admin/webhook-events"],
+        ["GET", "/api/admin/settings"],
+        ["GET", "/api/admin/fx"],
+        ["POST", "/api/admin/maintenance/poll"],
+        ["GET", "/api/admin/dead-letters"],
+        ["POST", "/api/rate-plans/resync"],
+      ];
+      for (const [method, path] of paths) {
+        const res = await api(path, { method, headers: adminAuth, ...(method === "POST" ? { body: "{}" } : {}) });
+        expect(res.status, `${method} ${path}`).toBe(404);
+      }
+    });
+
+    it("/admin/*.html kanal sahifalari berilmaydi", async () => {
+      for (const page of ["/admin/mapping.html", "/admin/connection.html", "/admin/sync-log.html"]) {
+        const res = await fetch(`${PMS}${page}`);
+        expect(res.status, page).toBe(404);
+      }
+    });
+
+    it("bron javobida kanal/valyuta maydonlari yo'q", async () => {
+      const res = await api("/api/reservations", { headers: adminAuth });
       expect(res.status).toBe(200);
-
-      const text = JSON.stringify(res.body).toLowerCase();
-      expect(text).not.toContain("refreshtoken");
-      expect(text).not.toContain("accesstoken");
-      // Haqiqiy token qiymati ham tushmasin
-      expect(text).not.toContain("mock-access-token");
-      expect(text).not.toContain("mock-refresh-token");
-    });
-
-    it("token'lar DB'da shifrlangan holda turadi", async () => {
-      const conn = await prisma.channelConnection.findFirst({
-        where: { channel: { code: "beds24" } },
-      });
-
-      if (!conn?.refreshToken) return;    // ulanish yo'q — o'tkazamiz
-
-      // Shifrlangan format: base64(iv):base64(tag):base64(data)
-      expect(conn.refreshToken.split(":")).toHaveLength(3);
-      expect(conn.refreshToken).not.toContain("mock-refresh-token");
-
-      // Va ochib bo'ladi
-      expect(decrypt(conn.refreshToken)).toBeTruthy();
-    });
-
-    it("shifrlash aylanishi buzilmaydi", () => {
-      const secret = "mock-refresh-token-12345";
-      const enc = encrypt(secret);
-      expect(enc).not.toContain(secret);
-      expect(decrypt(enc)).toBe(secret);
+      const text = res.raw.toLowerCase();
+      for (const key of ["channelid", "externalreservationid", "syncstatus", "channelowned", "exchangerate"]) {
+        expect(text, key).not.toContain(key);
+      }
     });
   });
 
@@ -132,9 +143,14 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       expect(all).toMatch(/(^|\n)\.env/);
     });
 
-    it("ENCRYPTION_KEY va JWT_SECRET sozlangan", () => {
-      expect(process.env.ENCRYPTION_KEY ?? "").not.toBe("");
+    it("JWT_SECRET sozlangan", () => {
       expect(process.env.JWT_SECRET ?? "").not.toBe("");
+    });
+
+    it("javoblarda brauzer xavfsizlik sarlavhalari bor", async () => {
+      const res = await fetch(`${PMS}/health`);
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(res.headers.get("x-frame-options")).toBe("SAMEORIGIN");
     });
   });
 
@@ -197,6 +213,12 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       expect(verifyToken("umuman-token-emas")).toBeNull();
     });
 
+    it("imzosiz (alg: none) token rad etiladi", () => {
+      const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
+      const forged = `${b64({ alg: "none", typ: "JWT" })}.${b64({ sub: "x", role: "FOUNDER", email: "h@x.uz" })}.`;
+      expect(verifyToken(forged)).toBeNull();
+    });
+
     it("muddati o'tgan token rad etiladi", async () => {
       const token = signToken({ sub: "u1", role: "ADMIN", email: "a@x.uz" }, "1ms");
       await new Promise((r) => setTimeout(r, 50));
@@ -255,18 +277,25 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       expect(can("STAFF", "user.manage")).toBe(false);
     });
 
-    it("MANAGER Beds24 sozlamalariga KIROLMAYDI", () => {
-      expect(can("MANAGER", "channel.connect")).toBe(false);
-      expect(can("MANAGER", "mapping.write")).toBe(false);
+    it("MANAGER sozlamalar, xodimlar va foydalanuvchilarga KIROLMAYDI", () => {
       expect(can("MANAGER", "settings.write")).toBe(false);
+      expect(can("MANAGER", "employee.read")).toBe(false);
       expect(can("MANAGER", "user.manage")).toBe(false);
+      expect(can("MANAGER", "report.read")).toBe(false);
     });
 
-    it("MANAGER bron va narx bilan ishlaydi", () => {
+    it("MANAGER bron, narx, xona yopish va audit bilan ishlaydi", () => {
       expect(can("MANAGER", "reservation.write")).toBe(true);
       expect(can("MANAGER", "reservation.cancel")).toBe(true);
       expect(can("MANAGER", "rate.write")).toBe(true);
-      expect(can("MANAGER", "synclog.read")).toBe(true);
+      expect(can("MANAGER", "room.block")).toBe(true);
+      expect(can("MANAGER", "audit.read")).toBe(true);
+    });
+
+    it("Beds24 huquqlari matritsada qolmagan", () => {
+      for (const p of ["channel.connect", "mapping.write", "synclog.read"]) {
+        expect(Object.keys(PERMISSIONS), p).not.toContain(p);
+      }
     });
 
     it("STAFF faqat check-in/to'lov/o'qish", () => {
@@ -277,7 +306,10 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       // Narxga va bekor qilishga tegmaydi
       expect(can("STAFF", "rate.write")).toBe(false);
       expect(can("STAFF", "reservation.cancel")).toBe(false);
+      expect(can("STAFF", "reservation.write")).toBe(false);
+      expect(can("STAFF", "room.block")).toBe(false);
       expect(can("STAFF", "settings.write")).toBe(false);
+      expect(can("STAFF", "audit.read")).toBe(false);
     });
 
     it("har huquqda kamida bitta rol bor", () => {
@@ -327,15 +359,16 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
 
     it("before/after sanitizatsiyadan o'tadi (TZ 18-band, 9-talab)", async () => {
       await audit({
-        action: "channel.connected",
-        entityType: "ChannelConnection",
+        action: "user.password_changed",
+        entityType: "User",
         entityId: "test",
-        after: { refreshToken: "juda-maxfiy-token", propertyId: "12345" },
+        after: { password: "juda-maxfiy-parol", accessToken: "juda-maxfiy-token", propertyId: "12345" },
       });
 
-      const rows = await listAudit({ action: "channel.connected" });
+      const rows = await listAudit({ action: "user.password_changed" });
       const text = JSON.stringify(rows[0]!.after);
       expect(text).not.toContain("juda-maxfiy-token");
+      expect(text).not.toContain("juda-maxfiy-parol");
       expect(text).toContain("12345");     // maxfiy bo'lmagan qism qoladi
     });
 
@@ -347,28 +380,26 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       ).resolves.toBeUndefined();
     });
 
-    it("source-of-truth almashtirilishi qayd etiladi", async () => {
-      const before = await api("/api/admin/settings", { headers: adminAuth });
-      const current = before.body.ratesSoT;
-      const other = current === "pms" ? "beds24" : "pms";
+    it("nonushta narxi o'zgarishi qayd etiladi", async () => {
+      const before = await api("/api/admin/meal-price", { headers: adminAuth });
+      const price = before.body.price;
 
-      await api("/api/admin/settings", {
+      const res = await api("/api/admin/meal-price", {
         method: "PUT",
         headers: adminAuth,
-        body: JSON.stringify({ ratesSoT: other }),
+        body: JSON.stringify({ price: price + 1000, applyToActive: false }),
       });
+      expect(res.status).toBe(200);
 
-      const rows = await listAudit({ action: "settings.changed" });
-      const entry = rows.find((r) => r.entityId === "SOURCE_OF_TRUTH_RATES");
-      expect(entry, "SoT o'zgarishi audit'ga tushmadi").toBeTruthy();
-      expect((entry!.before as any).value).toBe(current);
-      expect((entry!.after as any).value).toBe(other);
+      const rows = await listAudit({ action: "meal_price.changed" });
+      expect(rows.length, "nonushta narxi audit'ga tushmadi").toBeGreaterThan(0);
+      expect((rows[0]!.after as any).mealPrice).toBe(price + 1000);
 
       // Qaytaramiz
-      await api("/api/admin/settings", {
+      await api("/api/admin/meal-price", {
         method: "PUT",
         headers: adminAuth,
-        body: JSON.stringify({ ratesSoT: current }),
+        body: JSON.stringify({ price, applyToActive: false }),
       });
     });
 
@@ -397,7 +428,6 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
           checkOut: "2032-03-02",
           guestName: "Audit Testi",
           phone: "+99890700001",
-          guestPhone: "+998900000080",
           adults: 1,
           pricePerNight: plan ? Number(plan.price) : 100,
         }),
@@ -424,11 +454,15 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
     it("amallar ro'yxati yopiq — yangi amal qo'shish ongli qaror", () => {
       // 10-fayl §4 dagi hamma amal ro'yxatda bo'lishi kerak
       for (const a of [
-        "mapping.created", "settings.changed", "channel.connected",
-        "webhook.reprocessed", "reservation.cancelled", "reservation.no_show",
-        "user.created", "user.role_changed",
+        "settings.changed", "reservation.cancelled", "reservation.no_show",
+        "payment.received", "rate.changed", "room.status_changed",
+        "user.created", "user.role_changed", "user.password_changed",
       ]) {
         expect(AUDIT_ACTIONS as readonly string[]).toContain(a);
+      }
+      // Beds24 amallari qolmagan
+      for (const a of ["mapping.created", "channel.connected", "webhook.reprocessed", "fx.manual"]) {
+        expect(AUDIT_ACTIONS as readonly string[]).not.toContain(a);
       }
     });
   });
@@ -454,27 +488,11 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       expect(text).toContain("100");
     });
 
-    it("SyncLog'da 'token' qidiruvi maxfiy qiymat topmaydi (10-fayl §9)", async () => {
-      const logs = await prisma.syncLog.findMany({ take: 200 });
-      const text = JSON.stringify(logs).toLowerCase();
-
-      expect(text).not.toContain("mock-access-token");
-      expect(text).not.toContain("mock-refresh-token");
-      expect(text).not.toContain("mock-invite-code");
-    });
-
-    it("WebhookEvent rawPayload'ida token yo'q", async () => {
-      const events = await prisma.webhookEvent.findMany({ take: 100 });
-      const text = JSON.stringify(events).toLowerCase();
-      expect(text).not.toContain("mock-access-token");
-      expect(text).not.toContain("dev-only-secret");
-    });
-
     it("AuditLog'da ham token yo'q", async () => {
       const rows = await prisma.auditLog.findMany({ take: 200 });
       const text = JSON.stringify(rows).toLowerCase();
-      expect(text).not.toContain("mock-refresh-token");
       expect(text).not.toContain("$2a$");     // parol hash ham emas
+      expect(text).not.toContain("$2b$");
     });
   });
 
@@ -524,7 +542,7 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
 
       const res = await api(`/api/auth/users/${admins[0]!.id}`, {
         method: "PATCH",
-        headers: adminAuth,
+        headers: founderAuth,
         body: JSON.stringify({ role: "STAFF" }),
       });
       expect(res.status).toBe(400);
@@ -585,6 +603,57 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       expect(body.code).toBe("UNAUTHORIZED");
     });
 
+    const ADMIN_READS = [
+      "/api/admin/audit-log",
+      "/api/admin/queues",
+      "/api/admin/report?from=2032-01-01&to=2032-01-02",
+      "/api/admin/expenses?from=2032-01-01&to=2032-01-02",
+      "/api/admin/employees",
+      "/api/admin/cleaning",
+      "/api/admin/business-settings",
+      "/api/reservations",
+      "/api/rate-plans?from=2032-01-01&to=2032-01-02",
+    ];
+
+    it("admin o'qish endpoint'lari tokensiz 401", async () => {
+      if (!authOn) return;
+      for (const path of ADMIN_READS) {
+        const res = await fetch(`${PMS}${path}`, { headers: { Authorization: "" } });
+        expect(res.status, path).toBe(401);
+      }
+    });
+
+    it("STAFF audit va navbatni ko'rmaydi (403), MANAGER ko'radi", async () => {
+      if (!authOn) return;
+      for (const path of ["/api/admin/audit-log", "/api/admin/queues"]) {
+        expect((await api(path, withRole("staff"))).status, path).toBe(403);
+        expect((await api(path, withRole("manager"))).status, path).toBe(200);
+      }
+    });
+
+    it("hisobot va xarajat faqat egasida — ADMIN ham 403", async () => {
+      if (!authOn) return;
+      for (const path of ["/api/admin/report?from=2032-01-01&to=2032-01-02", "/api/admin/expenses?from=2032-01-01&to=2032-01-02"]) {
+        expect((await api(path, withRole("admin"))).status, path).toBe(403);
+        expect((await api(path, withRole("manager"))).status, path).toBe(403);
+        expect((await api(path, { headers: founderAuth })).status, path).toBe(200);
+      }
+    });
+
+    it("STAFF bron yarata / bekor qila olmaydi (403)", async () => {
+      if (!authOn) return;
+      const room = await prisma.room.findFirstOrThrow({ where: { isActive: true } });
+      const create = await api("/api/reservations", {
+        method: "POST",
+        ...withRole("staff"),
+        body: JSON.stringify({
+          roomId: room.id, checkIn: "2032-02-01", checkOut: "2032-02-02",
+          guestName: "Staff Bron", phone: "+998900001234", pricePerNight: 100,
+        }),
+      });
+      expect(create.status).toBe(403);
+    });
+
     it("STAFF xonalarni ko'radi", async () => {
       if (!authOn) return;
       const res = await api("/api/rooms", withRole("staff"));
@@ -607,32 +676,68 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       const res = await api("/api/rate-plans", {
         method: "PUT",
         ...withRole("manager"),
-        body: JSON.stringify({ from: "2032-01-02", to: "2032-01-02", prices: { standard: 50 } }),
+        // Bazadagi haqiqiy tarif (ilgari eski "standard" ID'si — 400)
+        body: JSON.stringify({ from: "2032-01-02", to: "2032-01-02", prices: { [(await prisma.roomType.findFirstOrThrow()).id]: 50 } }),
       });
       expect(res.status).toBe(200);
     });
 
-    it("MANAGER sozlamalarga tegolmaydi (403)", async () => {
+    it("MANAGER sozlamalarga tegolmaydi (403), ADMIN tegadi", async () => {
       if (!authOn) return;
-      const res = await api("/api/admin/settings", {
+      const res = await api("/api/admin/business-settings", {
         method: "PUT",
         ...withRole("manager"),
-        body: JSON.stringify({ ratesSoT: "beds24" }),
+        body: JSON.stringify({ freeCancelHours: 24 }),
       });
       expect(res.status).toBe(403);
-    });
 
-    it("ADMIN sozlamalarni o'zgartiradi", async () => {
-      if (!authOn) return;
-      const before = await api("/api/admin/settings", withRole("admin"));
-      const current = before.body.ratesSoT;
-
-      const res = await api("/api/admin/settings", {
+      const ok = await api("/api/admin/business-settings", {
         method: "PUT",
         ...withRole("admin"),
-        body: JSON.stringify({ ratesSoT: current }),
+        body: JSON.stringify({ freeCancelHours: 24 }),
       });
-      expect(res.status).toBe(200);
+      expect(ok.status).toBe(200);
+    });
+
+    it("xona holati: STAFF iflos belgilaydi, lekin ochish va ta'mirga qo'yish — menejer", async () => {
+      if (!authOn) return;
+      const rooms = (await api("/api/rooms", withRole("staff"))).body as any[];
+      const room = rooms.find((r) => r.status === "available")!;
+
+      const dirty = await api(`/api/rooms/${room.id}`, { method: "PATCH", ...withRole("staff"), body: JSON.stringify({ status: "dirty" }) });
+      expect(dirty.status).toBe(200);
+      expect(dirty.body.status).toBe("dirty");
+
+      // Iflos xonani tozalash tasdig'isiz ochish — qabulxonaga yopiq
+      const open = await api(`/api/rooms/${room.id}`, { method: "PATCH", ...withRole("staff"), body: JSON.stringify({ status: "available" }) });
+      expect(open.status).toBe(403);
+
+      const ooo = await api(`/api/rooms/${room.id}`, { method: "PATCH", ...withRole("staff"), body: JSON.stringify({ status: "out_of_order" }) });
+      expect(ooo.status).toBe(403);
+
+      // "band"/"bron qilingan" qo'lda qo'yilmaydi — bronlardan hisoblanadi
+      const occ = await api(`/api/rooms/${room.id}`, { method: "PATCH", ...withRole("manager"), body: JSON.stringify({ status: "occupied" }) });
+      expect(occ.status).toBe(400);
+
+      const back = await api(`/api/rooms/${room.id}`, { method: "PATCH", ...withRole("manager"), body: JSON.stringify({ status: "available" }) });
+      expect(back.status).toBe(200);
+      expect(back.body.status).not.toBe("dirty");
+    });
+
+    it("bron bor xonani majburan yopish — faqat administrator", async () => {
+      if (!authOn) return;
+      const room = await prisma.room.findFirstOrThrow({ where: { isActive: true }, orderBy: { sortOrder: "desc" } });
+      const body = JSON.stringify({ roomIds: [room.id], from: "2032-05-01", to: "2032-05-01", force: true, reason: "Test" });
+
+      const manager = await api("/api/rooms/blocks", { method: "POST", ...withRole("manager"), body });
+      expect(manager.status).toBe(403);
+
+      const admin = await api("/api/rooms/blocks", { method: "POST", ...withRole("admin"), body });
+      expect(admin.status).toBe(201);
+      await api("/api/rooms/blocks", {
+        method: "DELETE", ...withRole("admin"),
+        body: JSON.stringify({ roomIds: [room.id], from: "2032-05-01", to: "2032-05-01" }),
+      });
     });
 
     it("buzilgan token 401 beradi", async () => {
@@ -641,6 +746,117 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
         headers: { Authorization: "Bearer buzilgan.token.qiymati" },
       });
       expect(res.status).toBe(401);
+    });
+  });
+
+  // --- Sessiya: token bazadan tasdiqlanadi (2026-09-26) ---------
+  //
+  // Ilgari rol va faollik faqat token ichidan olinardi (12 soat).
+  // O'chirilgan xodim yoki roli pasaytirilgan admin token muddati
+  // tugaguncha eski huquq bilan ishlayverardi.
+  describe("sessiya — o'chirish, rol va parol darhol kuchga kiradi", () => {
+    let authOn = false;
+    const email = `sessiya-${Date.now()}@imron.local`;
+    let userId = "";
+
+    const loginAs = async (password: string) => {
+      const res = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      return res.body?.token as string | undefined;
+    };
+    const bearer = (t: string) => ({ headers: { Authorization: `Bearer ${t}` } });
+
+    beforeAll(async () => {
+      const health = await api("/health");
+      authOn = health.body?.security?.auth === true;
+      if (!authOn) return;
+      const u = await createUser({ email, password: "boshlang1ch", fullName: "Sessiya Testi", role: "MANAGER" });
+      userId = u.id;
+      created.push(u.id);
+    });
+
+    it("roli pasaytirilgan menejer shu zahoti narx qo'ya olmaydi", async () => {
+      if (!authOn) return;
+      const token = (await loginAs("boshlang1ch"))!;
+      const typeId = (await prisma.roomType.findFirstOrThrow()).id;
+      const body = JSON.stringify({ from: "2032-06-01", to: "2032-06-01", prices: { [typeId]: 500_000 } });
+
+      expect((await api("/api/rate-plans", { method: "PUT", ...bearer(token), body })).status).toBe(200);
+
+      const demote = await api(`/api/auth/users/${userId}`, {
+        method: "PATCH", headers: founderAuth, body: JSON.stringify({ role: "STAFF" }),
+      });
+      expect(demote.status).toBe(200);
+
+      // Eski token (rol = MANAGER) — lekin bazada STAFF
+      expect((await api("/api/rate-plans", { method: "PUT", ...bearer(token), body })).status).toBe(403);
+
+      await api(`/api/auth/users/${userId}`, { method: "PATCH", headers: founderAuth, body: JSON.stringify({ role: "MANAGER" }) });
+    });
+
+    it("o'chirilgan hisobning tokeni shu zahoti 401", async () => {
+      if (!authOn) return;
+      const token = (await loginAs("boshlang1ch"))!;
+      expect((await api("/api/rooms", bearer(token))).status).toBe(200);
+
+      await api(`/api/auth/users/${userId}`, { method: "PATCH", headers: founderAuth, body: JSON.stringify({ isActive: false }) });
+      expect((await api("/api/rooms", bearer(token))).status).toBe(401);
+
+      await api(`/api/auth/users/${userId}`, { method: "PATCH", headers: founderAuth, body: JSON.stringify({ isActive: true }) });
+    });
+
+    it("parol o'zgartirish: joriy parol tekshiriladi, eski tokenlar bekor, yangi token beriladi", async () => {
+      if (!authOn) return;
+      // iat soniyada — parol o'zgarishi shu soniyadan keyin bo'lsin
+      const oldToken = (await loginAs("boshlang1ch"))!;
+      await new Promise((r) => setTimeout(r, 1100));
+
+      const wrong = await api("/api/auth/password", {
+        method: "POST", ...bearer(oldToken),
+        body: JSON.stringify({ currentPassword: "notogri-parol", newPassword: "yangiParol123" }),
+      });
+      expect(wrong.status).toBe(400);
+
+      const short = await api("/api/auth/password", {
+        method: "POST", ...bearer(oldToken),
+        body: JSON.stringify({ currentPassword: "boshlang1ch", newPassword: "qisqa" }),
+      });
+      expect(short.status).toBe(400);
+
+      const ok = await api("/api/auth/password", {
+        method: "POST", ...bearer(oldToken),
+        body: JSON.stringify({ currentPassword: "boshlang1ch", newPassword: "yangiParol123" }),
+      });
+      expect(ok.status).toBe(200);
+      expect(ok.body.token).toBeTruthy();
+
+      expect((await api("/api/rooms", bearer(oldToken))).status, "eski token ishlayapti").toBe(401);
+      expect((await api("/api/rooms", bearer(ok.body.token))).status).toBe(200);
+      expect(await loginAs("boshlang1ch")).toBeUndefined();
+      expect(await loginAs("yangiParol123")).toBeTruthy();
+
+      const log = await prisma.auditLog.findFirst({ where: { action: "user.password_changed", entityId: userId } });
+      expect(log).toBeTruthy();
+    });
+
+    it("egasi xodim parolini tiklaydi — xodimning eski sessiyasi yopiladi", async () => {
+      if (!authOn) return;
+      const token = (await loginAs("yangiParol123"))!;
+      await new Promise((r) => setTimeout(r, 1100));
+
+      const reset = await api(`/api/auth/users/${userId}`, {
+        method: "PATCH", headers: founderAuth, body: JSON.stringify({ password: "tiklanganParol1" }),
+      });
+      expect(reset.status).toBe(200);
+      expect((await api("/api/rooms", bearer(token))).status).toBe(401);
+      expect(await loginAs("tiklanganParol1")).toBeTruthy();
+    });
+
+    it("mavjud bo'lmagan foydalanuvchini o'zgartirish — 404", async () => {
+      if (!authOn) return;
+      const res = await api("/api/auth/users/yoq-foydalanuvchi", {
+        method: "PATCH", headers: founderAuth, body: JSON.stringify({ isActive: false }),
+      });
+      expect(res.status).toBe(404);
     });
   });
 
@@ -696,14 +912,14 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       expect(typeof res.body.security.rateLimit).toBe("boolean");
     });
 
-    it("hech bir API javobida token qolmagan", async () => {
+    it("hech bir API javobida token yoki parol hash'i qolmagan", async () => {
       // Bir nechta endpoint'ni birdan tekshiramiz
       const paths = [
         "/api/rooms",
         "/api/reservations",
-        "/api/admin/connection",
-        "/api/admin/mapping",
-        "/api/admin/status",
+        "/api/admin/employees",
+        "/api/admin/cleaning",
+        "/api/auth/me",
       ];
 
       // Auth yoqilgan bo'lsa token bilan so'raymiz

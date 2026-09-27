@@ -8,26 +8,14 @@
  * NEGA ALOHIDA FAYL: bu yerda faqat O'QISH bor, hech narsa
  * o'zgarmaydi. Shuning uchun `reservations.ts` (biznes amallar)
  * ichiga aralashtirilmadi.
+ *
+ * "Bugun" — mehmonxona (Toshkent) kuni, `lib/hotelTime.ts`.
  */
 
 import { prisma } from "../lib/prisma.js";
-import { toNumber, toDateKey } from "../lib/serialize.js";
-
-// ============================================================
-//  Yordamchi
-// ============================================================
-
-/** Bugungi sana, UTC yarim tunda (baza `@db.Date` bilan mos) */
-function todayUtc(): Date {
-  const d = new Date();
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-}
-
-function addDays(d: Date, n: number): Date {
-  const x = new Date(d);
-  x.setUTCDate(x.getUTCDate() + n);
-  return x;
-}
+import { toDateKey } from "../lib/serialize.js";
+import { reservationMoney, sumMoney } from "../lib/money.js";
+import { addDays, hotelToday } from "../lib/hotelTime.js";
 
 /** Bron xonani band qiladigan statuslar */
 const ACTIVE_STATUSES = ["PENDING_PAYMENT", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT"] as const;
@@ -55,19 +43,23 @@ export type TodaySnapshot = {
 };
 
 export async function getTodaySnapshot(): Promise<TodaySnapshot> {
-  const today = todayUtc();
-  const tomorrow = addDays(today, 1);
+  const today = hotelToday();
 
   const [rooms, blocked, arrivals, departures, staying] = await Promise.all([
     prisma.room.count({ where: { isActive: true } }),
 
     prisma.roomDayStatus.count({
-      where: { date: today, isBlocked: true },
+      where: { date: today, isBlocked: true, room: { isActive: true } },
     }),
 
     prisma.reservation.findMany({
       where: { checkIn: today, status: { in: [...ACTIVE_STATUSES] } },
-      select: { id: true, pricePerNight: true, checkIn: true, checkOut: true },
+      select: {
+        id: true, checkIn: true, checkOut: true, adults: true, children: true,
+        pricePerNight: true, withMeal: true, mealPricePerPerson: true,
+        status: true, cancellationFee: true,
+        charges: { select: { amount: true } },
+      },
     }),
 
     prisma.reservation.count({
@@ -89,16 +81,10 @@ export async function getTodaySnapshot(): Promise<TodaySnapshot> {
   // lekin ehtiyot uchun noyob sanaymiz.
   const occupiedRooms = new Set(staying.map((r) => r.roomId)).size;
 
-  // Bugun boshlangan bronlarning jami qiymati.
-  // `pricePerNight × kechalar` — qo'shimcha xarajatlarsiz, chunki
-  // ular keyinroq qo'shiladi.
-  const todayRevenue = arrivals.reduce((sum, r) => {
-    const nights = Math.max(
-      1,
-      Math.round((r.checkOut.getTime() - r.checkIn.getTime()) / 86_400_000)
-    );
-    return sum + toNumber(r.pricePerNight) * nights;
-  }, 0);
+  // Bugun boshlangan bronlarning jami qiymati — bron summasi bilan
+  // bir xil (xona + nonushta + xizmatlar, lib/money.ts). Ilgari
+  // nonushta kirmasdi va bot panelnikidan kam ko'rsatardi.
+  const todayRevenue = sumMoney(arrivals.map((r) => reservationMoney(r).total));
 
   const freeRooms = Math.max(0, rooms - occupiedRooms - blocked);
 
@@ -127,13 +113,15 @@ export type FinanceReport = {
   bookings: number;
   /** Xona narxi × kechalar */
   roomRevenue: number;
+  /** Nonushta: narx × kishi × kecha */
+  mealRevenue: number;
   /** Qo'shimcha xarajatlar (mini-bar, transfer va h.k.) */
   charges: number;
-  /** roomRevenue + charges */
+  /** roomRevenue + mealRevenue + charges */
   total: number;
-  /** Haqiqatda qabul qilingan to'lovlar */
+  /** Shu bronlar bo'yicha qabul qilingan to'lovlar */
   paid: number;
-  /** total - paid (manfiy bo'lmaydi) */
+  /** Shu bronlarning to'lanmagan qoldig'i (bron bo'yicha, manfiy bo'lmaydi) */
   debt: number;
   /** Manba bo'yicha taqsimot */
   bySource: Array<{ source: string; count: number; amount: number }>;
@@ -155,48 +143,51 @@ export async function getFinanceReport(from: Date, to: Date): Promise<FinanceRep
       status: { in: [...ACTIVE_STATUSES] },
     },
     select: {
-      pricePerNight: true,
-      checkIn: true,
-      checkOut: true,
+      checkIn: true, checkOut: true, adults: true, children: true,
+      pricePerNight: true, withMeal: true, mealPricePerPerson: true,
+      status: true, cancellationFee: true,
       source: true,
       charges: { select: { amount: true } },
       payments: { select: { amount: true } },
     },
   });
 
-  let roomRevenue = 0;
-  let charges = 0;
-  let paid = 0;
+  // Formula — lib/money.ts (bron kartasi, hisobot va bot bir xil)
+  const room: number[] = [];
+  const meal: number[] = [];
+  const extra: number[] = [];
+  const paidAll: number[] = [];
+  const debts: number[] = [];
   const bySource = new Map<string, { count: number; amount: number }>();
 
   for (const r of reservations) {
-    const nights = Math.max(
-      1,
-      Math.round((r.checkOut.getTime() - r.checkIn.getTime()) / 86_400_000)
-    );
-    const room = toNumber(r.pricePerNight) * nights;
-    const extra = r.charges.reduce((s, c) => s + toNumber(c.amount), 0);
-
-    roomRevenue += room;
-    charges += extra;
-    paid += r.payments.reduce((s, p) => s + toNumber(p.amount), 0);
+    const m = reservationMoney(r);
+    room.push(m.roomTotal);
+    meal.push(m.mealTotal);
+    extra.push(m.chargesTotal);
+    paidAll.push(m.paid);
+    debts.push(m.remaining);
 
     const key = r.source.toLowerCase();
     const cur = bySource.get(key) ?? { count: 0, amount: 0 };
-    bySource.set(key, { count: cur.count + 1, amount: cur.amount + room + extra });
+    bySource.set(key, { count: cur.count + 1, amount: sumMoney([cur.amount, m.total]) });
   }
 
-  const total = roomRevenue + charges;
+  const roomRevenue = sumMoney(room);
+  const mealRevenue = sumMoney(meal);
+  const charges = sumMoney(extra);
+  const total = sumMoney([roomRevenue, mealRevenue, charges]);
 
   return {
     from: toDateKey(from) ?? "",
     to: toDateKey(to) ?? "",
     bookings: reservations.length,
     roomRevenue,
+    mealRevenue,
     charges,
     total,
-    paid,
-    debt: Math.max(0, total - paid),
+    paid: sumMoney(paidAll),
+    debt: sumMoney(debts),
     bySource: [...bySource.entries()]
       .map(([source, v]) => ({ source, ...v }))
       .sort((a, b) => b.amount - a.amount),
@@ -205,7 +196,7 @@ export async function getFinanceReport(from: Date, to: Date): Promise<FinanceRep
 
 /** Bugun / shu hafta / shu oy uchun tayyor oraliqlar */
 export function periodRange(period: "today" | "week" | "month"): { from: Date; to: Date } {
-  const today = todayUtc();
+  const today = hotelToday();
 
   if (period === "today") return { from: today, to: today };
 
@@ -243,7 +234,7 @@ export type RoomStateRow = {
 };
 
 export async function getRoomStates(): Promise<RoomStateRow[]> {
-  const today = todayUtc();
+  const today = hotelToday();
 
   const [rooms, staying, blocked] = await Promise.all([
     prisma.room.findMany({
@@ -300,6 +291,7 @@ export type UpcomingBooking = {
   nights: number;
   source: string;
   status: string;
+  /** So'mda */
   total: number;
   createdAt: string;
 };
@@ -310,19 +302,17 @@ export async function getRecentBookings(limit = 10): Promise<UpcomingBooking[]> 
     orderBy: { createdAt: "desc" },
     take: Math.min(limit, 50),
     select: {
-      id: true, roomId: true, checkIn: true, checkOut: true,
-      pricePerNight: true, source: true, status: true, createdAt: true,
+      id: true, roomId: true, checkIn: true, checkOut: true, adults: true, children: true,
+      pricePerNight: true, withMeal: true, mealPricePerPerson: true,
+      status: true, cancellationFee: true,
+      source: true, createdAt: true,
       guest: { select: { fullName: true, phone: true } },
       charges: { select: { amount: true } },
     },
   });
 
   return rows.map((r) => {
-    const nights = Math.max(
-      1,
-      Math.round((r.checkOut.getTime() - r.checkIn.getTime()) / 86_400_000)
-    );
-    const extra = r.charges.reduce((s, c) => s + toNumber(c.amount), 0);
+    const m = reservationMoney(r);
     return {
       id: r.id,
       roomId: r.roomId,
@@ -330,10 +320,10 @@ export async function getRecentBookings(limit = 10): Promise<UpcomingBooking[]> 
       phone: r.guest.phone ?? "",
       checkIn: toDateKey(r.checkIn) ?? "",
       checkOut: toDateKey(r.checkOut) ?? "",
-      nights,
+      nights: m.nights,
       source: r.source.toLowerCase(),
       status: r.status.toLowerCase(),
-      total: toNumber(r.pricePerNight) * nights + extra,
+      total: m.total,
       createdAt: r.createdAt.toISOString(),
     };
   });

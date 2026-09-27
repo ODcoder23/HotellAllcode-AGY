@@ -6,8 +6,8 @@
  * TZ: "Secret/token/password log qilinmasin."
  *
  * BITTA FUNKSIYA, BITTA JOY. Har controllerda alohida yozilmaydi.
- * `SyncLog.request/response` va `WebhookEvent.rawPayload` shu
- * funksiyadan o'tadi.
+ * Audit jurnalining `before`/`after` qiymatlari shu funksiyadan
+ * o'tadi (services/auditLog.ts).
  *
  * Kalit qidiruvi `includes` bilan — `x-auth-token`, `user_password`
  * kabi variantlar ham tutiladi.
@@ -33,8 +33,8 @@ function isSensitive(key: string): boolean {
 /**
  * Maxfiy maydonlarni `[REDACTED]` bilan almashtiradi.
  *
- * Juda uzun matnlar qisqartiriladi — log jadvali cheksiz o'smasligi
- * uchun (10-fayl §5: SyncLog eng tez o'sadigan jadval).
+ * Juda uzun matnlar qisqartiriladi — jurnal jadvali cheksiz
+ * o'smasligi uchun (masalan `data:` URL rasm).
  */
 export function sanitizeForLog(data: unknown, depth = 0): unknown {
   if (depth > MAX_DEPTH) return "[MAX_DEPTH]";
@@ -56,10 +56,3 @@ export function sanitizeForLog(data: unknown, depth = 0): unknown {
   return out;
 }
 
-/** Prisma `Json` maydoniga yozish uchun — undefined bo'lmasligi kerak */
-export function sanitizeForJson(data: unknown): object {
-  const clean = sanitizeForLog(data);
-  if (clean === null || clean === undefined) return {};
-  if (typeof clean !== "object") return { value: clean };
-  return clean as object;
-}

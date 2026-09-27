@@ -19,7 +19,7 @@ import {
   periodRange,
 } from "../services/stats.js";
 import {
-  esc, som, mln, longDate, shortDate, bar,
+  esc, money, moneyShort, longDate, shortDate, bar,
   SOURCE_LABEL, STATUS_LABEL, ROOM_STATUS_ICON, ROOM_STATUS_LABEL,
 } from "./format.js";
 
@@ -46,7 +46,7 @@ export async function screenDashboard(): Promise<string> {
     `🏠 Yashayotgan: <b>${s.staying}</b>`,
     ``,
     `<b>Bugungi tushum</b>`,
-    `💰 ${mln(s.todayRevenue)}`,
+    `💰 ${moneyShort(s.todayRevenue)}`,
   ];
 
   return lines.join("\n");
@@ -71,28 +71,32 @@ export async function screenFinance(
     ``,
     `Bronlar: <b>${r.bookings}</b> ta`,
     ``,
-    `Xona narxi:  ${som(r.roomRevenue)}`,
+    `Xona narxi:  ${money(r.roomRevenue)}`,
   ];
 
+  if (r.mealRevenue > 0) {
+    lines.push(`Nonushta: ${money(r.mealRevenue)}`);
+  }
+
   if (r.charges > 0) {
-    lines.push(`Qo'shimcha: ${som(r.charges)}`);
+    lines.push(`Qo'shimcha: ${money(r.charges)}`);
   }
 
   lines.push(
-    `<b>Jami: ${som(r.total)}</b>`,
+    `<b>Jami: ${money(r.total)}</b>`,
     ``,
-    `✅ To'langan: ${som(r.paid)}`,
+    `✅ To'langan: ${money(r.paid)}`,
   );
 
   if (r.debt > 0) {
-    lines.push(`⚠️ Qarz: <b>${som(r.debt)}</b>`);
+    lines.push(`⚠️ Qarz: <b>${money(r.debt)}</b>`);
   }
 
   if (r.bySource.length > 0) {
     lines.push(``, `<b>Manba bo'yicha</b>`);
     for (const s of r.bySource) {
       const label = SOURCE_LABEL[s.source] ?? s.source;
-      lines.push(`• ${esc(label)}: ${s.count} ta — ${som(s.amount)}`);
+      lines.push(`• ${esc(label)}: ${s.count} ta — ${money(s.amount)}`);
     }
   }
 
@@ -170,7 +174,7 @@ export async function screenBookings(limit = 8): Promise<string> {
   for (const b of rows) {
     lines.push(
       `<b>${esc(b.guestName)}</b> · ${b.roomId}-xona`,
-      `${shortDate(b.checkIn)} → ${shortDate(b.checkOut)} (${b.nights} kecha) · ${som(b.total)}`,
+      `${shortDate(b.checkIn)} → ${shortDate(b.checkOut)} (${b.nights} kecha) · ${money(b.total)}`,
       `${STATUS_LABEL[b.status] ?? b.status} · ${esc(SOURCE_LABEL[b.source] ?? b.source)}`,
       ``
     );
@@ -200,9 +204,9 @@ export function notifyNewBooking(b: {
     `🔔 <b>Yangi bron</b>`,
     ``,
     `👤 <b>${esc(b.guestName)}</b>`,
-    `🏠 ${b.roomId}-xona`,
+    `🏠 ${esc(b.roomId)}-xona`,
     `📅 ${longDate(b.checkIn)} → ${longDate(b.checkOut)} (${b.nights} kecha)`,
-    `💰 ${som(b.total)}`,
+    `💰 ${money(b.total)}`,
     `📍 ${esc(SOURCE_LABEL[b.source] ?? b.source)}`,
     `${STATUS_LABEL[b.status] ?? b.status}`,
   ];

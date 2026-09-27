@@ -6,61 +6,56 @@ Butun infratuzilma serverda: `<SERVER_IP>`. Kompyuterda faqat kod.
 > fayliga `root@<SERVER_IP>` yozing (git'ga kirmaydi).
 
 Loyiha logikasi: [PROJECT_LOGIC.md](PROJECT_LOGIC.md) ·
-Qolgan ishlar: [TODO.md](TODO.md)
+Qolgan ishlar: [ISH_REJASI.md](ISH_REJASI.md)
 
 ---
 
-## Production Manzillari (<DOMAIN>)
+## Production manzillari (<DOMAIN>)
 
-Loyiha to'liq `<DOMAIN>` domeniga ulangan (SSL / HTTPS + WSS):
+Loyiha `<DOMAIN>` domeniga ulangan (nginx, SSL / HTTPS + WSS):
 
-| Manzil | Nima | Tavsif |
-|---|---|---|
-| `https://<DOMAIN>/` | Sayt | Mehmonlar uchun xonalar va bron qilish |
-| `https://<DOMAIN>/shaxmatka` | Bandlik jadvali | Shaxmatka interfeysi |
-| `https://<DOMAIN>/admin-panel` | Xodimlar paneli | PMS boshqaruv paneli |
-| `https://<DOMAIN>/admin/mapping.html` | Xona mapping | Beds24 xona va tarif moslashuvi |
-| `https://<DOMAIN>/admin/connection.html` | Ulanish holati | Beds24 ulanishi va hisob balansi |
-| `https://<DOMAIN>/admin/sync-log.html` | Sinxronizatsiya jurnali | Hodisalar va xatoliklar tarixi |
-| `wss://<DOMAIN>/ws` | Real-time WebSocket | Shaxmatka va admin panel jonli yangilanishi |
-| `https://<DOMAIN>/health` | Health Check | Tizim holati (DB, Redis, Realtime, Security) |
+| Manzil | Nima |
+|---|---|
+| `https://<DOMAIN>/` | Sayt — mehmonlar uchun xonalar va bron |
+| `https://<DOMAIN>/shaxmatka` | Bandlik jadvali |
+| `https://<DOMAIN>/admin-panel` | Xodimlar paneli |
+| `wss://<DOMAIN>/ws` | Real-time (Shaxmatka va admin panel jonli yangilanishi) |
+| `https://<DOMAIN>/health` | Holat: DB, Redis, realtime, xavfsizlik |
 
-Kirish: `founder@imron.local` / `admin12345` (to'liq huquq).
-Boshqa rollar: `admin@`, `manager@`, `staff@` — bir xil parol.
+`/admin/*.html` (Beds24 mapping, ulanish, sync jurnali) va
+`/api/webhooks/beds24/*` 2026-09-26 dan yo'q — 404 qaytaradi.
+
+Kirish ma'lumotlari repoda saqlanmaydi (repo ochiq). Seed paroli
+(`admin12345`) ochiq repoda — serverdagi har foydalanuvchi parolini
+admin panel → avatar → "Parolni o'zgartirish" orqali almashtiring.
 
 ---
 
-## Lokal Dasturchi Rejimi (SSH Tunnel)
+## Lokal dasturchi rejimi (SSH tunnel)
 
-Lokal ishlab chiqishda:
 ```bash
 bash tools/tunnel.sh        # terminal ochiq qoladi
 ```
 
-Tunnel ochilgach brauzerda:
-`http://localhost:3100`, `http://localhost:3100/shaxmatka`, `http://localhost:3100/admin-panel`
+Tunnel ochilgach: `http://localhost:3100`, `/shaxmatka`, `/admin-panel`.
+Baza `localhost:5433`, Redis `localhost:6380` — bu JONLI server.
 
 ---
 
 ## Kod yuborish
 
 ```bash
-bash tools/sync.sh            # yuborish
-bash tools/sync.sh restart    # yuborish + qayta ishga tushirish
+bash tools/sync.sh            # yuborish (+ npm install, prisma generate)
+bash tools/sync.sh restart    # yuborish + build + qayta ishga tushirish
 ```
 
-Yuboriladi: `backend/src`, `prisma`, `public`, `tools`,
-`package.json`, `mock-beds24`.
-Yuborilmaydi: `node_modules`, `.env`, `dist` — serverning o'z
-nusxasi bor.
+Yuboriladi va serverda **butunlay almashtiriladi**: `backend/src`,
+`scripts`, `prisma`, `public/app`, `tools`, `package*.json`, `tsconfig*`.
+Tegilmaydi: `.env`, `node_modules`, `public/uploads` (xona rasmlari,
+tozalash fotolari). Server kompilyatsiya qilingan `dist/` ni ishlatadi —
+`restart.sh` avval `npm run build` qiladi.
 
-**Server `dist/` ni ishlatadi.** Kod o'zgarsa serverda build
-qilish shart:
-
-```bash
-ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> \
-  'cd /opt/hotel-pms/backend && npx tsc && systemctl restart hotel-backend'
-```
+**Yangi migratsiya bo'lsa** — pastdagi "Yangilash" tartibi (avval zaxira).
 
 ---
 
@@ -70,73 +65,108 @@ ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> \
 KOMPYUTER                          SERVER (<SERVER_IP>)
 ─────────                          ────────────────────
 zakas042/backend/    ──sync.sh──>  /opt/hotel-pms/backend/
-  src/ prisma/ public/               src/ prisma/ public/ dist/
-                                     .env  (server portlari)
+  src/ prisma/ public/app/           src/ prisma/ public/ dist/
+                                     .env (chmod 600)
 
                                    Docker:
-                                     hotel-postgres  :5433
-                                     hotel-redis     :6380
+                                     hotel-postgres  127.0.0.1:5433
+                                     hotel-redis     127.0.0.1:6380
                                    systemd:
-                                     hotel-backend   :3100
-                                     hotel-mock      :4100
+                                     hotel-backend   127.0.0.1:3100  (NODE_ENV=production)
+                                   nginx: 443 -> 127.0.0.1:3100
 ```
+
+`hotel-mock` (Beds24 imitatori, :4100) 2026-09-26 da o'chirildi va
+olib tashlandi.
 
 ---
 
 ## Portlar
 
-Serverda boshqa loyihalar ham bor, to'qnashmaslik uchun:
-
-| Port | Nima | Nega bu raqam |
+| Port | Nima | Bog'lanish |
 |---|---|---|
-| 3100 | backend | 3000 da boshqa loyiha |
-| 4100 | mock Beds24 | bir xil uslub |
-| 5433 | PostgreSQL | 5432 band |
-| 6380 | Redis | 6379 band bo'lishi mumkin |
+| 3100 | backend | `127.0.0.1` (`.env` `HOST=127.0.0.1`) — faqat nginx va tunnel |
+| 5433 | PostgreSQL | `127.0.0.1` |
+| 6380 | Redis | `127.0.0.1` |
 
-**Hammasi `127.0.0.1` ga bog'langan** — internetdan kirib
-bo'lmaydi. SSH tunnel yagona yo'l.
+Qo'shimcha himoya: ufw (kiruvchi — standart rad).
 
 ---
 
-## Izolyatsiya
-
-Serverdagi boshqa loyihalar tegilmagan:
-
-| Chora | Qanday |
-|---|---|
-| Alohida tarmoq | `hotel_net` |
-| Alohida nom | `hotel-` prefiksi |
-| Alohida volume | `hotel_pgdata`, `hotel_redisdata` |
-| RAM chegarasi | postgres 1GB, redis 256MB |
-| Alohida papka | `/opt/hotel-pms` |
-
-`restart.sh` faqat `hotel-pms` yo'lidagi jarayonlarni to'xtatadi.
-
----
-
-## Xizmatlar
+## Xizmat
 
 ```bash
 systemctl status hotel-backend
-systemctl status hotel-mock
 systemctl restart hotel-backend
 journalctl -u hotel-backend -n 50 --no-pager
 ```
 
-Ikkalasi ham `Restart=always` — qulasa o'zi ko'tariladi.
+`Restart=always` — qulasa o'zi ko'tariladi. Production rejimi systemd
+drop-in bilan: `/etc/systemd/system/hotel-backend.service.d/10-production.conf`
+(`Environment=NODE_ENV=production`). Bu rejimda server xavfsiz bo'lmagan
+sozlama bilan ISHGA TUSHMAYDI (`AUTH_REQUIRED=false`,
+`RATE_LIMIT_DISABLED=true` yoki 32 belgidan qisqa `JWT_SECRET`).
+
+Davriy vazifalar (BullMQ `pms-maintenance`, Toshkent vaqti):
+to'lanmagan bronlar (soatlik), STOP ufqi (15 daq), tozalash (10 daq),
+xona holati (har soat :01), audit tozalash (yakshanba 03:30),
+oshxona hisoboti (07:30, 20:00).
+
+---
+
+## Yangilash (migratsiya bilan)
+
+```bash
+# 1. Zaxira (hajmi 0 emasligini va pg_restore -l ishlashini tekshiring)
+ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> '
+  F=/opt/hotel-pms/backups/pre-deploy-$(date +%F-%H%M).dump &&
+  docker exec hotel-postgres pg_dump -U imron -d imron_pms -Fc > $F &&
+  ls -lh $F && cat $F | docker exec -i hotel-postgres pg_restore -l | head -5'
+
+# 2. Kod
+bash tools/sync.sh
+
+# 3. Migratsiya + build + qayta ishga tushirish
+ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> \
+  'cd /opt/hotel-pms/backend && set -a && . ./.env && set +a && npx prisma migrate deploy'
+ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> 'bash /opt/hotel-pms/restart.sh'
+```
+
+Xavfli migratsiyadan oldin **mashq** qiling: zaxirani vaqtinchalik
+bazaga (`createdb imron_pms_rehearsal` + `pg_restore`) tiklab, migratsiyani
+o'sha bazada sinang, keyin o'chiring. 2026-09-26 dagi Beds24 olib
+tashlash shu tartibda qilingan ([BEDS24.md](BEDS24.md), 4-bo'lim).
+
+**Tekshiruv:** `/health` 200; sayt, Shaxmatka, admin panel ochiladi;
+`journalctl` da xato yo'q.
+
+`npm run data:reset` faqat TEST BRONLARINI o'chiradi (narx, maosh,
+sozlama qoladi) — ishga tushirish egasining alohida qarori.
+
+**Orqaga qaytarish** (faqat zarur bo'lsa):
+
+```bash
+ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> '
+  systemctl stop hotel-backend &&
+  cat /opt/hotel-pms/backups/<ZAXIRA>.dump |
+    docker exec -i hotel-postgres pg_restore -U imron -d imron_pms --clean --if-exists'
+```
+
+keyin oldingi kodni yuboring (`git checkout <eski-commit> && bash tools/sync.sh restart`)
+yoki `backups/code-*.tgz` dan tiklang.
 
 ---
 
 ## Zaxira
 
-Kunlik, soat 03:00 da (cron):
+Kunlik, soat 03:00 da (cron): `0 3 * * * /opt/hotel-pms/backup.sh`.
+Zaxiralar `/opt/hotel-pms/backups/` da.
 
-```
-0 3 * * * /opt/hotel-pms/backup.sh
-```
-
-Zaxiralar `/opt/hotel-pms/backups/` da. Tiklash tekshirilgan.
+Beds24 olib tashlashdan oldingi to'liq nusxalar (2026-09-26):
+`pre-remove-beds24-2026-09-26-2049.dump` (+ `-final.dump` — backend
+to'xtatilgandan keyin), `env-pre-remove-beds24-*.bak`,
+`code-pre-remove-beds24-*.tgz` (eski kod + mock), `env-pre-prod-*.bak`,
+`hotel-mock.service.*.bak`.
 
 ---
 
@@ -150,20 +180,22 @@ ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> \
 
 ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> \
   'systemctl restart hotel-backend'
-
-ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> \
-  'cd /opt/hotel-pms && docker compose restart'
 ```
 
 **Bazaga to'g'ridan-to'g'ri ulanish** (tunnel ochiq bo'lsa):
+`postgresql://<user>:<parol>@localhost:5433/imron_pms` — login va parol
+serverdagi `backend/.env` da (repo ochiq, bu yerda yozilmaydi).
 
-```
-postgresql://imron:imron@localhost:5433/imron_pms
-```
+> Lokal `.env` tunnel orqali SHU bazaga ulanadi. Testlarni faqat alohida
+> test bazasida ishga tushiring (`zakas042/README.md`, "Testlar").
+> Serverda test ishga tushirilmaydi (`tools/test.sh` 2026-09-26 da olib tashlandi).
 
 ---
 
 ## Xavfsizlik eslatmasi
 
-Server SSH paroli va seed parollari hali o'zgartirilmagan —
-[TODO.md](TODO.md) dagi "Production'dan oldin" bo'limiga qarang.
+- Server SSH paroli va seed parollari egasi tomonidan almashtirilishi kerak.
+- Repo ochiq: git tarixida (commit 2fa1330) server IP va domen bor;
+  `backend/public/uploads/cleaning/` dagi 2 ta foto hali repoda kuzatiladi
+  (endi `.gitignore` da, lekin indeksdan olib tashlash va tarixni
+  tozalash — egasining qarori).

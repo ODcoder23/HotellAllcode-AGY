@@ -2,6 +2,15 @@
 
 **Oxirgi audit:** 2026-09-18
 
+> **2026-09-26:** Beds24 integratsiyasi olib tashlandi — bu fayldagi
+> Beds24, mapping, webhook, mock va valyuta bandlari endi dolzarb emas
+> ([BEDS24.md](BEDS24.md)). Dolzarb ro'yxat — [ISH_REJASI.md](ISH_REJASI.md) boshi.
+>
+> **Eslatma (2026-09-25):** asosiy ish rejasi endi
+> [ISH_REJASI.md](ISH_REJASI.md). Bu fayl tarix uchun qoldirilgan va
+> ISH_REJASI 3-bosqichida unga birlashtiriladi. Ba'zi da'volar
+> eskirgan (`Guest.passport` maydoni yo'q, testlar soni).
+
 Har bir band kod yoki jonli tizimda tasdiqlangan. Tugagan ishlar
 bu ro'yxatda yo'q.
 
@@ -51,19 +60,13 @@ muvaffaqiyatli o'tdi (xavfsiz deb tasdiqlandi).
 
 ## Beds24 (FAZA 15)
 
-Hozir mock server ishlatiladi. Real hisobga o'tish:
+**2026-09-25 dan [ISH_REJASI.md](ISH_REJASI.md) B-bo'limida yuritiladi.**
+Real hisob faqat o'qib o'rganildi, kod moslashtirildi, tizim hali
+mock'ka ulangan. Ma'lumotnoma: [BEDS24.md](BEDS24.md).
 
-- [ ] Beds24 panelida invite code yaratish
-      (Settings → Account → Access; scope: bookings, inventory,
-      properties)
-- [ ] `npm run beds24:connect <invite-code> <property-id>`
-- [ ] `.env` da `BEDS24_BASE_URL="https://api.beds24.com/v2"`
-- [ ] Beds24 panelida webhook URL ko'rsatish
-- [ ] 9 tarifni real Beds24 room type'lariga bog'lash
-      (`/admin/mapping` sahifasida, qo'lda — API orqali
-      sozlanmaydi)
-- [ ] `GET /api/admin/mapping/health` `isComplete: true`
-      qaytarishini tekshirish
+Asosiy qolganlar: valyuta qarori (B3, Beds24 USD), migratsiya
+to'plami (B2), Beds24 panelida 9 xona turi (B4), egasining
+ruxsati bilan ulash (B5).
 
 ---
 
@@ -90,11 +93,11 @@ Quyidagilar kodda standart qiymat bilan ishlaydi, lekin mijoz
 tasdiqlaganmi — hujjatlarda yozilmagan. Noto'g'ri bo'lsa
 sozlamadan o'zgartiriladi (`Settings` jadvali).
 
-- [ ] **Tarif narxlari.** `seed.ts` dagi 9 narx (400 000 –
-      800 000 so'm) "sig'im va tarif darajasiga qarab qo'yilgan"
-      deb belgilangan. Mijozdan aniq narxlarni olish.
-- [ ] **Bekor qilish jarimasi.** Hozir: 24 soatdan kam qolganda
-      1 kecha narxi. (`freeCancelHours`, `cancelFeeNights`)
+- [ ] **Tarif narxlari.** Tizim so'mda (Q15). Beds24'ga kurs bilan
+      dollarda boradi. `seed.ts` dagi 9 narx (400–800 ming so'm) faqat
+      namuna — haqiqiy narxni admin Narxlar panelida qo'yadi.
+- [x] **Bekor qilish jarimasi.** Egasi (Q16, 2026-09-26): jarima yo'q.
+      `cancelFeeNights` standarti 0.
 - [ ] **OTA komissiyasi.** Hozir 15% — Booking.com odatdagi
       qiymati. Haqiqiy shartnoma foizi boshqacha bo'lishi mumkin.
 - [ ] **Audit jurnali saqlash muddati.** Hozir 365 kun. Qonun

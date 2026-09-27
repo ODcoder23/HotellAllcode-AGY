@@ -14,10 +14,11 @@
  * kiritish ortiqcha ish bo'lardi.
  */
 
-import { Prisma, type ExpenseCategory } from "@prisma/client";
+import { Prisma, type ExpenseCategory, type ReservationSource } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
 import { getOtaCommissionPercent } from "./settings.js";
+import { reservationMoney, round2, sumMoney } from "../lib/money.js";
 
 /**
  * Qaysi bron manbalari komissiya oladi.
@@ -25,11 +26,14 @@ import { getOtaCommissionPercent } from "./settings.js";
  * Komissiya YO'Q: `DIRECT`, `WEBSITE`, `PHONE`, `WALK_IN` —
  * mehmon to'g'ridan-to'g'ri keladi, vositachi yo'q.
  *
- * Komissiya BOR: OTA (Online Travel Agency) kanallari.
+ * Komissiya BOR: OTA (Online Travel Agency) kanallari — qabulxona
+ * ularning bronini qo'lda kiritadi (manba "Booking.com" va h.k.).
  * `OTHER` bu yerda emas — u noaniq manba, komissiya
  * olinayotganiga ishonch yo'q.
  */
-const OTA_SOURCES = ["BOOKING_COM", "AIRBNB", "EXPEDIA"] as const;
+export const OTA_SOURCES: ReadonlySet<ReservationSource> = new Set<ReservationSource>([
+  "BOOKING_COM", "AIRBNB", "EXPEDIA", "OSTROVOK",
+]);
 
 export type ExpenseInput = {
   date: string;              // "YYYY-MM-DD"
@@ -114,6 +118,9 @@ export async function listExpenses(from: Date, toEx: Date) {
 //  OTA komissiyasi — avtomatik
 // ============================================================
 
+/** Komissiya qayta hisobi uchun advisory lock kaliti (ixtiyoriy, noyob son) */
+const COMMISSION_LOCK_KEY = 7_401_001;
+
 /**
  * Davrdagi OTA komissiyasini qaytadan hisoblaydi.
  *
@@ -134,7 +141,7 @@ export async function recalcCommissions(from: Date, toEx: Date): Promise<{
   const bookings = await prisma.reservation.findMany({
     where: {
       checkIn: { gte: from, lt: toEx },
-      source: { in: [...OTA_SOURCES] as never },
+      source: { in: [...OTA_SOURCES] as ReservationSource[] },
       // Bekor qilingan bron uchun komissiya to'lanmaydi
       status: { notIn: ["CANCELLED", "NO_SHOW"] },
     },
@@ -142,42 +149,58 @@ export async function recalcCommissions(from: Date, toEx: Date): Promise<{
       id: true,
       checkIn: true,
       checkOut: true,
+      adults: true,
+      children: true,
+      status: true,
       pricePerNight: true,
-      charges: { select: { amount: true } },
+      withMeal: true,
+      mealPricePerPerson: true,
     },
   });
 
-  const rows = bookings.map((b) => {
-    const nights = Math.max(
-      1,
-      Math.round((b.checkOut.getTime() - b.checkIn.getTime()) / 86_400_000)
-    );
-    const chargesTotal = b.charges.reduce((sum, c) => sum + Number(c.amount), 0);
-    const revenue = Number(b.pricePerNight) * nights + chargesTotal;
+  /**
+   * Komissiya bazasi — OTA'da sotilgan narx: xona + nonushta.
+   *
+   * 2026-09-25 TUZATISH: ilgari mehmonxonada qo'shilgan xizmatlar
+   * (mini-bar, transfer) ham bazaga kirardi — OTA ulardan komissiya
+   * olmaydi, xarajat bo'rtib chiqardi.
+   */
+  const rows = bookings
+    .map((b) => {
+      const m = reservationMoney(b);
+      const base = sumMoney([m.roomTotal, m.mealTotal]);
+      return {
+        date: b.checkIn,
+        category: "COMMISSION" as ExpenseCategory,
+        amount: new Prisma.Decimal(round2((base * percent) / 100)),
+        note: `${percent}% komissiya`,
+        isAuto: true,
+        reservationId: b.id,
+      };
+    })
+    .filter((r) => r.amount.gt(0));
 
-    return {
-      date: b.checkIn,
-      category: "COMMISSION" as ExpenseCategory,
-      amount: new Prisma.Decimal(Math.round((revenue * percent) / 100)),
-      note: `${percent}% komissiya`,
-      isAuto: true,
-      reservationId: b.id,
-    };
-  });
-
-  // Eski avtomatik yozuvlarni tozalab, yangisini yozamiz
-  await prisma.$transaction([
-    prisma.expense.deleteMany({
+  /**
+   * Eski avtomatik yozuvlarni tozalab, yangisini yozamiz — BITTA QULF ostida.
+   *
+   * 2026-09-26 TUZATISH: hisobot va xarajatlar sahifasi bir vaqtda
+   * ochilsa (yoki ikki oyna), ikkala so'rov ham "o'chir + yoz" qilardi.
+   * READ COMMITTED da ikkinchi `deleteMany` birinchisi yozgan qatorlarni
+   * ko'rmaydi — natijada komissiya ikki marta yozilib, xarajat va foyda
+   * buzilardi. `pg_advisory_xact_lock` ikkinchisini birinchisi tugashini
+   * kutishga majbur qiladi.
+   */
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(${COMMISSION_LOCK_KEY}::bigint)`;
+    await tx.expense.deleteMany({
       where: { date: { gte: from, lt: toEx }, isAuto: true, category: "COMMISSION" },
-    }),
-    ...(rows.length > 0
-      ? [prisma.expense.createMany({ data: rows })]
-      : []),
-  ]);
+    });
+    if (rows.length > 0) await tx.expense.createMany({ data: rows });
+  });
 
   return {
     count: rows.length,
-    total: rows.reduce((sum, r) => sum + Number(r.amount), 0),
+    total: sumMoney(rows.map((r) => r.amount)),
   };
 }
 
@@ -209,13 +232,13 @@ export async function expenseSummary(from: Date, toEx: Date): Promise<ExpenseSum
   const byCategory = grouped
     .map((g) => ({
       category: g.category,
-      amount: Number(g._sum.amount ?? 0),
+      amount: round2(g._sum.amount),
       count: g._count,
     }))
     .sort((a, b) => b.amount - a.amount);
 
   return {
-    total: byCategory.reduce((sum, c) => sum + c.amount, 0),
+    total: sumMoney(byCategory.map((c) => c.amount)),
     byCategory,
   };
 }

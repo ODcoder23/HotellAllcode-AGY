@@ -370,6 +370,23 @@ export async function stopBot(): Promise<void> {
 // ============================================================
 
 /**
+ * Tizim xabari founder'larga (STOP / stopdan chiqarish). Xato yutiladi —
+ * Telegram ishlamasligi asosiy amalni to'xtatmaydi.
+ */
+export async function sendSystemAlert(text: string): Promise<void> {
+  if (!bot) return;
+  const dbRecipients = await getActiveBotRecipients("FOUNDER").catch(() => []);
+  const allRecipients = Array.from(new Set([...config.telegram.founderIds, ...dbRecipients]));
+  for (const id of allRecipients) {
+    try {
+      await bot.api.sendMessage(id, text, { parse_mode: "HTML" });
+    } catch (e) {
+      console.error(`[bot] tizim xabari yuborilmadi (${id}):`, String(e).slice(0, 150));
+    }
+  }
+}
+
+/**
  * Yangi bron haqida founder'ga xabar yuboradi.
  *
  * Xato bo'lsa jim yutiladi: Telegram ishlamasligi bron

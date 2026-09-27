@@ -47,7 +47,7 @@ export class ValidationError extends AppError {
  *
  * 23P01 — exclusion_violation: reservation_no_overlap constraint.
  *         TZ 3-bandning DB darajasidagi himoyasi ishga tushdi.
- * P2002 — Prisma unique constraint (TZ 9-band duplicate himoyasi).
+ * P2002 — Prisma unique constraint (takroriy qiymat).
  * P2025 — yozuv topilmadi.
  */
 export function translatePrismaError(e: unknown): AppError | null {
@@ -76,10 +76,6 @@ export function translatePrismaError(e: unknown): AppError | null {
   if (e instanceof Prisma.PrismaClientKnownRequestError) {
     if (e.code === "P2002") {
       const fields = (e.meta?.target as string[] | undefined)?.join(", ") ?? "";
-      if (fields.includes("externalReservationId")) {
-        // TZ 9-band: bu xato emas, "aslida update" signali
-        return new AppError(409, "Bu bron allaqachon mavjud.", "DUPLICATE_RESERVATION");
-      }
       return new AppError(409, `Takrorlanuvchi qiymat: ${fields}`, "DUPLICATE");
     }
     if (e.code === "P2025") {

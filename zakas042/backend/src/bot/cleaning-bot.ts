@@ -61,6 +61,7 @@ import {
   type TaskView,
 } from "./cleaning.js";
 import * as clean from "../services/cleaning.js";
+import { esc } from "./format.js";
 
 let bot: Bot | null = null;
 
@@ -151,7 +152,7 @@ async function sendApprovedNotification(task: TaskRow): Promise<void> {
   const chat = groupId();
   if (!chat) return;
 
-  const roomType = task.room.roomType?.label ? ` · ${task.room.roomType.label}` : "";
+  const roomType = task.room.roomType?.label ? ` · ${esc(task.room.roomType.label)}` : "";
   const cleaner = who(task);
   const timeInfo =
     task.acceptedAt && task.finishedAt
@@ -163,9 +164,9 @@ async function sendApprovedNotification(task: TaskRow): Promise<void> {
   const lines = [
     "✅ <b>TOZALIK TASDIQLANDI!</b>",
     "",
-    `🏠 <b>${task.room.id}-xona</b>${roomType}`,
+    `🏠 <b>${esc(task.room.id)}-xona</b>${roomType}`,
     `📍 ${task.room.floor}-qavat`,
-    `👤 Farrosh: <b>${cleaner}</b>`,
+    `👤 Farrosh: <b>${esc(cleaner)}</b>`,
     ...(timeInfo ? [timeInfo] : []),
     ...(task.photoUrl ? ["📸 <i>Xona rasmi tekshirildi va tasdiqlandi</i>"] : []),
     "",
@@ -200,17 +201,17 @@ async function sendRejectedNotification(task: TaskRow): Promise<void> {
   const chat = groupId();
   if (!chat) return;
 
-  const roomType = task.room.roomType?.label ? ` · ${task.room.roomType.label}` : "";
+  const roomType = task.room.roomType?.label ? ` · ${esc(task.room.roomType.label)}` : "";
   const cleaner = who(task);
 
   const lines = [
     "⚠️ <b>TOZALIK QAYTARILDI (RAD ETILDI)</b>",
     "",
-    `🏠 <b>${task.room.id}-xona</b>${roomType}`,
+    `🏠 <b>${esc(task.room.id)}-xona</b>${roomType}`,
     `📍 ${task.room.floor}-qavat`,
-    `👤 Farrosh: <b>${cleaner}</b>`,
+    `👤 Farrosh: <b>${esc(cleaner)}</b>`,
     "",
-    `Sabab: ${task.reason}`,
+    `Sabab: ${esc(task.reason)}`,
     "",
     "❗️ <i>Iltimos, ko'rsatilgan kamchiliklarni to'g'irlab, qaytadan tozalang!</i>",
   ];
@@ -236,6 +237,15 @@ async function sendRejectedNotification(task: TaskRow): Promise<void> {
 }
 
 /**
+ * Oxirgi eslatma vaqti (taskId -> ms). Davriy tekshiruv har 10 daqiqada
+ * ishlaydi — 2026-09-26 gacha har tekshiruvda eslatma ketardi va
+ * olinmagan topshiriq guruhni har 10 daqiqada "spam" qilardi. Endi bir
+ * topshiriq uchun eslatma `CLEANING_REMIND_MINUTES` da bir marta.
+ * Xotirada: server qayta ishga tushsa ko'pi bilan bir ortiqcha eslatma.
+ */
+const lastReminded = new Map<string, number>();
+
+/**
  * Kechikkan topshiriqlar haqida guruhga eslatma.
  *
  * Davriy vazifadan chaqiriladi (`queues/scheduler.ts`).
@@ -257,14 +267,21 @@ export async function remindStaleTasks(): Promise<{ sent: number }> {
   ]);
 
   let sent = 0;
+  const now = Date.now();
+  const stillStale = new Set(stale.map((t) => t.id));
+  // Yopilgan / olingan topshiriqlar xotiradan chiqadi
+  for (const id of lastReminded.keys()) if (!stillStale.has(id)) lastReminded.delete(id);
 
   for (const task of stale) {
+    const last = lastReminded.get(task.id);
+    if (last !== undefined && now - last < minutes * 60_000) continue;
     try {
       await bot.api.sendMessage(
         groupId(),
         staleAlert(task as unknown as TaskView, minutes),
         { parse_mode: "HTML" }
       );
+      lastReminded.set(task.id, now);
       sent += 1;
     } catch (e) {
       console.error("[tozalik-bot] eslatma yuborilmadi:", String(e).slice(0, 200));

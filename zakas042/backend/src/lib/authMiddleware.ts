@@ -13,7 +13,7 @@
 
 import type { Request, Response, NextFunction } from "express";
 import type { UserRole } from "@prisma/client";
-import { verifyToken, can, type Permission } from "../services/auth.js";
+import { verifyToken, can, resolveSessionUser, type Permission, type VerifiedToken } from "../services/auth.js";
 import { config } from "./config.js";
 import type { Req } from "./errors.js";
 
@@ -25,28 +25,24 @@ import type { Req } from "./errors.js";
  */
 export type AuthedRequest = Req & {
   user?: { id: string; role: UserRole; email: string };
+  /** Imzosi tekshirilgan token — `requireAuth` egasini bazadan tasdiqlaydi */
+  token?: VerifiedToken;
 };
 
 /**
  * Auth majburiymi.
  *
- * DEV MUHITIDA O'CHIRILADI (`AUTH_REQUIRED=false`). Sabab: Shaxmatka
- * hozircha login ekranisiz ishlaydi va FAZA 3 dan beri to'g'ridan-
- * to'g'ri API'ga murojaat qiladi. Production'da har doim yoqilgan
- * bo'lishi kerak — `/health` buni ko'rsatadi.
- *
- * Ishlab chiqarishda `AUTH_REQUIRED=true` qo'yiladi va frontendga
- * login ekrani qo'shiladi (FAZA 15 topshirish ro'yxatida).
+ * Standart — yoqilgan (lib/config.ts). Faqat lokal sinovda aniq
+ * `AUTH_REQUIRED=false` bilan o'chiriladi — `/health` buni ko'rsatadi.
  */
 export const authRequired = (): boolean => config.authRequired;
 
 /**
- * Token'ni o'qiydi va `req.user` ga yozadi.
+ * Token'ni o'qiydi (faqat imzo va muddat).
  *
- * TOKEN TOPILMASA HAM XATO BERMAYDI — faqat `req.user` bo'sh
- * qoladi. Majburiylikni `requireAuth` hal qiladi. Bu ajratish
- * ixtiyoriy autentifikatsiyali endpoint'lar uchun kerak
- * (public API — FAZA 13).
+ * TOKEN TOPILMASA HAM XATO BERMAYDI — majburiylikni `requireAuth`
+ * hal qiladi. Bu ajratish ixtiyoriy autentifikatsiyali endpoint'lar
+ * uchun kerak (public API).
  */
 export function parseAuth(req: Request, _res: Response, next: NextFunction): void {
   const r = req as unknown as AuthedRequest;
@@ -54,13 +50,20 @@ export function parseAuth(req: Request, _res: Response, next: NextFunction): voi
   if (header?.startsWith("Bearer ")) {
     const payload = verifyToken(header.slice(7).trim());
     if (payload) {
+      r.token = payload;
       r.user = { id: payload.sub, role: payload.role, email: payload.email };
     }
   }
   next();
 }
 
-/** Kirish majburiy */
+/**
+ * Kirish majburiy.
+ *
+ * Token egasi BAZADAN tasdiqlanadi (`resolveSessionUser`): o'chirilgan
+ * hisob, parol almashgandan oldingi token — 401; rol — bazadagi joriy
+ * qiymat (token ichidagisi emas).
+ */
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   const r = req as unknown as AuthedRequest;
 
@@ -72,11 +75,23 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     return;
   }
 
-  if (!r.user) {
+  if (!r.token) {
+    r.user = undefined;
     res.status(401).json({ error: "Kirish talab qilinadi", code: "UNAUTHORIZED" });
     return;
   }
-  next();
+
+  resolveSessionUser(r.token)
+    .then((user) => {
+      if (!user) {
+        r.user = undefined;
+        res.status(401).json({ error: "Sessiya yaroqsiz — qaytadan kiring", code: "UNAUTHORIZED" });
+        return;
+      }
+      r.user = user;
+      next();
+    })
+    .catch(next);
 }
 
 /**
@@ -111,15 +126,13 @@ export function requirePermission(permission: Permission) {
 
 /** Xato xabarida ko'rsatiladigan o'zbekcha nom */
 const PERMISSION_LABEL: Partial<Record<Permission, string>> = {
-  "channel.connect": "Beds24 ulanishi",
-  "mapping.write": "Xona bog'lash",
   "settings.write": "Sozlamalar",
   "user.manage": "Foydalanuvchilar",
   "reservation.write": "Bron o'zgartirish",
   "reservation.cancel": "Bron bekor qilish",
   "rate.write": "Narx belgilash",
   "room.block": "Xona yopish",
-  "synclog.read": "Sinxronizatsiya jurnali",
+  "audit.read": "Audit jurnali",
   "checkin.write": "Kirish/chiqish",
   "payment.write": "To'lov",
   "report.read": "Umumiy hisobot",

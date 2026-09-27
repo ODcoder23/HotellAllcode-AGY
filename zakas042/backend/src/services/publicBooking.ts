@@ -8,24 +8,31 @@
  * unga ulash ishi scope'dan tashqarida — kontrakt topshiriladi.
  *
  * ASOSIY OQIM (TZ 3-band):
- *   Website -> PMS -> Database -> Shaxmatka -> Beds24 -> OTA
- * va "Bron qilingan xona boshqa kanallarda mavjud bo'lmagan holatga
- * o'tishi kerak. OVERBOOKING BO'LMASLIGI SHART."
+ *   Website -> PMS -> Database -> Shaxmatka
+ * "OVERBOOKING BO'LMASLIGI SHART."
  *
  * Overbooking himoyasi shu yerda qayta yozilmaydi: bron
  * `createReservation` orqali yaratiladi, u esa `EXCLUDE USING gist`
- * constraint'i bilan himoyalangan (07-fayl §5). Website ham,
- * Shaxmatka ham, OTA ham bitta to'siqdan o'tadi.
+ * constraint'i bilan himoyalangan (07-fayl §5). Sayt ham, Shaxmatka
+ * ham bitta to'siqdan o'tadi.
  */
 
 import crypto from "node:crypto";
 import { prisma } from "../lib/prisma.js";
-import { fromDateKey, toDateKey, toNumber } from "../lib/serialize.js";
+import { fromDateKey, isValidDateKey, toDateKey, toNumber } from "../lib/serialize.js";
 import { ValidationError, RoomUnavailableError } from "../lib/errors.js";
 import { createReservation } from "./reservations.js";
+import { assertTypeOpenForGuests } from "./salesStop.js";
 import { readRange } from "./availability.js";
 import { config } from "../lib/config.js";
+import { hotelToday } from "../lib/hotelTime.js";
 import { getMealPrice } from "./settings.js";
+import {
+  CURRENCY, mealTotalFor, reservationMoney, round2, stayPriceFromRates, sumMoney,
+} from "../lib/money.js";
+
+/** Sayt narxlari valyutasi — tizim valyutasi, so'm */
+const SITE_CURRENCY = CURRENCY;
 
 // ============================================================
 //  1. Bron kodi
@@ -94,17 +101,20 @@ export type PublicRoomType = {
  *
  * O'tmishga bron qilib bo'lmaydi, bir yildan uzoqqa ham —
  * ikkalasi ham noto'g'ri ma'lumot yoki hujum belgisi.
+ *
+ * "Bugun" — mehmonxona (Toshkent) kuni. Ilgari UTC edi: Toshkentda
+ * 00:00–05:00 oralig'ida sayt kechagi sanaga bron qabul qilardi.
  */
 export function validateRange(fromKey: string, toKey: string): { from: Date; to: Date; nights: number } {
   const from = fromDateKey(fromKey);
   const to = fromDateKey(toKey);
 
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
+  // "2026-02-31" kabi mavjud bo'lmagan sana JS'da 3-martga aylanadi
+  if (!isValidDateKey(fromKey) || !isValidDateKey(toKey)) {
     throw new ValidationError("Sana formati noto'g'ri (YYYY-MM-DD)");
   }
 
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  const today = hotelToday();
 
   if (from < today) throw new ValidationError("O'tmishdagi sanaga bron qilib bo'lmaydi");
   if (to <= from) throw new ValidationError("Chiqish sanasi kirish sanasidan keyin bo'lishi kerak");
@@ -134,8 +144,7 @@ export function validateRange(fromKey: string, toKey: string): { from: Date; to:
  * shunchaki vitrina.
  */
 export async function listRoomTypes() {
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
+  const today = hotelToday();
 
   /**
    * IKKI SO'ROV, tur soniga bog'liq emas.
@@ -174,7 +183,7 @@ export async function listRoomTypes() {
       id: t.id,
       label: t.label,
       pricePerNight: priceOf.get(t.id) ?? 0,
-      currency: "UZS",
+      currency: SITE_CURRENCY,
       maxAdults: t.maxAdults,
       roomCount: t._count.rooms,
 
@@ -231,28 +240,33 @@ export async function searchAvailability(q: AvailabilityQuery) {
         ? Math.min(...days.map((d) => d.availableCount))
         : await countFreeRooms(type.id, from, to);
 
-    const price = await averagePrice(type.id, from, to);
+    const stay = await stayPrice(type.id, from, to, nights);
 
     // Narx belgilanmagan turni sotib bo'lmaydi — mijozga "0 so'm"
     // ko'rsatish va keyin haqiqiy narx aytish yomon tajriba.
     // Admin narxni Narxlar panelida belgilamaguncha tur
     // ko'rsatilmaydi (07-fayl §8, Q8).
-    if (price <= 0) continue;
+    if (!stay || stay.roomTotal <= 0) continue;
+
+    // Formula — lib/money.ts: bron yaratilgach bron kartasi ham
+    // aynan shu summani ko'rsatadi (mehmon boshqa raqam ko'rmasin)
+    const mealTotal = mealTotalFor(mealPrice, guests, nights);
 
     result.push({
       id: type.id,
       label: type.label,
       availableCount: Math.max(0, availableCount),
-      pricePerNight: price,
-      roomTotal: Math.round(price * nights),
-      mealTotal: Math.round(mealPrice * guests * nights),
-      mealPricePerPerson: mealPrice,
+      // Kecha narxi — ko'rsatish uchun (sentgacha)
+      pricePerNight: round2(stay.perNight),
+      roomTotal: stay.roomTotal,
+      mealTotal,
+      mealPricePerPerson: round2(mealPrice),
       // Saytdan kelgan bron HAR DOIM ovqat tarifi bilan
       // (BOTLAR-REJA.md, 2026-09-17) — narx darhol to'liq
       // ko'rsatiladi, tasdiqlashda kutilmagan qo'shimcha
       // chiqmasin.
-      totalPrice: Math.round(price * nights + mealPrice * guests * nights),
-      currency: "UZS",
+      totalPrice: sumMoney([stay.roomTotal, mealTotal]),
+      currency: SITE_CURRENCY,
       maxAdults: type.maxAdults,
     });
   }
@@ -295,16 +309,18 @@ async function countFreeRooms(roomTypeId: string, from: Date, to: Date): Promise
   return rows[0]?.cnt ?? 0;
 }
 
-/** Oraliqdagi o'rtacha narx — `RatePlan` dan */
-async function averagePrice(roomTypeId: string, from: Date, to: Date): Promise<number> {
+/**
+ * Oraliq narxi — `RatePlan` kunlaridan (lib/money.ts `stayPriceFromRates`).
+ *
+ * Har kecha o'z tarifi bilan qo'shiladi; qabulxonadagi "tarifdan past"
+ * tekshiruvi ham aynan shu formulani ishlatadi.
+ */
+async function stayPrice(roomTypeId: string, from: Date, to: Date, nights: number) {
   const plans = await prisma.ratePlan.findMany({
     where: { roomTypeId, date: { gte: from, lt: to } },
     select: { price: true },
   });
-
-  if (plans.length === 0) return 0;    // narx belgilanmagan
-  const sum = plans.reduce((n, p) => n + toNumber(p.price), 0);
-  return Math.round((sum / plans.length) * 100) / 100;
+  return stayPriceFromRates(plans.map((p) => p.price), nights);
 }
 
 // ============================================================
@@ -314,8 +330,7 @@ async function averagePrice(roomTypeId: string, from: Date, to: Date): Promise<n
 /**
  * Turdan aniq xona tanlaydi.
  *
- * Mehmon TURNI tanlaydi, tizim ANIQ XONANI biriktiradi — Beds24'dan
- * kelgan bron mantig'i bilan bir xil (06-fayl §5).
+ * Mehmon TURNI tanlaydi, tizim ANIQ XONANI biriktiradi (06-fayl §5).
  *
  * FRAGMENTATSIYA (13-fayl §3): har doim birinchi bo'sh xonani berish
  * 5 ta xonani 5 ta yarim-band xonaga aylantiradi. Shuning uchun
@@ -424,8 +439,8 @@ export type PublicBookingResult = {
  * chiqariladi — aks holda ikki mijoz bir xonani "to'lovni
  * kutayotgan" holatda band qilib qo'yardi.
  *
- * Availability va Beds24 sync `createReservation` ichida avtomatik
- * ishga tushadi (FAZA 9, 10) — bu yerda qayta chaqirilmaydi.
+ * Availability keshi `createReservation` ichida yangilanadi —
+ * bu yerda qayta chaqirilmaydi.
  */
 export async function createPublicBooking(
   input: PublicBookingInput
@@ -453,8 +468,9 @@ export async function createPublicBooking(
   // Bir telefon raqamiga 24 soatda 3 ta faol to'lanmagan bron
   await checkSpam(phone);
 
-  const price = await averagePrice(input.roomTypeId, from, to);
-  if (price <= 0) {
+  const stay = await stayPrice(input.roomTypeId, from, to, nights);
+  const price = stay?.perNight ?? 0;
+  if (!stay || stay.roomTotal <= 0) {
     // Narxsiz bron — keyinroq mijoz bilan tortishuv chiqadi
     throw new ValidationError(
       "Bu sanalarda narx hali belgilanmagan. Iltimos, biz bilan bog'laning."
@@ -481,6 +497,9 @@ export async function createPublicBooking(
    * Faqat "xona band" xatolari qayta urinishga sabab bo'ladi;
    * boshqa xatolar (narx, validatsiya) darhol yuqoriga chiqadi.
    */
+  // STOP: turning hamma xonasi to'xtatilgan — aniq xabar (tizim nazorati)
+  await assertTypeOpenForGuests(input.roomTypeId);
+
   const taken: string[] = [];
   const MAX_ROOM_ATTEMPTS = 10;
 
@@ -516,9 +535,8 @@ export async function createPublicBooking(
          * Oshxona hisoboti ham bo'sh qolardi — `withMeal = true`
          * bronlar umuman yo'q edi.
          *
-         * Qabulxona (`/api/reservations`) va OTA boshqacha:
-         * u yerda tanlov bor, shuning uchun bu qoida faqat
-         * shu funksiyada.
+         * Qabulxona (`/api/reservations`) boshqacha: u yerda
+         * tanlov bor, shuning uchun bu qoida faqat shu funksiyada.
          *
          * Nonushta narxi `createReservation` ichida sozlamadan
          * olinadi va bronga ko'chiriladi (SAVOLLAR.md S10).
@@ -570,15 +588,10 @@ export async function createPublicBooking(
   /**
    * Nonushta jami summaga kiradi (BOTLAR-REJA.md).
    *
-   * Narx BRONDAN olinadi — `createReservation` uni sozlamadan
-   * o'qib ko'chirgan. Qidiruv natijasi bilan bir xil bo'lishi
-   * shart, aks holda mehmon boshqa summa ko'rardi.
+   * Summa BRONDAN hisoblanadi (lib/money.ts) — bron kartasi, "bronimni
+   * tekshirish" va qidiruv natijasi bir xil raqam ko'rsatadi.
    */
-  const guests = input.adults + (input.children ?? 0);
-  const mealPrice = reservation.mealPricePerPerson
-    ? toNumber(reservation.mealPricePerPerson)
-    : 0;
-  const mealTotal = reservation.withMeal ? mealPrice * guests * nights : 0;
+  const m = reservationMoney(reservation);
 
   return {
     reservationCode: code,
@@ -589,10 +602,10 @@ export async function createPublicBooking(
     adults: input.adults,
     children: input.children ?? 0,
     withMeal: reservation.withMeal,
-    roomTotal: Math.round(price * nights),
-    mealTotal,
-    totalPrice: Math.round(price * nights + mealTotal),
-    currency: "UZS",
+    roomTotal: m.roomTotal,
+    mealTotal: m.mealTotal,
+    totalPrice: m.total,
+    currency: SITE_CURRENCY,
   };
 }
 
@@ -629,34 +642,25 @@ async function checkSpam(phone: string): Promise<void> {
  *
  * JAVOBDA BOSHQA MEHMONLAR MA'LUMOTI YO'Q (13-fayl §6). Faqat shu
  * bronning o'zi va faqat mijozga kerakli maydonlar — ichki id,
- * Beds24 bookingId, sync holati berilmaydi.
+ * telefon va to'lov tafsiloti berilmaydi.
  */
 export async function findByCode(code: string) {
   const reservation = await prisma.reservation.findUnique({
     where: { code: code.trim().toUpperCase() },
-    include: { guest: true, room: { include: { roomType: true } }, payments: true },
+    include: { guest: true, room: { include: { roomType: true } }, payments: true, charges: true },
   });
 
   if (!reservation) return null;
 
-  const nights = Math.round(
-    (reservation.checkOut.getTime() - reservation.checkIn.getTime()) / 86_400_000
-  );
   /**
-   * Nonushta jami summaga kiradi (SAVOLLAR.md S10).
+   * Summa — lib/money.ts (bron kartasi bilan bir xil).
    *
-   * Narx BRONDAN olinadi — bron yaratilganda ko'chirilgan.
-   * Keyin sozlamada narx ko'tarilsa, mehmon kelishilgandan
-   * ko'p to'lamaydi.
+   * 2026-09-25 TUZATISH: ilgari bu yerda qo'shimcha xizmatlar va
+   * bekor qilish jarimasi hisobga olinmasdi — mehmon "qoldiq" ni
+   * qabulxonadagidan boshqacha ko'rardi.
    */
-  const guests = reservation.adults + reservation.children;
-  const mealPrice = reservation.mealPricePerPerson
-    ? toNumber(reservation.mealPricePerPerson)
-    : 0;
-  const mealTotal = reservation.withMeal ? mealPrice * guests * nights : 0;
-
-  const total = toNumber(reservation.pricePerNight) * nights + mealTotal;
-  const paid = reservation.payments.reduce((n, p) => n + toNumber(p.amount), 0);
+  const m = reservationMoney(reservation);
+  const nights = m.nights;
 
   return {
     reservationCode: reservation.code,
@@ -671,11 +675,11 @@ export async function findByCode(code: string) {
     guestName: reservation.guest.fullName,
     // Mehmon nima uchun to'laganini ko'rsin
     withMeal: reservation.withMeal,
-    mealTotal,
-    totalPrice: total,
-    paidAmount: paid,
-    remainingAmount: Math.max(total - paid, 0),
-    currency: reservation.currency,
+    mealTotal: m.mealTotal,
+    totalPrice: m.total,
+    paidAmount: m.paid,
+    remainingAmount: m.remaining,
+    currency: SITE_CURRENCY,
   };
 }
 
@@ -697,8 +701,7 @@ export type ExpireResult = {
  * teskari tomoni (13-fayl §5).
  *
  * `cancelReservation` chaqiriladi — u availability'ni qayta
- * hisoblaydi va Beds24'ga yuboradi, ya'ni xona OTA'da darhol
- * qayta sotuvga chiqadi.
+ * hisoblaydi, ya'ni xona saytda darhol qayta sotuvga chiqadi.
  */
 export async function expireUnpaidBookings(): Promise<ExpireResult> {
   const { cancelReservation } = await import("./reservations.js");
@@ -708,10 +711,14 @@ export async function expireUnpaidBookings(): Promise<ExpireResult> {
   const stale = await prisma.reservation.findMany({
     where: {
       status: "PENDING_PAYMENT",
+      // FAQAT sayt bronlari: qabulxona "to'lov kutilmoqda" qilib
+      // qo'ygan bronni xodim o'zi kuzatadi
+      source: "WEBSITE",
+      code: { not: null },
       createdAt: { lt: cutoff },
       // Faqat kelajakdagi bronlar — o'tmishdagilarni tegmaymiz,
       // ular tarix
-      checkOut: { gte: new Date() },
+      checkOut: { gte: hotelToday() },
     },
     select: { id: true, code: true },
     take: 100,

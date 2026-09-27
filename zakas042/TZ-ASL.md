@@ -488,6 +488,21 @@ amalga oshirilgan.
 | Q6 | Xona almashtirilsa | **Beds24'da ham ko'rinishi kerak** — sync majburiy. |
 | Q7 | Check-in / check-out Beds24'ga | **Qo'llab-quvvatlanadi, muammo yo'q** — sync qilinadi. |
 | Q8 | Dinamik (avtomatik o'suvchi) narxlash | **Mexanizm olib tashlanadi** (`base + confirmedCount × increment`) — TZ'da bunday talab yo'q va formula xato (jami bronlar soniga qaraydi, sanadagi bandlikka emas). **Narxlar paneli UI sifatida qoladi**, endi `RatePlan` qiymatlarini ko'rsatadi va tahrirlashga imkon beradi. |
+| Q9 | Beds24 va PMS farq qilsa kim to'g'ri (2026-09-25) | **"Beds24 tanlovi doim ustuvor."** Beds24 markaziy tizim, Shaxmatka — uni boshqarish oynasi. TZ 7-band "source of truth" = `beds24` (narx va mavjudlik). OTA bronining sanasi, narxi va bekor qilinishi OTA'da. Batafsil: `../BEDS24.md` 2-bo'lim |
+| Q10 | Beds24 obyekt valyutasi (2026-09-25) | **USD — to'g'ri.** PMS moslashdi (Q13) |
+| Q11 | Qaysi OTA'lar (2026-09-25) | **Booking.com va ETG/Ostrovok** Beds24 orqali. Bron sayt va admin tomonidan ham qo'yiladi. Narxni admin o'zgartiradi |
+| Q12 | Real Beds24'ga ulash (2026-09-25) | Egasi kalit berdi, lekin **ruxsatsiz ulanmaydi**: avval faqat o'qib o'rganish va moslashtirish. Beds24'dagi 2 xona — sinov uchun, obyekt ma'lumotini egasi to'ldiradi. Beds24 paneli sozlamalari (xona turlari, unitlar, webhook) — keyin Beds24 tomonida |
+| Q13 | Valyuta va eski ma'lumot (2026-09-25) | ~~**Butun tizim USD**~~ — **Q15 bilan bekor qilindi.** Asl matn: **Butun tizim USD** — Shaxmatka, sayt, hisobot, botlar ("hammasi tizimimizda USD da bo'lsin"). Sxema migratsiyasiga ruxsat. Bazadagi bronlar — **test ma'lumoti, tozalanadi** (backupdan keyin). Deploy'ni egasi o'zi qiladi — hammasi tayyorlab qo'yiladi (`../SERVER.md` "USD ga o'tish") |
+| Q14 | Nonushta narxi (2026-09-25) | Admin panelda (Oshxona) o'zgartiriladi; o'zgarsa **butun tizim hisobi** yangilanadi, "qolib ketmasligi kerak". Barcha hisob-kitoblar mukammal bo'lsin → yagona formula `backend/src/lib/money.ts`, faol bronlarga qo'llash tanlovi |
+| Q15 | Valyuta — yakuniy (2026-09-25 kechqurun) | "Faqat Beds24'dan kelgan bronlar dollarda va tagida so'm bilan ko'rinsin, qolgan hammasi so'mda; dollar chet ellik mehmonlar uchun." Tizim **so'mda** (sayt, Shaxmatka, hisobot, bot, maosh, xarajat, nonushta). Beds24 broni o'z valyutasida (USD), tagida so'm — **bron kelgan kundagi** Markaziy bank kursi (bronga yoziladi). Kurs **Markaziy bankdan avtomatik**, admin qo'lda o'zgartira oladi. Dollar bronda mehmon so'mda to'lasa — **xodim valyutani tanlaydi**, bugungi kurs bilan, asl summa saqlanadi. Narx Beds24'ga **kurs bo'yicha aylantirib** yuboriladi (so'm / kurs = $). Hisobot so'mda. Deploy'ni shu kuni egasining so'rovi bilan biz qildik (`../SERVER.md`) |
+| Q16 | Bekor qilish jarimasi (2026-09-26) | **Jarima yo'q** — bron har qanday vaqtda bepul bekor qilinadi (ilgari kirishga 24 soatdan kam qolsa 1 kecha). `CANCEL_FEE_NIGHTS` standarti 0; mexanizm sozlamada qoldi |
+| Q18 | Beds24 integratsiyasi (2026-09-26) | **Olib tashlanadi.** Avval Beds24 bilan ma'lumot almashinuvi to'liq tahlil qilinadi, keyin kod, endpoint, navbat, davriy vazifa va sozlamalar o'chiriladi; Beds24'dan kelgan test tarixi tizimda qolmasin, asosiy biznes logikasi buzilmasin. **Q9, Q10, Q12, Q15 dagi Beds24 va dollar qismlari bekor** — tizim faqat so'mda, PMS yagona haqiqat manbai. OTA bronlari qo'lda kiritiladi. Bajarildi va serverga chiqarildi (`../BEDS24.md`) |
+| Q17 | Tizim nazorati — STOP (2026-09-26) | Shaxmatka → Sozlamalar → "Tizim nazorati": STOP → "Barcha xonalar" (yoki ayrim xonalar) → "Vaqtincha to'xtatishni tasdiqlash". Sayt va qabulxona yangi bron qabul qilmaydi (Booking.com Beds24 orqali ham yopilardi — Q18 dan keyin OTA o'z kabinetida yopiladi) — "band"; Shaxmatka xiralashadi. Mavjud bronlar saqlanadi (kirish, chiqish, to'lov ishlaydi). Faqat "Stopdan chiqarish" qayta ochadi; ta'mir kabi boshqa yopiqlarga tegilmaydi. Egasiga Telegram xabari. `services/salesStop.ts` |
+
+**Q7 amalda (2026-09-25):** Beds24 API'sida check-in/out uchun
+status ham, subStatus ham yo'q. Sinxronizatsiya bron bayrog'i
+(`flagText` "Checked-in" / "Checked-out") orqali qilinadi — Beds24
+kalendarida ko'rinadi.
 
 **Qolgan barcha savollarga javob TZ'ning o'zidan olinadi** — mijoz
 ko'rsatmasi: *"qolgan savolarga javobni shu TZ dan topasan"*. Ya'ni

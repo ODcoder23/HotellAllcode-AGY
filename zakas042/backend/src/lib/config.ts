@@ -32,17 +32,17 @@ export const config = {
   isDev: (process.env.NODE_ENV ?? "development") === "development",
 
   // TZ 18-band
-  encryptionKey: process.env.ENCRYPTION_KEY ?? "",
   jwtSecret: process.env.JWT_SECRET ?? "",
 
   /**
    * JWT majburiymi (TZ 18-band).
    *
-   * Dev'da o'chirilgan: Shaxmatka hozircha login ekranisiz ishlaydi.
-   * Production'da MAJBURIY — FAZA 15 topshirish ro'yxatida
-   * `AUTH_REQUIRED=true` qo'yish bor.
+   * STANDART — YOQILGAN (2026-09-26). Faqat aniq `AUTH_REQUIRED="false"`
+   * o'chiradi (lokal sinov). Ilgari standart "false" edi: `.env` dan
+   * qator tushib qolsa yoki noto'g'ri yozilsa ("True", "1") butun API
+   * — bronlar, mehmon telefonlari, moliya — login'siz ochilib qolardi.
    */
-  authRequired: (process.env.AUTH_REQUIRED ?? "false") === "true",
+  authRequired: (process.env.AUTH_REQUIRED ?? "true").trim().toLowerCase() !== "false",
 
   /**
    * Rate limiting o'chirilganmi.
@@ -121,44 +121,26 @@ export const config = {
 
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "12h",
 
-  // TZ 13-band — frontendga chiqmaydi
-  beds24: {
-    baseUrl: process.env.BEDS24_BASE_URL ?? "http://localhost:4000",
-    creditLimit: num("BEDS24_CREDIT_LIMIT", 100),
-    creditSafetyThreshold: num("BEDS24_CREDIT_SAFETY_THRESHOLD", 10),
-  },
-
-  // 04-fayl §9
-  webhook: {
-    authMode: (process.env.WEBHOOK_AUTH_MODE ?? "ip_token") as "signature" | "ip_token",
-    urlToken: process.env.WEBHOOK_URL_TOKEN ?? "",
-    signatureSecret: process.env.WEBHOOK_SIGNATURE_SECRET ?? "",
-    allowedIps: (process.env.WEBHOOK_ALLOWED_IPS ?? "").split(",").filter(Boolean),
-  },
-
-  // TZ 7-band
-  sourceOfTruth: {
-    rates: (process.env.SOURCE_OF_TRUTH_RATES ?? "pms") as "pms" | "beds24",
-    availability: (process.env.SOURCE_OF_TRUTH_AVAILABILITY ?? "pms") as "pms" | "beds24",
-  },
-
   pendingPaymentTimeoutHours: num("PENDING_PAYMENT_TIMEOUT_HOURS", 24),
-  pollIntervalMinutes: num("POLL_INTERVAL_MINUTES", 15),
 } as const;
 
 /**
  * Ishlab chiqarishda xavfsiz bo'lmagan sozlamalarni to'sadi.
  *
- * NEGA KERAK: dev qiymatlari qulaylik uchun ataylab bo'sh —
- * `AUTH_REQUIRED=false` barcha ruxsat tekshiruvlarini o'tkazib
- * yuboradi, `dev-webhook-token` esa hammaga ma'lum. Bu qiymatlar
- * bilan ishlab chiqarishga chiqish mehmonlar ma'lumoti va pul
- * hisobini ochiq qoldiradi.
+ * NEGA KERAK: `AUTH_REQUIRED=false` barcha ruxsat tekshiruvlarini
+ * o'tkazib yuboradi, qisqa `JWT_SECRET` esa soxta token yasashga
+ * imkon beradi. Bu qiymatlar bilan ishlab chiqarishga chiqish
+ * mehmonlar ma'lumoti va pul hisobini ochiq qoldiradi.
  *
  * Server ISHGA TUSHMAYDI — jimgina ogohlantirish yetarli emas,
  * chunki uni hech kim o'qimaydi.
  */
 export function assertProductionSafe(): void {
+  // Har muhitda: auth yoqilgan, lekin imzo kaliti yo'q — login 500 berardi
+  if (config.authRequired && !config.jwtSecret) {
+    throw new Error("JWT_SECRET yo'q — AUTH_REQUIRED yoqilganda token imzolab bo'lmaydi");
+  }
+
   if (config.nodeEnv !== "production") return;
 
   const problems: string[] = [];
@@ -173,20 +155,8 @@ export function assertProductionSafe(): void {
     problems.push('RATE_LIMIT_DISABLED="true" — so\'rov cheklovi yo\'q');
   }
 
-  if (config.webhook.urlToken === "dev-webhook-token") {
-    problems.push("WEBHOOK_URL_TOKEN dev qiymatida qolgan");
-  }
-
-  if (config.webhook.authMode === "ip_token" && !config.webhook.urlToken) {
-    problems.push("WEBHOOK_URL_TOKEN bo'sh — webhook himoyasiz");
-  }
-
   if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
     problems.push("JWT_SECRET yo'q yoki juda qisqa (32+ belgi kerak)");
-  }
-
-  if (!process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_KEY.length < 32) {
-    problems.push("ENCRYPTION_KEY yo'q yoki juda qisqa");
   }
 
   if (problems.length === 0) return;

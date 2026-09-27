@@ -3,14 +3,8 @@
  *
  * Manba: 10-SECURITY-VA-SYNCLOG.md §4
  *
- * FARQ (10-fayl §4):
- *   `AuditLog` — KIM qildi (odam harakati)
- *   `SyncLog`  — NIMA yuborildi (tizim harakati)
- * Ikkalasi alohida jadval, aralashtirilmaydi.
- *
- * `before`/`after` `sanitizeForLog()` dan o'tadi: sozlama qiymatida
- * token bo'lib qolishi mumkin (masalan kelajakda `WEBHOOK_TOKEN`
- * sozlama sifatida qo'shilsa).
+ * `before`/`after` `sanitizeForLog()` dan o'tadi: qiymat ichida
+ * parol yoki token bo'lib qolsa ham jurnalga tushmasin.
  */
 
 import { prisma } from "../lib/prisma.js";
@@ -24,13 +18,12 @@ import { sanitizeForLog } from "../lib/sanitize.js";
  * shunda "qaysi amallar kuzatiladi" savoliga bitta javob bo'ladi.
  */
 export const AUDIT_ACTIONS = [
-  "mapping.created",
-  "mapping.updated",
-  "mapping.deleted",
   "settings.changed",
-  "channel.connected",
-  "channel.disconnected",
-  "webhook.reprocessed",
+  // Nonushta narxi — faol bronlar summasini ham o'zgartirishi mumkin
+  "meal_price.changed",
+  // Tizim nazorati: sotuvni vaqtincha to'xtatish (STOP) va qayta ochish
+  "system.sales_stop",
+  "system.sales_resume",
   "reservation.cancelled",
   "reservation.no_show",
   // Pul harakati — naqd yo'qolsa javobgar ko'rinsin (SAVOLLAR.md S13)
@@ -47,10 +40,13 @@ export const AUDIT_ACTIONS = [
   "rate.changed",
   "room.blocked",
   "room.unblocked",
+  // Xona holati qo'lda o'zgartirildi (iflos -> bo'sh, ta'mir)
+  "room.status_changed",
   "floor.blocked",
   "floor.unblocked",
   "user.created",
   "user.role_changed",
+  "user.password_changed",
   "user.login",
 ] as const;
 

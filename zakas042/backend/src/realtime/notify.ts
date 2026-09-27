@@ -52,10 +52,8 @@ export async function notifyReservation(
     // `void` — Telegram sekin javob bersa ham bron yaratilishi
     // kutib qolmaydi (TZ 17, 19-band).
     if (type === "reservation.created") {
-      const nights = Math.max(
-        1,
-        Math.round((res.checkOut.getTime() - res.checkIn.getTime()) / 86_400_000)
-      );
+      // Kecha va summa — serializeReservation (lib/money.ts) dan
+      const nights = Number(payload.nights ?? 1);
       void sendBookingAlert({
         guestName: String(payload.guestName ?? ""),
         roomId: res.roomId,
@@ -114,7 +112,7 @@ export async function notifyRoomStatus(roomId: string): Promise<void> {
  * Availability o'zgardi.
  *
  * Shaxmatka buni ishlatmaydi (u bronlardan o'zi hisoblaydi), lekin
- * Website va Admin panel uchun kerak — TZ 15-band talab qiladi.
+ * admin panel "Mavjudlik" jadvali uchun kerak — TZ 15-band.
  */
 export function notifyAvailability(roomTypeIds: string[], from: Date, to: Date): void {
   broadcast({
@@ -126,40 +124,17 @@ export function notifyAvailability(roomTypeIds: string[], from: Date, to: Date):
   });
 }
 
-// --- Admin ogohlantirishlari (09-fayl §2) -------------------
-
-/** Beds24'ga yuborilmadi — admin ko'rishi kerak (TZ 11, 17-band) */
-export function notifySyncFailed(action: string, error: string, reservationId?: string): void {
+/** STOP holati o'zgardi — Shaxmatka xiralashadi / qayta faollashadi */
+export function notifySalesStop(s: {
+  active: boolean; allRooms: boolean; roomIds: string[]; reason: string | null; since: string | null;
+}): void {
   broadcast({
-    type: "sync.failed",
+    type: "system.sales_stop",
     timestamp: now(),
-    action,
-    reservationId,
-    error: error.slice(0, 300),
-  });
-}
-
-/** Mapping yo'q / bo'sh xona yo'q — qo'lda hal qilish kerak (TZ 5-band) */
-export function notifyWebhookNeedsAttention(webhookEventId: string, reason: string): void {
-  broadcast({
-    type: "webhook.needs_attention",
-    timestamp: now(),
-    webhookEventId,
-    reason: reason.slice(0, 300),
-  });
-}
-
-/** Narx sync holati o'zgardi — Narxlar paneli uchun (07-fayl §8, D16) */
-export function notifyRateSync(
-  roomTypeId: string,
-  date: string,
-  syncStatus: "pending" | "synced" | "error"
-): void {
-  broadcast({
-    type: "rate.sync.updated",
-    timestamp: now(),
-    roomTypeId,
-    date,
-    syncStatus,
+    active: s.active,
+    allRooms: s.allRooms,
+    roomIds: s.roomIds,
+    reason: s.reason,
+    since: s.since,
   });
 }

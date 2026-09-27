@@ -1,17 +1,22 @@
 # Imron Hotel PMS
 
-Mehmonxona boshqaruv tizimi: sayt, bandlik jadvali (Shaxmatka),
-xodimlar paneli va Beds24 channel manager integratsiyasi.
+Mehmonxona boshqaruv tizimi: sayt (mehmonlar broni), bandlik jadvali
+(Shaxmatka), xodimlar paneli va Telegram botlar (egasi, tozalik, oshxona).
 
 ```
-Booking.com / Airbnb / Expedia
-            |
-         Beds24
-            |  API v2 + Webhook
-      PMS Backend  <->  PostgreSQL
-            |  WebSocket
-   Shaxmatka / Admin panel / Sayt
+   Sayt (mehmon)      Qabulxona / egasi
+        |                    |
+        v                    v
+   PMS Backend  <->  PostgreSQL (yagona haqiqat manbai)
+        |  WebSocket          \
+   Shaxmatka / Admin panel     Telegram botlar
 ```
+
+Tashqi channel manager YO'Q. Beds24 integratsiyasi 2026-09-26 da egasi
+qarori bilan to'liq olib tashlandi — nima bo'lgani va nima qilingani:
+[BEDS24.md](BEDS24.md) (arxiv). Booking.com va boshqa OTA bronlarini
+qabulxona qo'lda kiritadi (manba "Booking.com" va h.k., komissiya
+avtomatik hisoblanadi).
 
 ---
 
@@ -20,9 +25,13 @@ Booking.com / Airbnb / Expedia
 | Hujjat | Nima uchun |
 |---|---|
 | **[PROJECT_LOGIC.md](PROJECT_LOGIC.md)** | Loyiha qanday ishlaydi — qoidalar, modellar, oqimlar, ruxsatlar. **Avval shuni o'qing.** |
-| **[TODO.md](TODO.md)** | Qolgan ishlar va aniqlangan muammolar |
-| [SERVER.md](SERVER.md) | Serverda ishlash tartibi |
-| [zakas042/TZ-ASL.md](zakas042/TZ-ASL.md) | Mijozning asl topshirig'i (arxiv) |
+| **[ISH_REJASI.md](ISH_REJASI.md)** | Qolgan ishlar, qarorlar, tartib |
+| [SERVER.md](SERVER.md) | Serverda ishlash, yangilash, zaxira |
+| [zakas042/README.md](zakas042/README.md) | Kompyuterda ishga tushirish va testlar |
+| [BEDS24.md](BEDS24.md) | Arxiv: Beds24 qanday ishlagan va qanday olib tashlangan |
+| [CHANNEL_MANAGER_SPEC_AND_ANALYSIS.md](CHANNEL_MANAGER_SPEC_AND_ANALYSIS.md) | Arxiv: eski channel manager TZ tahlili |
+| [TODO.md](TODO.md) | Eski ro'yxat (ISH_REJASI'ga birlashtiriladi) |
+| [zakas042/TZ-ASL.md](zakas042/TZ-ASL.md) | Mijozning asl topshirig'i va qarorlari |
 
 ---
 
@@ -42,14 +51,22 @@ Keyin brauzerda:
 | `http://localhost:3100/shaxmatka` | Bandlik jadvali |
 | `http://localhost:3100/admin-panel` | Xodimlar paneli |
 
-Kirish: `founder@imron.local` / `admin12345`
+Kirish ma'lumotlari repoda saqlanmaydi (repo ochiq) — egasidan so'rang.
+Parolni har foydalanuvchi o'zi o'zgartiradi: admin panel → yuqori
+o'ngdagi avatar. Egasi "Foydalanuvchilar" bo'limidan boshqaning parolini
+tiklaydi.
 
 Kod o'zgartirgach:
 
 ```bash
-bash tools/sync.sh restart  # serverga yuborish + qayta ishga tushirish
+bash tools/sync.sh restart  # serverga yuborish + build + qayta ishga tushirish
 bash tools/status.sh        # holat
 ```
+
+**Tunnel ochiq bo'lganda `npm test` ishga tushirmang** — lokal `.env`
+tunnel orqali JONLI bazaga ulanadi. `vitest.setup.ts` nomida "test"
+bo'lmagan bazada testni ishga tushirmaydi, lekin baribir faqat alohida
+test bazasidan foydalaning: [zakas042/README.md](zakas042/README.md).
 
 ---
 
@@ -58,26 +75,25 @@ bash tools/status.sh        # holat
 ```
 HotellAllcode/
 ├── PROJECT_LOGIC.md          loyiha logikasi — asosiy referens
-├── TODO.md                   qolgan ishlar
+├── ISH_REJASI.md             qolgan ishlar
 ├── SERVER.md                 server bilan ishlash
+├── BEDS24.md                 arxiv: olib tashlangan integratsiya
 │
 ├── zakas042/                 asosiy loyiha
 │   ├── backend/
 │   │   ├── src/
 │   │   │   ├── routes/       HTTP, validatsiya, auth
-│   │   │   ├── services/     biznes mantiq
-│   │   │   ├── queues/       BullMQ worker'lar
+│   │   │   ├── services/     biznes mantiq (bron, narx, availability, STOP...)
+│   │   │   ├── queues/       BullMQ davriy vazifalar (pms-maintenance)
 │   │   │   ├── realtime/     WebSocket
-│   │   │   ├── bot/          Telegram (2 bot)
-│   │   │   └── lib/          config, xatolar, auth middleware
-│   │   ├── prisma/           sxema, 17 migratsiya, seed
-│   │   └── public/
-│   │       ├── app/          frontend (3 sahifa + vendor/)
-│   │       └── admin/        mapping, connection, sync-log
-│   ├── mock-beds24/          Beds24 taqlidi
+│   │   │   ├── bot/          Telegram (3 bot)
+│   │   │   └── lib/          config, pul formulasi, mehmonxona vaqti, auth
+│   │   ├── prisma/           sxema, 22 migratsiya, seed
+│   │   ├── scripts/          reset-test-data, purge-beds24 (bir martalik)
+│   │   └── public/app/       frontend: sayt, Shaxmatka, admin panel
 │   └── TZ-ASL.md             mijoz talabi (arxiv)
 │
-└── tools/                    tunnel, sync, test, status
+└── tools/                    tunnel, sync, status
 ```
 
 ---
@@ -87,23 +103,23 @@ HotellAllcode/
 | Narsa | Qiymat |
 |---|---|
 | Xona | 18 (3 qavat) |
-| Tarif | 9 |
-| Valyuta | UZS |
-| Prisma modellari | 23 |
-| Migratsiyalar | 17 |
-| API endpoint | 85 |
-| Testlar | 153 o'tadi (backend 4/13 fayl + mock sinalgan) |
+| Tarif (xona turi) | 9 |
+| Valyuta | **Faqat so'm** |
+| Vaqt | Mehmonxona kuni — Toshkent (UTC+5), `lib/hotelTime.ts` |
+| Prisma | 17 model, 7 enum |
+| Migratsiyalar | 22 |
+| Testlar | 13 fayl, 226 test (ikkala AUTH_REQUIRED rejimida o'tadi) |
 
 ---
 
-## Hozirgi holat
+## Hozirgi holat (2026-09-26)
 
-**Ishlaydi:** sayt → bron → Shaxmatka → Beds24 zanjiri,
-overbooking himoyasi (3 qatlam), tozalik boti (Telegram guruh),
-oshxona hisobi, 4 rolli RBAC, kunlik zaxira.
+**Ishlaydi:** sayt → bron → Shaxmatka zanjiri, overbooking himoyasi
+(DB `EXCLUDE` constraint + tranzaksiya), tozalik boti (Telegram guruh),
+oshxona hisobi, 4 rolli RBAC, parol o'zgartirish, STOP (sotuvni
+to'xtatish), mavjudlik jadvali, moliya hisoboti, kunlik zaxira.
+Autentifikatsiya, so'rov cheklovi va production rejimi yoqilgan.
 
-**Sinov rejimida:** autentifikatsiya va so'rov cheklovi
-o'chirilgan (`AUTH_REQUIRED=false`). Mehmonlar foydalanishidan
-oldin yoqilishi shart — [TODO.md](TODO.md).
-
-**Beds24:** mock server bilan ishlaydi, real hisob ulanmagan.
+**Beds24:** olib tashlangan (kod, navbatlar, jadvallar, server
+sozlamalari). Beds24 kabinetidagi hisob va Booking.com ulanishi Beds24
+tomonida hali turibdi — egasi o'zi yopishi kerak ([BEDS24.md](BEDS24.md), 5-bo'lim).

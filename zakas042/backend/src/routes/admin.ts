@@ -1,25 +1,25 @@
 /**
- * Admin endpoint'lari — mapping, ulanish holati, sync loglari
+ * Admin endpoint'lari — /api/admin/*
  *
- * Manba: 06-XONA-MAPPING.md §3, §7
+ * Hisobot, audit, xarajat, biznes sozlamalari, tozalash, bot
+ * ruxsatlari, xodimlar, sayt, oshxona, nonushta narxi, STOP.
  *
- * ISH CHEGARASI: mavjud Admin Panel kodiga kirish yo'q, shuning
- * uchun bu endpoint'lar backend ichidagi alohida sahifalar bilan
- * ishlaydi (`/admin/*`). Keyinroq mavjud Admin Panelga ko'chirish
- * mumkin — API o'zgarmaydi.
- *
- * TZ 18-band: faqat ADMIN roli kirishi kerak. JWT FAZA 12 da
- * qo'shiladi — hozircha ochiq (dev).
+ * Har endpoint `requireAuth` + huquq (services/auth.ts PERMISSIONS):
+ * frontend tugmani yashirsa ham backend baribir tekshiradi.
  */
 
 import { Router } from "express";
 import { z } from "zod";
+import { Prisma, type CleaningStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, ValidationError, NotFoundError } from "../lib/errors.js";
-import { toNumber, toDateKey } from "../lib/serialize.js";
-import * as mapping from "../services/mapping.js";
+import { toDateKey, fromDateKey, isValidDateKey } from "../lib/serialize.js";
+import { addDays, hotelNow, hotelToday } from "../lib/hotelTime.js";
+import { config } from "../lib/config.js";
+import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
+import { MONEY_LIMITS, moneyAmount, positiveMoney } from "../lib/moneySchema.js";
 import {
-  listSettings, setSetting, SETTING_KEYS, getRatesSoT, getAvailabilitySoT,
+  setSetting, SETTING_KEYS,
   getMealPrice, getFreeCancelHours, getCancelFeeNights,
   getOtaCommissionPercent, getAuditRetentionDays, BUSINESS_DEFAULTS,
 } from "../services/settings.js";
@@ -27,29 +27,15 @@ import {
   addExpense, deleteExpense, listExpenses, expenseSummary, CATEGORY_LABEL,
 } from "../services/expenses.js";
 import {
-  createTask, listTasks, listCleaners, reassignTask, cancelTask,
+  createTask, listTasks, listCleaners, cancelTask,
   dirtyWithoutTask, todayPlan, arrivalsReadiness, lateTasks, cleanerStats,
   approveTask, rejectTask,
 } from "../services/cleaning.js";
-
-/** Bir hafta oldin — farosh statistikasi oralig'i */
-function weekAgo(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() - 7);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-
-/** Ertaga — oraliq oxiri (bugun ham kirsin) */
-function tomorrow(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-import { Prisma, type CleaningStatus } from "@prisma/client";
-import { config } from "../lib/config.js";
 import { kitchenOverview } from "../services/kitchen.js";
+import { getMealPriceInfo, setMealPrice } from "../services/mealPrice.js";
+import { releaseSalesStop, salesStopStatus, startSalesStop } from "../services/salesStop.js";
+import { notifySalesStop } from "../realtime/notify.js";
+import { sendSystemAlert } from "../bot/index.js";
 import { sendDailyKitchenReport } from "../bot/kitchen-bot.js";
 import {
   listBotAccess,
@@ -57,6 +43,20 @@ import {
   updateBotAccess,
   deleteBotAccess,
 } from "../services/botAccess.js";
+import { audit, listAudit } from "../services/auditLog.js";
+import { runExpireNow } from "../queues/scheduler.js";
+import { cleanQueueHistory } from "../queues/index.js";
+import { getFullReport } from "../services/report.js";
+
+/** Bir hafta oldin — farosh statistikasi oralig'i (Toshkent kuni boshidan) */
+function weekAgo(): Date {
+  return new Date(hotelNow().dayStartUtc.getTime() - 7 * 86_400_000);
+}
+
+/** Ertaga (Toshkent) — oraliq oxiri (bugun ham kirsin) */
+function tomorrow(): Date {
+  return new Date(hotelNow().dayStartUtc.getTime() + 86_400_000);
+}
 
 /**
  * Zod natijasini tekshiradi yoki tushunarli xato tashlaydi.
@@ -75,368 +75,12 @@ function parseOrThrow<T>(schema: z.ZodType<T>, data: unknown): T {
   }
   return r.data;
 }
-import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
-import { audit, listAudit } from "../services/auditLog.js";
-import {
-  runPollNow, runDriftCheckNow, runCatchUpNow, runExpireNow,
-} from "../queues/scheduler.js";
-import { checkChannelHealth } from "../services/reconciliation.js";
-import { listDeadLetters, requeueDeadLetter, clearDeadLetters } from "../queues/deadLetter.js";
-import { cleanQueueHistory } from "../queues/index.js";
-import { getChannel } from "../services/channel/registry.js";
-import { getRoomTypesCached, invalidateRoomTypes } from "../services/channel/propertyCache.js";
-import { getConnectionStatus } from "../services/beds24/auth.js";
-import { getCreditState } from "../services/beds24/client.js";
-import * as webhookSvc from "../services/webhook.js";
-import { getFullReport } from "../services/report.js";
-import { fromDateKey } from "../lib/serialize.js";
+
+/** "YYYY-MM-DD" va haqiqiy kalendar sanasi */
+const dateKeySchema = z.string().refine(isValidDateKey, "Sana 'YYYY-MM-DD' shaklida va haqiqiy bo'lishi kerak");
 
 export const adminRouter = Router();
 
-// ============================================================
-//  Mapping (TZ 5-band)
-// ============================================================
-
-/** GET /api/admin/mapping — joriy bog'lanishlar */
-adminRouter.get("/mapping", asyncHandler(async (_req, res) => {
-  const list = await mapping.listMappings();
-  res.json(list.map((m) => ({
-    id: m.id,
-    roomTypeId: m.roomTypeId,
-    roomTypeLabel: m.roomType?.label,
-    roomId: m.roomId,
-    roomNumber: m.room?.number,
-    externalRoomTypeId: m.externalRoomTypeId,
-    externalUnitId: m.externalUnitId,
-    createdAt: m.createdAt.toISOString(),
-  })));
-}));
-
-/** GET /api/admin/mapping/health — to'liqlik tekshiruvi (06-fayl §7) */
-adminRouter.get("/mapping/health", asyncHandler(async (_req, res) => {
-  res.json(await mapping.getMappingHealth());
-}));
-
-/** GET /api/admin/mapping/external — Beds24'dagi turlar (tanlash uchun) */
-adminRouter.get("/mapping/external", asyncHandler(async (req, res) => {
-  const status = await getConnectionStatus();
-  if (!status.isConnected) {
-    res.json({ connected: false, properties: [] });
-    return;
-  }
-
-  try {
-    // `?refresh=true` keshni chetlab o'tadi (admin "Yangilash")
-    const force = req.query.refresh === "true";
-    if (force) invalidateRoomTypes();
-    const properties = await getRoomTypesCached(undefined, { force });
-    res.json({ connected: true, properties });
-  } catch (e) {
-    res.json({
-      connected: true,
-      properties: [],
-      error: e instanceof Error ? e.message : String(e),
-    });
-  }
-}));
-
-/** PUT /api/admin/mapping — bog'lash */
-const upsertSchema = z.object({
-  roomTypeId: z.string().min(1).optional(),
-  roomId: z.string().min(1).optional(),
-  externalRoomTypeId: z.string().min(1),
-  externalUnitId: z.string().min(1).optional(),
-});
-
-adminRouter.put("/mapping", requireAuth, requirePermission("mapping.write"), asyncHandler(async (req: AuthedRequest, res) => {
-  const parsed = upsertSchema.safeParse(req.body);
-  if (!parsed.success) {
-    throw new ValidationError(
-      parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
-    );
-  }
-  // Oldingi holat — audit `before` uchun
-  const before = parsed.data.roomTypeId
-    ? await mapping.findRoomTypeMapping(parsed.data.roomTypeId)
-    : null;
-
-  const result = await mapping.upsertMapping(parsed.data);
-
-  await audit({
-    userId: req.user?.id,
-    action: before ? "mapping.updated" : "mapping.created",
-    entityType: "ChannelMapping",
-    entityId: result.id,
-    before: before ? { externalRoomTypeId: before.externalRoomTypeId } : undefined,
-    after: { ...parsed.data },
-    ipAddress: req.ip,
-  });
-
-  res.json({ ok: true, id: result.id });
-}));
-
-/** DELETE /api/admin/mapping/:id — bog'lanishni olib tashlash */
-adminRouter.delete("/mapping/:id", requireAuth, requirePermission("mapping.write"), asyncHandler(async (req: AuthedRequest, res) => {
-  const force = req.query.force === "true";
-  await mapping.deleteMapping(req.params.id, { force });
-
-  await audit({
-    userId: req.user?.id,
-    action: "mapping.deleted",
-    entityType: "ChannelMapping",
-    entityId: req.params.id,
-    after: { force },
-    ipAddress: req.ip,
-  });
-
-  res.json({ ok: true });
-}));
-
-// ============================================================
-//  Beds24 ulanishi
-// ============================================================
-
-/**
- * GET /api/admin/connection
- * TZ 13-band: token'ning o'zi HECH QACHON qaytarilmaydi —
- * faqat "ulangan/ulanmagan" holati.
- */
-adminRouter.get("/connection", asyncHandler(async (_req, res) => {
-  const status = await getConnectionStatus();
-  const credits = getCreditState();
-
-  res.json({
-    ...status,
-    credits: {
-      remaining: credits.remaining,
-      resetsIn: credits.resetsIn,
-      isLow: credits.isLow,
-    },
-  });
-}));
-
-/** POST /api/admin/connection/ping — ulanishni tekshirish */
-adminRouter.post("/connection/ping", requireAuth, requirePermission("channel.connect"), asyncHandler(async (_req, res) => {
-  res.json(await getChannel().ping());
-}));
-
-// ============================================================
-//  SyncLog (TZ 16-band)
-// ============================================================
-
-adminRouter.get("/sync-log", requireAuth, requirePermission("synclog.read"), asyncHandler(async (req, res) => {
-  const limit = Math.min(Number(req.query.limit ?? 50), 200);
-  const status = req.query.status as string | undefined;
-
-  const logs = await prisma.syncLog.findMany({
-    where: status ? { status: status.toUpperCase() as never } : {},
-    orderBy: { createdAt: "desc" },
-    take: limit,
-  });
-
-  res.json(logs.map((l) => ({
-    id: l.id,
-    action: l.action,
-    direction: l.direction.toLowerCase(),
-    status: l.status.toLowerCase(),
-    reservationId: l.reservationId,
-    roomId: l.roomId,
-    attempt: l.attempt,
-    errorMessage: l.errorMessage,
-    durationMs: l.durationMs,
-    createdAt: l.createdAt.toISOString(),
-  })));
-}));
-
-/** GET /api/admin/webhook-events — kelgan webhook'lar (04-fayl) */
-adminRouter.get("/webhook-events", asyncHandler(async (req, res) => {
-  const limit = Math.min(Number(req.query.limit ?? 50), 200);
-  const status = req.query.status as string | undefined;
-
-  const events = await prisma.webhookEvent.findMany({
-    where: status ? { status: status.toUpperCase() as never } : {},
-    orderBy: { createdAt: "desc" },
-    take: limit,
-  });
-
-  res.json(events.map((e) => ({
-    id: e.id,
-    eventType: e.eventType,
-    externalId: e.externalId,
-    status: e.status.toLowerCase(),
-    attempts: e.attempts,
-    errorMessage: e.errorMessage,
-    processedAt: e.processedAt?.toISOString() ?? null,
-    createdAt: e.createdAt.toISOString(),
-  })));
-}));
-
-/** POST /api/admin/webhook-events/:id/reprocess — qo'lda qayta ishlash (04-fayl §7) */
-adminRouter.post("/webhook-events/:id/reprocess", requireAuth, requirePermission("mapping.write"), asyncHandler(async (req: AuthedRequest, res) => {
-  await audit({
-    userId: req.user?.id,
-    action: "webhook.reprocessed",
-    entityType: "WebhookEvent",
-    entityId: req.params.id,
-    ipAddress: req.ip,
-  });
-
-  const result = await webhookSvc.reprocessWebhook(req.params.id);
-  if (!result) throw new NotFoundError("Webhook event");
-  res.json({ ok: true, status: result.status.toLowerCase() });
-}));
-
-/** GET /api/admin/webhook-events/stats */
-adminRouter.get("/webhook-events/stats", asyncHandler(async (_req, res) => {
-  res.json(await webhookSvc.getWebhookStats());
-}));
-
-// ============================================================
-//  Narxlar (07-fayl §8 — Q8: admin qo'lda belgilaydi)
-// ============================================================
-
-adminRouter.get("/rates", asyncHandler(async (req, res) => {
-  const { from, to } = req.query;
-  if (!from || !to) throw new ValidationError("from va to kerak");
-
-  const plans = await prisma.ratePlan.findMany({
-    where: {
-      date: {
-        gte: new Date(`${from}T00:00:00Z`),
-        lte: new Date(`${to}T00:00:00Z`),
-      },
-    },
-    orderBy: [{ date: "asc" }, { roomTypeId: "asc" }],
-  });
-
-  res.json(plans.map((p) => ({
-    roomTypeId: p.roomTypeId,
-    date: toDateKey(p.date),
-    price: toNumber(p.price),
-    minStay: p.minStay,
-    source: p.source,
-    syncStatus: p.syncError ? "error" : p.syncedAt ? "synced" : "pending",
-    syncError: p.syncError,
-  })));
-}));
-
-// ============================================================
-//  Umumiy holat — /admin bosh sahifasi uchun
-// ============================================================
-
-adminRouter.get("/status", asyncHandler(async (_req, res) => {
-  const [health, connection, roomCount, resCount, failedSync, pendingWebhooks] =
-    await Promise.all([
-      mapping.getMappingHealth(),
-      getConnectionStatus(),
-      prisma.room.count({ where: { isActive: true } }),
-      prisma.reservation.count({
-        where: { status: { in: ["PENDING_PAYMENT", "CONFIRMED", "CHECKED_IN"] } },
-      }),
-      prisma.syncLog.count({ where: { status: "FAILED" } }),
-      prisma.webhookEvent.count({
-        where: { status: { in: ["RECEIVED", "QUEUED", "FAILED", "NEEDS_MANUAL_ACTION"] } },
-      }),
-    ]);
-
-  const credits = getCreditState();
-
-  res.json({
-    phase: "5",
-    mapping: {
-      isComplete: health.isComplete,
-      unmappedRoomCount: health.unmappedRoomCount,
-      orphanCount: health.orphanMappings.length,
-    },
-    beds24: {
-      connected: connection.isConnected,
-      propertyId: connection.propertyId,
-      creditsRemaining: credits.remaining,
-      creditsLow: credits.isLow,
-    },
-    counts: {
-      rooms: roomCount,
-      activeReservations: resCount,
-      failedSyncs: failedSync,
-      pendingWebhooks,
-    },
-  });
-}));
-
-// ============================================================
-//  Sozlamalar — source of truth (TZ 7-band, 07-fayl §7)
-// ============================================================
-
-/** GET /api/admin/settings — joriy sozlamalar */
-adminRouter.get("/settings", asyncHandler(async (_req, res) => {
-  res.json(await listSettings());
-}));
-
-/**
- * PUT /api/admin/settings — source of truth o'zgartirish
- *
- * Bu qaror narx halqasining oldini oladi: bir vaqtda faqat bitta
- * tomon g'olib (07-fayl §7). O'zgarish AuditLog'ga yoziladi
- * (FAZA 12 da `updatedBy` haqiqiy foydalanuvchi bo'ladi).
- */
-const settingsSchema = z.object({
-  ratesSoT: z.enum(["pms", "beds24"]).optional(),
-  availabilitySoT: z.enum(["pms", "beds24"]).optional(),
-});
-
-adminRouter.put("/settings", requireAuth, requirePermission("settings.write"), asyncHandler(async (req: AuthedRequest, res) => {
-  const parsed = settingsSchema.safeParse(req.body);
-  if (!parsed.success) {
-    throw new ValidationError(
-      parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
-    );
-  }
-
-  const { ratesSoT, availabilitySoT } = parsed.data;
-
-  // Source-of-truth almashtirilishi — eng muhim audit hodisasi
-  // (10-fayl §4): narx qaysi tomondan boshqarilishini o'zgartiradi
-  if (ratesSoT) {
-    const before = await getRatesSoT();
-    if (before !== ratesSoT) {
-      await setSetting(SETTING_KEYS.ratesSoT, ratesSoT, req.user?.id);
-      await audit({
-        userId: req.user?.id,
-        action: "settings.changed",
-        entityType: "Settings",
-        entityId: SETTING_KEYS.ratesSoT,
-        before: { value: before },
-        after: { value: ratesSoT },
-        ipAddress: req.ip,
-      });
-    }
-  }
-
-  if (availabilitySoT) {
-    const before = await getAvailabilitySoT();
-    if (before !== availabilitySoT) {
-      await setSetting(SETTING_KEYS.availabilitySoT, availabilitySoT, req.user?.id);
-      await audit({
-        userId: req.user?.id,
-        action: "settings.changed",
-        entityType: "Settings",
-        entityId: SETTING_KEYS.availabilitySoT,
-        before: { value: before },
-        after: { value: availabilitySoT },
-        ipAddress: req.ip,
-      });
-    }
-  }
-
-  res.json(await listSettings());
-}));
-
-/**
- * GET /api/admin/audit-log — kim nima qildi (TZ 18-band, 10-fayl §4)
- *
- * `synclog.read` huquqi: MANAGER ham ko'radi. Audit — nazorat
- * vositasi, uni yashirish nazoratni yo'qotadi.
- */
 // --- GET /api/admin/report?from=&to= ------------------------
 //
 // Umumiy hisobot — FAQAT FOUNDER. Bu yerda maosh, foyda va
@@ -450,7 +94,7 @@ adminRouter.get(
     const fromStr = String(req.query.from ?? "");
     const toStr = String(req.query.to ?? "");
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(fromStr) || !/^\d{4}-\d{2}-\d{2}$/.test(toStr)) {
+    if (!isValidDateKey(fromStr) || !isValidDateKey(toStr)) {
       throw new ValidationError("from va to: YYYY-MM-DD shaklida bo'lishi kerak");
     }
 
@@ -466,10 +110,16 @@ adminRouter.get(
   })
 );
 
+/**
+ * GET /api/admin/audit-log — kim nima qildi (TZ 18-band, 10-fayl §4)
+ *
+ * `audit.read` huquqi: MANAGER ham ko'radi. Audit — nazorat
+ * vositasi, uni yashirish nazoratni yo'qotadi.
+ */
 adminRouter.get(
   "/audit-log",
   requireAuth,
-  requirePermission("synclog.read"),
+  requirePermission("audit.read"),
   asyncHandler(async (req, res) => {
     res.json(await listAudit({
       limit: req.query.limit ? Number(req.query.limit) : 50,
@@ -480,74 +130,11 @@ adminRouter.get(
 );
 
 // ============================================================
-//  Davriy vazifalar — qo'lda ishga tushirish (FAZA 14)
+//  Davriy vazifalar — qo'lda ishga tushirish
 // ============================================================
 //
 // Jadval o'z vaqtida baribir ishlaydi. Bu endpoint'lar admin
-// nosozlikni kutmasdan tekshirishi uchun va dasturchi topshirishda
-// zanjirni sinab ko'rishi uchun.
-
-/**
- * POST /api/admin/maintenance/poll — Beds24'dan o'zgarishlarni tortish
- *
- * TZ 10-band: webhook ishlamasa ham bronlar tushadi (04-fayl §8).
- */
-adminRouter.post(
-  "/maintenance/poll",
-  requireAuth,
-  requirePermission("channel.connect"),
-  asyncHandler(async (_req, res) => {
-    try {
-      res.json(await runPollNow());
-    } catch (e) {
-      // Beds24 javob bermasa 500 emas, TUSHUNARLI javob beramiz:
-      // admin "server buzildi" deb o'ylamasligi kerak, bu kanal
-      // holati (TZ 17-band).
-      res.status(503).json({
-        error: "Beds24 javob bermadi. Keyinroq urinib ko'ring.",
-        code: "CHANNEL_UNAVAILABLE",
-        detail: String(e).slice(0, 200),
-      });
-    }
-  })
-);
-
-/**
- * POST /api/admin/maintenance/drift — PMS va Beds24 farqini tekshirish
- *
- * TZ 20-band: barcha tizimlar bir xil inventory (07-fayl §6).
- */
-adminRouter.post(
-  "/maintenance/drift",
-  requireAuth,
-  requirePermission("channel.connect"),
-  asyncHandler(async (req, res) => {
-    const days = req.query.days ? Number(req.query.days) : 30;
-    try {
-      res.json(await runDriftCheckNow(Math.min(Math.max(days, 1), 90)));
-    } catch (e) {
-      res.status(503).json({
-        error: "Beds24 javob bermadi. Keyinroq urinib ko'ring.",
-        code: "CHANNEL_UNAVAILABLE",
-        detail: String(e).slice(0, 200),
-      });
-    }
-  })
-);
-
-/**
- * POST /api/admin/maintenance/catch-up — qolib ketganlarni yuborish
- *
- * TZ 17-band: "Beds24 qayta ishlaganda avtomatik yuborilsin."
- */
-adminRouter.post(
-  "/maintenance/catch-up",
-  requireAuth,
-  requirePermission("channel.connect"),
-  asyncHandler(async (_req, res) => {
-    res.json(await runCatchUpNow());
-  })
-);
+// kutmasdan tekshirishi uchun.
 
 /** POST /api/admin/maintenance/expire-unpaid — to'lanmagan bronlar */
 adminRouter.post(
@@ -559,82 +146,11 @@ adminRouter.post(
   })
 );
 
-/**
- * GET /api/admin/channel-health — Beds24 javob beryaptimi
- *
- * TZ 17, 19-band: kanal o'chgan bo'lsa admin darhol ko'radi va
- * "nega OTA'da yangilanmayapti" degan savol tug'ilmaydi.
- */
-adminRouter.get(
-  "/channel-health",
-  requireAuth,
-  requirePermission("synclog.read"),
-  asyncHandler(async (_req, res) => {
-    res.json(await checkChannelHealth());
-  })
-);
-
-// ============================================================
-//  O'lik xat navbati — TZ 11-band (beds24-retry)
-// ============================================================
-//
-// 5 urinishdan keyin ham bo'lmagan job'lar. Admin sababni
-// tuzatgach (mapping bog'lash, Beds24 qaytishi) qayta yuboradi.
-
-/** GET /api/admin/dead-letters — yiqilgan job'lar ro'yxati */
-adminRouter.get(
-  "/dead-letters",
-  requireAuth,
-  requirePermission("synclog.read"),
-  asyncHandler(async (req, res) => {
-    const limit = req.query.limit ? Number(req.query.limit) : 50;
-    res.json(await listDeadLetters(limit));
-  })
-);
-
-/** POST /api/admin/dead-letters/requeue — qayta yuborish */
-const requeueSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1).max(100),
-});
-
-adminRouter.post(
-  "/dead-letters/requeue",
-  requireAuth,
-  requirePermission("channel.connect"),
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const parsed = requeueSchema.safeParse(req.body);
-    if (!parsed.success) throw new ValidationError("ids massivi kerak");
-
-    const result = await requeueDeadLetter(parsed.data.ids);
-
-    await audit({
-      userId: req.user?.id,
-      action: "webhook.reprocessed",
-      entityType: "DeadLetter",
-      entityId: parsed.data.ids.join(","),
-      after: result,
-      ipAddress: req.ip,
-    });
-
-    res.json(result);
-  })
-);
-
-/** DELETE /api/admin/dead-letters — tozalash */
-adminRouter.delete(
-  "/dead-letters",
-  requireAuth,
-  requirePermission("channel.connect"),
-  asyncHandler(async (_req, res) => {
-    res.json({ removed: await clearDeadLetters() });
-  })
-);
-
-/** DELETE /api/admin/queues/clean — barcha navbatlardagi eski xato/tugagan job'larni tozalash */
+/** DELETE /api/admin/queues/clean — davriy vazifalar navbatidagi eski xato/tugagan job'lar */
 adminRouter.delete(
   "/queues/clean",
   requireAuth,
-  requirePermission("channel.connect"),
+  requirePermission("settings.write"),
   asyncHandler(async (_req, res) => {
     res.json({ cleaned: await cleanQueueHistory() });
   })
@@ -653,12 +169,14 @@ adminRouter.get(
   requireAuth,
   requirePermission("report.read"),
   asyncHandler(async (req, res) => {
-    const { from, to } = req.query;
-    if (!from || !to) throw new ValidationError("from va to parametrlari kerak");
+    const { from, to } = parseOrThrow(
+      z.object({ from: dateKeySchema, to: dateKeySchema }),
+      req.query
+    );
 
     const fromDate = fromDateKey(from);
-    const toEx = fromDateKey(to);
-    toEx.setUTCDate(toEx.getUTCDate() + 1);   // `to` kuni ham kirsin
+    const toEx = addDays(fromDateKey(to), 1);   // `to` kuni ham kirsin
+    if (toEx <= fromDate) throw new ValidationError("'to' sanasi 'from' dan oldin bo'lishi mumkin emas");
 
     const [rows, summary] = await Promise.all([
       listExpenses(fromDate, toEx),
@@ -683,12 +201,12 @@ adminRouter.get(
 
 /** POST /api/admin/expenses — qo'lda xarajat kiritish */
 const expenseSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Sana 'YYYY-MM-DD' shaklida"),
+  date: dateKeySchema,
   category: z.enum([
     "UTILITIES", "FOOD", "MAINTENANCE", "TAX",
     "MARKETING", "COMMISSION", "SALARY", "OTHER",
   ]),
-  amount: z.number().positive("Summa musbat bo'lishi kerak").max(1_000_000_000),
+  amount: positiveMoney(MONEY_LIMITS.expense),
   note: z.string().max(500).optional(),
 });
 
@@ -777,7 +295,7 @@ adminRouter.get(
 /** PUT /api/admin/business-settings */
 const businessSchema = z.object({
   /** Nonushta — kishi boshiga (S10) */
-  mealPrice: z.number().min(0).max(10_000_000).optional(),
+  mealPrice: moneyAmount(MONEY_LIMITS.mealPrice).optional(),
   /** Bepul bekor qilish oynasi, soat (S11) */
   freeCancelHours: z.number().int().min(0).max(720).optional(),
   /** Jarima necha kecha narxi (S11) */
@@ -995,22 +513,6 @@ adminRouter.post(
       sentToGroup: true,
       warning: null,
     });
-  })
-);
-
-/** POST /api/admin/cleaning/:id/reassign — boshqa faroshga */
-adminRouter.post(
-  "/cleaning/:id/reassign",
-  requireAuth,
-  requirePermission("room.block"),
-  asyncHandler(async (req, res) => {
-    const { employeeId } = parseOrThrow(
-      z.object({ employeeId: z.string().min(1) }),
-      req.body
-    );
-
-    const task = await reassignTask(req.params.id, employeeId);
-    res.json({ id: task.id, employeeName: task.employee?.fullName ?? null });
   })
 );
 
@@ -1287,8 +789,8 @@ const employeeSchema = z.object({
    * kattasi so'rovlarni sekinlashtiradi.
    */
   photoUrl: z.string().max(2_000_000).optional(),
-  salary: z.number().min(0).max(1_000_000_000).optional(),
-  hiredAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Sana 'YYYY-MM-DD'"),
+  salary: moneyAmount(MONEY_LIMITS.salary).optional(),
+  hiredAt: dateKeySchema,
   /**
    * Telegram ID — faqat farosh uchun kerak.
    *
@@ -1557,6 +1059,153 @@ adminRouter.get(
   })
 );
 
+/**
+ * GET /api/admin/meal-price — nonushta narxi (Oshxona bo'limi).
+ *
+ * Qabulxona va oshpaz ham ko'radi: narx maxfiy emas, bron summasida
+ * baribir ko'rinadi. O'zgartirish — faqat `settings.write`.
+ */
+adminRouter.get(
+  "/meal-price",
+  requireAuth,
+  requirePermission("reservation.read"),
+  asyncHandler(async (_req, res) => {
+    res.json(await getMealPriceInfo());
+  })
+);
+
+/**
+ * PUT /api/admin/meal-price { price, applyToActive }
+ *
+ * `applyToActive: true` — to'lov kutilayotgan, tasdiqlangan va xonadagi
+ * mehmonlarning bron summasi ham qayta hisoblanadi (services/mealPrice.ts).
+ */
+const mealPriceSchema = z.object({
+  price: moneyAmount(MONEY_LIMITS.mealPrice),
+  applyToActive: z.boolean().default(false),
+});
+
+adminRouter.put(
+  "/meal-price",
+  requireAuth,
+  requirePermission("settings.write"),
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const parsed = mealPriceSchema.safeParse(req.body);
+    if (!parsed.success) {
+      throw new ValidationError(
+        parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
+      );
+    }
+
+    const result = await setMealPrice(parsed.data.price, {
+      applyToActive: parsed.data.applyToActive,
+      userId: req.user?.id,
+    });
+
+    await audit({
+      userId: req.user?.id,
+      action: "meal_price.changed",
+      entityType: "BusinessSettings",
+      before: { mealPrice: result.previous },
+      after: {
+        mealPrice: result.price,
+        applyToActive: parsed.data.applyToActive,
+        updatedBookings: result.updatedBookings,
+      },
+      ipAddress: req.ip,
+    });
+
+    res.json({ ok: true, ...result, info: await getMealPriceInfo() });
+  })
+);
+
+// ============================================================
+//  Tizim nazorati — sotuvni vaqtincha to'xtatish (STOP, 2026-09-26)
+//
+//  Mehmonxona dam olsa / ishlamasa: sayt va qabulxona yangi bron
+//  qabul qilmaydi. Mantiq: services/salesStop.ts
+// ============================================================
+
+/** GET /api/admin/sales-stop — holat (Shaxmatka ham o'qiydi) */
+adminRouter.get(
+  "/sales-stop",
+  requireAuth,
+  requirePermission("reservation.read"),
+  asyncHandler(async (_req, res) => {
+    res.json(await salesStopStatus());
+  })
+);
+
+const salesStopSchema = z.object({
+  allRooms: z.boolean(),
+  roomIds: z.array(z.string().min(1).max(50)).max(500).optional(),
+  reason: z.string().max(120).optional(),
+});
+
+/** POST /api/admin/sales-stop { allRooms, roomIds?, reason? } — STOP */
+adminRouter.post(
+  "/sales-stop",
+  requireAuth,
+  requirePermission("settings.write"),
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const input = parseOrThrow(salesStopSchema, req.body);
+    const result = await startSalesStop(input, { email: req.user?.email });
+
+    await audit({
+      userId: req.user?.id,
+      action: "system.sales_stop",
+      entityType: "SalesStop",
+      after: {
+        allRooms: result.stop.allRooms,
+        roomIds: result.stop.roomIds,
+        reason: result.stop.reason,
+        rooms: result.rooms,
+        days: result.days,
+        keptBookings: result.keptBookings,
+      },
+      ipAddress: req.ip,
+    });
+    notifySalesStop(result.stop);
+    void sendSystemAlert(
+      `⛔ <b>Tizim vaqtincha to'xtatildi</b>\n` +
+      `${result.stop.allRooms ? "Barcha xonalar" : `${result.rooms} ta xona`}` +
+      `${result.stop.reason ? ` — ${result.stop.reason.replace(/[<>&]/g, "")}` : ""}\n` +
+      `Sayt va qabulxona yangi bron qabul qilmaydi.` +
+      (result.keptBookings > 0 ? `\nMavjud bronlar saqlandi: ${result.keptBookings} ta.` : "") +
+      (req.user?.email ? `\nKim: ${req.user.email}` : "")
+    ).catch(() => {});
+
+    res.status(201).json({ ok: true, ...result, status: await salesStopStatus() });
+  })
+);
+
+/** POST /api/admin/sales-stop/release — stopdan chiqarish */
+adminRouter.post(
+  "/sales-stop/release",
+  requireAuth,
+  requirePermission("settings.write"),
+  asyncHandler(async (req: AuthedRequest, res) => {
+    const before = await salesStopStatus();
+    const result = await releaseSalesStop({ email: req.user?.email });
+
+    await audit({
+      userId: req.user?.id,
+      action: "system.sales_resume",
+      entityType: "SalesStop",
+      before: { allRooms: before.allRooms, roomIds: before.roomIds, reason: before.reason, since: before.since },
+      after: { rooms: result.rooms, reopenedDays: result.days },
+      ipAddress: req.ip,
+    });
+    notifySalesStop(result.stop);
+    void sendSystemAlert(
+      `✅ <b>Tizim qayta ishga tushdi</b>\nSotuv ochildi: sayt va qabulxona.` +
+      (req.user?.email ? `\nKim: ${req.user.email}` : "")
+    ).catch(() => {});
+
+    res.json({ ok: true, ...result, status: await salesStopStatus() });
+  })
+);
+
 /** POST /api/admin/kitchen/send-telegram */
 adminRouter.post(
   "/kitchen/send-telegram",
@@ -1568,119 +1217,3 @@ adminRouter.post(
     res.json({ ok: true, sent: result.sent });
   })
 );
-
-// ============================================================
-//  MAPPING — ovqat belgisi (BOTLAR-REJA.md)
-// ============================================================
-
-/**
- * PATCH /api/admin/mappings/:id/meal
- *
- * Beds24 tarifi ovqat bilan keladimi. Ular standart maydon
- * bermaydi, shuning uchun qo'lda belgilanadi.
- */
-adminRouter.patch(
-  "/mappings/:id/meal",
-  requireAuth,
-  requirePermission("mapping.write"),
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const { includesMeal } = parseOrThrow(
-      z.object({ includesMeal: z.boolean() }),
-      req.body
-    );
-
-    const row = await prisma.channelMapping.update({
-      where: { id: req.params.id },
-      data: { includesMeal },
-      select: { id: true, externalRoomTypeId: true, includesMeal: true },
-    });
-
-    await audit({
-      userId: req.user?.id,
-      action: "mapping.updated",
-      entityType: "ChannelMapping",
-      entityId: row.id,
-      after: { includesMeal },
-      ipAddress: req.ip,
-    });
-
-    res.json(row);
-  })
-);
-
-// ============================================================
-//  BOT ACCESS MANAGEMENT (Founder & Kitchen bots)
-// ============================================================
-
-/** GET /api/admin/bot-access */
-adminRouter.get(
-  "/bot-access",
-  requireAuth,
-  requirePermission("user.manage"),
-  asyncHandler(async (req, res) => {
-    const botType = typeof req.query.botType === "string" ? req.query.botType : undefined;
-    res.json(await listBotAccess(botType));
-  })
-);
-
-/** POST /api/admin/bot-access */
-adminRouter.post(
-  "/bot-access",
-  requireAuth,
-  requirePermission("user.manage"),
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const input = parseOrThrow(
-      z.object({
-        botType: z.enum(["FOUNDER", "KITCHEN"]).optional(),
-        telegramId: z.union([z.string(), z.number()]).nullish(),
-        username: z.string().nullish(),
-        label: z.string().min(1),
-        level: z.enum(["FULL", "LIMITED"]).optional(),
-      }),
-      req.body
-    );
-
-    const record = await createBotAccess({
-      ...input,
-      createdById: req.user?.id,
-    });
-
-    res.status(201).json(record);
-  })
-);
-
-/** PATCH /api/admin/bot-access/:id */
-adminRouter.patch(
-  "/bot-access/:id",
-  requireAuth,
-  requirePermission("user.manage"),
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const input = parseOrThrow(
-      z.object({
-        botType: z.enum(["FOUNDER", "KITCHEN"]).optional(),
-        telegramId: z.union([z.string(), z.number()]).nullish(),
-        username: z.string().nullish(),
-        label: z.string().min(1).optional(),
-        level: z.enum(["FULL", "LIMITED"]).optional(),
-        isActive: z.boolean().optional(),
-      }),
-      req.body
-    );
-
-    const record = await updateBotAccess(req.params.id, input);
-    res.json(record);
-  })
-);
-
-/** DELETE /api/admin/bot-access/:id */
-adminRouter.delete(
-  "/bot-access/:id",
-  requireAuth,
-  requirePermission("user.manage"),
-  asyncHandler(async (req: AuthedRequest, res) => {
-    await deleteBotAccess(req.params.id);
-    res.json({ ok: true });
-  })
-);
-
-

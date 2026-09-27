@@ -13,19 +13,16 @@
  *
  * TARQALISH ZANJIRI
  * -----------------
- * Xona yopilgach `onAvailabilityChanged()` chaqiriladi va o'zgarish
- * o'zi barcha tarmoqlarga tarqaladi:
+ * Xona yopilgach `onAvailabilityChanged()` chaqiriladi:
  *
  *   RoomDayStatus.isBlocked = true
  *     -> recalcAvailability()     -> Availability.blockedRooms oshadi,
- *                                    availableCount kamayadi
+ *                                    availableCount kamayadi (sayt)
  *     -> notifyAvailability()     -> WebSocket: Shaxmatka va admin panel
  *                                    darhol ko'radi (TZ 15-band)
- *     -> enqueueAvailabilitySync() -> BullMQ -> Beds24 -> Booking.com,
- *                                    Airbnb, Expedia (TZ 6, 20-band)
  *
- * Ya'ni bitta amal butun inventarni yangilaydi. Bu TZ 20-bandining
- * "barcha tizimlar bir xil inventory asosida ishlashi" talabi.
+ * Bron yaratish (`isRoomFree`) va sayt xona tanlashi (`pickRoom`)
+ * yopiq kunni o'zi tekshiradi — kesh eskirsa ham yopiq xona sotilmaydi.
  *
  * MUHIM QOIDA
  * -----------
@@ -34,11 +31,14 @@
  * qilinadi, keyin yopiladi.
  */
 
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { NotFoundError, ValidationError } from "../lib/errors.js";
+import { serializableTx } from "../lib/tx.js";
 import { onAvailabilityChanged } from "./availability.js";
-import { fromDateKey, toDateKey } from "../lib/serialize.js";
+import { fromDateKey, isValidDateKey, toDateKey } from "../lib/serialize.js";
 import { audit } from "./auditLog.js";
+import { STOP_REASON_PREFIX } from "./salesStop.js";
 
 // ============================================================
 //  Turlar
@@ -59,7 +59,7 @@ export type BlockResult = {
   to: string;
   /** Nechta (xona × kun) yozuv o'zgardi */
   daysAffected: number;
-  /** Beds24'ga yuborish uchun navbatga qo'yilgan turlar */
+  /** Availability qayta hisoblangan turlar */
   roomTypeIds: string[];
 };
 
@@ -81,11 +81,28 @@ function parseDate(s: string, field: string): Date {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     throw new ValidationError(`${field}: sana "YYYY-MM-DD" shaklida bo'lishi kerak`);
   }
-  const d = fromDateKey(s);
-  if (Number.isNaN(d.getTime())) {
+  if (!isValidDateKey(s)) {
     throw new ValidationError(`${field}: sana noto'g'ri`);
   }
-  return d;
+  return fromDateKey(s);
+}
+
+/** Xonalarni topadi; topilmagan ID bo'lsa — aniq xato (takrorlar olib tashlanadi) */
+async function findRooms(roomIds: string[]): Promise<Array<{ id: string; roomTypeId: string }>> {
+  const unique = [...new Set(roomIds)];
+  if (unique.length === 0) {
+    throw new ValidationError("Kamida bitta xona tanlanishi kerak");
+  }
+  const rooms = await prisma.room.findMany({
+    where: { id: { in: unique } },
+    select: { id: true, roomTypeId: true },
+  });
+  if (rooms.length !== unique.length) {
+    const found = new Set(rooms.map((r) => r.id));
+    const missing = unique.filter((id) => !found.has(id));
+    throw new NotFoundError(`Xona topilmadi: ${missing.join(", ")}`);
+  }
+  return rooms;
 }
 
 /**
@@ -139,11 +156,12 @@ function validateRange(input: BlockInput): { from: Date; to: Date; days: Date[] 
 export async function findBlockingReservations(
   roomIds: string[],
   from: Date,
-  to: Date
+  to: Date,
+  tx: Prisma.TransactionClient = prisma
 ): Promise<BlockConflict[]> {
   // Yopish oralig'i inclusive, bron oralig'i esa yarim ochiq
   // ([checkIn, checkOut)). Kesishish: checkIn <= to && checkOut > from
-  const rows = await prisma.reservation.findMany({
+  const rows = await tx.reservation.findMany({
     where: {
       roomId: { in: roomIds },
       status: { notIn: ["CANCELLED", "NO_SHOW"] },
@@ -185,62 +203,55 @@ export async function blockRooms(
   input: BlockInput,
   opts: { userId?: string | null; force?: boolean; ipAddress?: string } = {}
 ): Promise<BlockResult> {
-  if (roomIds.length === 0) {
-    throw new ValidationError("Kamida bitta xona tanlanishi kerak");
-  }
-
   const { from, to, days } = validateRange(input);
+  const rooms = await findRooms(roomIds);
+  const ids = rooms.map((r) => r.id);
+  const reason = input.reason?.trim() || null;
 
-  const rooms = await prisma.room.findMany({
-    where: { id: { in: roomIds } },
-    select: { id: true, roomTypeId: true },
-  });
-
-  if (rooms.length !== roomIds.length) {
-    const found = new Set(rooms.map((r) => r.id));
-    const missing = roomIds.filter((id) => !found.has(id));
-    throw new NotFoundError(`Xona topilmadi: ${missing.join(", ")}`);
-  }
-
-  if (!opts.force) {
-    const conflicts = await findBlockingReservations(roomIds, from, to);
-    if (conflicts.length > 0) {
-      const first = conflicts[0];
-      throw new ValidationError(
-        `${first.roomId}-xonada shu kunlarda bron bor ` +
-          `(${first.guestName}, ${first.checkIn}..${first.checkOut}). ` +
-          `Avval bronni ko'chiring yoki bekor qiling.`
-      );
+  /**
+   * Tekshiruv va yozuv BITTA serializable tranzaksiyada (2026-09-26).
+   *
+   * Ilgari bron tekshiruvi tranzaksiyadan tashqarida edi: tekshiruv
+   * bilan yozuv orasida qabulxona shu xonaga bron qilsa, band xona
+   * "ta'mirda" bo'lib qolardi. Bron yaratish ham serializable
+   * (`createReservation`), shuning uchun PostgreSQL bittasini
+   * konflikt bilan qaytaradi va `serializableTx` qayta uradi.
+   *
+   * Yozuv (xona x kun) bo'yicha alohida so'rov emas, ikki so'rov:
+   * butun qavatni bir yilga yopish ilgari ~6 500 ketma-ket so'rov edi.
+   */
+  const daysAffected = await serializableTx(async (tx) => {
+    if (!opts.force) {
+      const conflicts = await findBlockingReservations(ids, from, to, tx);
+      if (conflicts.length > 0) {
+        const first = conflicts[0];
+        throw new ValidationError(
+          `${first.roomId}-xonada shu kunlarda bron bor ` +
+            `(${first.guestName}, ${first.checkIn}..${first.checkOut}). ` +
+            `Avval bronni ko'chiring yoki bekor qiling.`
+        );
+      }
     }
-  }
 
-  // Har (xona × kun) uchun bitta yozuv. `upsert` — kun allaqachon
-  // yopilgan bo'lsa sababini yangilaydi, dublikat yaratmaydi.
-  let daysAffected = 0;
-  for (const room of rooms) {
-    for (const date of days) {
-      await prisma.roomDayStatus.upsert({
-        where: { roomId_date: { roomId: room.id, date } },
-        create: {
-          roomId: room.id,
-          date,
-          isBlocked: true,
-          blockReason: input.reason ?? null,
-        },
-        update: {
-          isBlocked: true,
-          blockReason: input.reason ?? null,
-        },
-      });
-      daysAffected++;
-    }
-  }
+    // Yozuvi bor kunlar — yopiladi, sababi yangilanadi
+    const updated = await tx.roomDayStatus.updateMany({
+      where: { roomId: { in: ids }, date: { gte: from, lte: to } },
+      data: { isBlocked: true, blockReason: reason },
+    });
+    // Yozuvi yo'q kunlar — yangi yozuv
+    const created = await tx.roomDayStatus.createMany({
+      data: ids.flatMap((roomId) => days.map((date) => ({
+        roomId, date, isBlocked: true, blockReason: reason,
+      }))),
+      skipDuplicates: true,
+    });
+    return updated.count + created.count;
+  }, "blockRooms");
 
   const roomTypeIds = [...new Set(rooms.map((r) => r.roomTypeId))];
 
-  // Butun zanjir: hisoblash -> WebSocket -> Beds24 -> OTA.
-  // `to` ga +1 kun: `onAvailabilityChanged` yarim ochiq oraliq
-  // kutadi, yopish esa inclusive.
+  // Kesh + WebSocket. `to` ga +1 kun: `onAvailabilityChanged` yarim
+  // ochiq oraliq kutadi, yopish esa inclusive.
   const toExclusive = new Date(to);
   toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
   await onAvailabilityChanged(roomTypeIds, from, toExclusive, "room_blocked");
@@ -249,12 +260,12 @@ export async function blockRooms(
     userId: opts.userId ?? null,
     action: "room.blocked",
     entityType: "Room",
-    entityId: roomIds.join(","),
-    after: { from: input.from, to: input.to, reason: input.reason ?? null, force: !!opts.force },
+    entityId: ids.join(","),
+    after: { from: input.from, to: input.to, reason, force: !!opts.force },
     ipAddress: opts.ipAddress,
   });
 
-  return { roomIds, from: input.from, to: input.to, daysAffected, roomTypeIds };
+  return { roomIds: ids, from: input.from, to: input.to, daysAffected, roomTypeIds };
 }
 
 /**
@@ -268,26 +279,18 @@ export async function unblockRooms(
   input: BlockInput,
   opts: { userId?: string | null; ipAddress?: string } = {}
 ): Promise<BlockResult> {
-  if (roomIds.length === 0) {
-    throw new ValidationError("Kamida bitta xona tanlanishi kerak");
-  }
-
-  const { from, to, days } = validateRange(input);
-
-  const rooms = await prisma.room.findMany({
-    where: { id: { in: roomIds } },
-    select: { id: true, roomTypeId: true },
-  });
-
-  if (rooms.length === 0) {
-    throw new NotFoundError(`Xona topilmadi: ${roomIds.join(", ")}`);
-  }
+  const { from, to } = validateRange(input);
+  const rooms = await findRooms(roomIds);
 
   const result = await prisma.roomDayStatus.updateMany({
     where: {
       roomId: { in: rooms.map((r) => r.id) },
-      date: { in: days },
+      date: { gte: from, lte: to },
       isBlocked: true,
+      // STOP yopgan kunlar faqat "Stopdan chiqarish" bilan ochiladi
+      // (Sozlamalar -> Tizim nazorati) — aks holda catch-up qayta yopardi
+      // (NULL sababli kun ham ochilsin — `NOT` yolg'iz NULL'ni chiqarib yuborardi)
+      OR: [{ blockReason: null }, { NOT: { blockReason: { startsWith: STOP_REASON_PREFIX } } }],
     },
     data: { isBlocked: false, blockReason: null },
   });
@@ -302,7 +305,7 @@ export async function unblockRooms(
     userId: opts.userId ?? null,
     action: "room.unblocked",
     entityType: "Room",
-    entityId: roomIds.join(","),
+    entityId: rooms.map((r) => r.id).join(","),
     after: { from: input.from, to: input.to },
     ipAddress: opts.ipAddress,
   });

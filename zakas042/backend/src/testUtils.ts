@@ -150,9 +150,12 @@ export async function typeOf(roomId: string): Promise<string> {
   return room.type;
 }
 
-/** Bugundan N kun keyingi sana, "YYYY-MM-DD" */
+/**
+ * Bugundan N kun keyingi sana, "YYYY-MM-DD" — mehmonxona (Toshkent)
+ * kuni, server `hotelToday` bilan bir xil. Ilgari UTC sanasi edi:
+ * Toshkentda 00:00–05:00 oralig'ida "bugun" kechagi kun bo'lib chiqardi.
+ */
 export function day(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().slice(0, 10);
+  const t = new Date(Date.now() + 5 * 3_600_000);
+  return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate() + n)).toISOString().slice(0, 10);
 }

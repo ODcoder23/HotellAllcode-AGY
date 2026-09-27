@@ -1,93 +1,165 @@
-# Channel Manager API Integratsiyasi — Texnik Topshiriq va Loyiha Tahlili
+# Channel Manager TZ — moslik tahlili
 
-Ushbu hujjat foydalanuvchi taqdim etgan **Channel Manager API integratsiyasi Texnik Topshirig'i (TZ)** va amaldagi **Imron Hotel PMS** backend tizimining ushbu talablarga 100% javob berishini ko'rsatuvchi chuqur qiyosiy tahlilidir.
+> **ARXIV (2026-09-26).** Egasi qarori bilan Beds24 / channel manager
+> integratsiyasi PMS'dan to'liq olib tashlandi. Bu hujjat tarix uchun
+> qoldirilgan — undagi kod havolalari endi mavjud emas. Joriy holat:
+> [BEDS24.md](BEDS24.md), [PROJECT_LOGIC.md](PROJECT_LOGIC.md) 9-bo'lim.
 
----
+**Yangilangan:** 2026-09-25, real Beds24 hisobi bilan tekshiruvdan keyin.
 
-## 1. Arxitektura Sxemasi
+Bu hujjat Channel Manager integratsiyasi TZ'sining 19 bandini
+amaldagi kod bilan solishtiradi. Oldingi versiya hamma bandni
+"100% mos" deb baholagan edi — u baho faqat mock serverga
+asoslangan edi. Real hisob API'si (faqat `GET`) bilan
+solishtirilganda 15 ta nomuvofiqlik topildi va ular tuzatildi. Qolgan
+ishlar pastda ko'rsatilgan. Keyingi tekshiruvda yana 4 ta topildi
+(3-bo'lim, 16–19).
 
-```
- Booking.com / Airbnb / Expedia / Boshqa OTA
-                     ↕
-┌─────────────────────────────────────────┐
-│     Beds24 / Channel Manager API        │
-└────────────────────┬────────────────────┘
-                     ↕  (Webhook + REST API v2)
-┌────────────────────┴────────────────────┐
-│          BIZNING BACKEND                │
-│    ChannelManagerService / Registry     │
-│    (BullMQ Navbatlar + Tranzaksiyalar)  │
-└────────────────────┬────────────────────┘
-                     ↕
-┌────────────────────┴────────────────────┐
-│      Bizning PMS (PostgreSQL DB)        │
-└────────────────────┬────────────────────┘
-                     ↕  (WebSocket /ws)
-  Admin Panel  ·  Shaxmatka  ·  Sayt
-```
+Texnik tafsilot: [BEDS24.md](BEDS24.md) · Qolgan ishlar:
+[ISH_REJASI.md](ISH_REJASI.md) B-bo'lim
+
+Belgilar: ✓ mos · ✓* 2026-09-25 da tuzatildi · ◐ qisman · ○ qilinmagan
 
 ---
 
-## 2. 19 ta Band Bo'yicha Chuqur Qiyosiy Tahlil
+## 1. Arxitektura
 
-| № | TZ Talabi | Loyihada Amalga Oshirilganligi | Holat |
+```
+Booking.com · ETG/Ostrovok
+            ↓
+   Beds24 (markaziy, ustuvor)
+            ↕  API v2 (token) + webhook
+   PMS backend (Express, PostgreSQL, BullMQ)
+            ↕  WebSocket
+   Shaxmatka · Admin panel · Sayt   ← boshqaruv shu yerdan
+```
+
+Mijoz qarori Q9 (2026-09-25): **Beds24 tanlovi doim ustuvor.**
+Batafsil: [BEDS24.md](BEDS24.md) 2-bo'lim.
+
+---
+
+## 2. 19 band bo'yicha holat
+
+| № | TZ talabi | Amalda | Holat |
 |---|---|---|:---:|
-| **1** | **Maqsad:** PMS tizimini tayyor Channel Manager (Beds24) API orqali OTA kanallariga ulash. To'g'ridan-to'g'ri OTA bilan emas, Channel Manager orqali ishlash. | Backend to'liq Channel Manager modeli asosida qurilgan. OTA'lar (Booking.com, Airbnb, Expedia) bilan to'g'ridan-to'g'ri bog'lanilmaydi, yagona ko'prik — Channel Manager (Beds24 API v2). | **100% Mos** |
-| **2** | **Asosiy prinsip:** Ikki tomonlama almashinuv (READ + WRITE). Channel Manager'dan yangi booking, o'zgarish, cancellation olish; Biz tomondan availability, narx, booking status, mapping yuborish. | **READ:** Webhook (`/api/webhook/beds24`) va Polling (`pollBookings`).<br>**WRITE:** `beds24-availability-sync`, `beds24-rate-sync`, `beds24-reservation-sync` (BullMQ worker'lar). | **100% Mos** |
-| **3** | **Ma'lumot qabul qilish:** Kelgan JSON ma'lumotlarini (booking_id, channel, guest, room, check_in, check_out, price, status) qabul qilib DB ga yozish. | `src/services/webhookProcessor.ts` (`applyReservation`): kelgan payload parsing qilinadi, mehmon ma'lumotlari `Guest`, bron esa `Reservation` jadvaliga yoziladi. | **100% Mos** |
-| **4** | **Webhook:** `POST /api/channel/webhook` orqali tezkor qabul qilish va Admin panelda real-time ko'rsatish. | `src/routes/webhook.ts` va `src/realtime/notify.ts`: Webhook qabul qilinishi bilan `notifyReservation()` WebSocket orqali Shaxmatka va Admin panelga signal yuboradi (sahifani yangilash shart emas). | **100% Mos** |
-| **5** | **Booking qabul qilish:** Booking.com orqali kelgan yangi bron Admin panelda darhol "New Reservation" bo'lib paydo bo'lishi. | `assignRoom()` avtomatik ravishda xaritadagi tarif bo'yicha bo'sh xonani topadi, bron `CONFIRMED` holatida yaratiladi va real-vaqtda ekranda chiqadi. | **100% Mos** |
-| **6** | **Booking cancellation:** Mehmon OTA orqali bekor qilsa, DB dagi booking avtomatik `CANCELLED` bo'lishi va xona bo'shatilishi. | `applyReservation` da status `CANCELLED` bo'lganda `cancelledAt` yoziladi, xona availability'si avtomatik oshiriladi va WebSocket xabari yuboriladi. | **100% Mos** |
-| **7** | **Booking modification:** Mehmon sana, xona yoki mehmon sonini o'zgartirsa, `external_booking_id` orqali topilib UPDATE qilinishi, duplicate yaratilmasligi. | `webhookProcessor.ts:272`: `channelId` va `externalReservationId` bo'yicha mavjud bron topiladi va yangilanadi. Sanalar o'zgarsa xona bo'shligi qayta tekshiriladi. | **100% Mos** |
-| **8** | **Availability yuborish:** PMS'da xona band bo'lsa (masalan 5 tadan 4 taga tushsa), Channel Manager API orqali OTA'larga tarqatish. | `onAvailabilityChanged()` chaqirilishi bilan yangi `availableCount` hisoblanadi va BullMQ orqali Beds24 ga `calendar` push yuboriladi. | **100% Mos** |
-| **9** | **Price synchronization:** PMS'da tarif narxi o'zgarsa, API orqali Channel Manager va OTA'larga yuborish. | `src/services/rates.ts` (`enqueueRateSync`): admin paneldan narx kiritilganda `beds24-rate-sync` navbati orqali narxlar va minStay kanalga yetkaziladi. | **100% Mos** |
-| **10** | **Availability sinxronizatsiya parametrlari:** Room availability, Price, Min stay, Max stay, Closed/Open, Closed for arrival/departure. | `Availability` (bo'sh xonalar soni), `RatePlan` (narx va `minStay`), `RoomDayStatus` (`isBlocked` orqali ta'mir/yopiq holati) to'liq sinxronizatsiya qilinadi. | **100% Mos** |
-| **11** | **Room Mapping:** PMS dagi xona va tariflar Channel Manager'dagi room va unit'lar bilan mapping qilinishi va DB da saqlanishi. | `prisma/schema.prisma` dagi `ChannelMapping` modeli: `channelId`, `roomTypeId`, `roomId`, `externalRoomTypeId`, `externalUnitId`. Admin panelda `/admin/mapping` interfeysi mavjud. | **100% Mos** |
-| **12** | **Channel Manager account:** Admin panelda hisob ulash (Provider, API Key, Secret/Token, Property ID) va xavfsiz saqlash. | `ChannelConnection` modeli: `propertyId`, `refreshToken` (AES-256 bilan DB da shifrlangan). `/api/admin/channel/connect` orqali ulanadi va token hech qachon frontendga ochiq chiqmaydi. | **100% Mos** |
-| **13** | **Multiple Channel Manager Provider:** Faqat bitta provayderga bog'lanib qolmaslik (Beds24, Provider 2, Provider 3 qo'shish imkoniyati). | `src/services/channel/types.ts` (`ChannelAdapter` interfeysi) va `src/services/channel/registry.ts` (`adapters.set("beds24", ...)`): yangi provayder qo'shish uchun faqat yangi adapter yoziladi, biznes mantiq tegilmaydi. | **100% Mos** |
-| **14** | **API Service Architecture:** Backendda alohida `ChannelManagerService` arxitekturasi bo'lishi (connect, getRooms, getBookings, updateAvailability, etc.). | `ChannelAdapter` interfeysi: `ping()`, `getRoomTypes()`, `pullReservations()`, `pushReservation()`, `pushAvailability()`, `pushRates()`, `getAvailability()`, `parseWebhook()`. | **100% Mos** |
-| **15** | **Sync mexanizmi:** Asosiy usul Webhook + qo'shimcha Polling fallback (har 1–15 daqiqada tekshirib turish). | Webhook bir zumda ishlaydi. Qo'shimcha ravishda `src/services/reconciliation.ts` (`pollBookings` va `checkDrift`) davriy ravishda navbat orqali yetib kelmagan bronlarni tutib oladi. | **100% Mos** |
-| **16** | **Sync Log:** Har bir API amali (Provider, Action, Room, Date, Status, Time, Error) log qilinishi va admin panelda ko'rinishi. | `SyncLog` modeli: `channelId`, `action`, `direction`, `reservationId`, `roomId`, `request`, `response`, `status`, `errorMessage`, `createdAt`. Admin panelda `/api/admin/sync-logs` orqali ko'riladi. | **100% Mos** |
-| **17** | **Duplicate protection:** `provider + external_booking_id` unique bo'lishi va qayta kelgan so'rovlar duplicate yaratmasligi. | Bazada `@@unique([channelId, externalReservationId])` qat'iy constraint mavjud. Webhook darajasida ham `@@unique([channelId, eventType, externalId, payloadHash])` orqali takroriy so'rov `IGNORED_DUPLICATE` qilinadi. | **100% Mos** |
-| **18** | **Data flow:** To'liq ikki tomonlama oqim (OTA ↔ Channel Manager ↔ Backend ↔ DB ↔ PMS/Admin). | Inbound (bron tushishi) va Outbound (inventar/narx tarqalishi) to'liq tranzaksiyalar va BullMQ asinxron navbatlari orqali ishlaydi. | **100% Mos** |
-| **19** | **Muhim talab:** Tizim "bridge" bo'lishi va READ + WRITE funksiyalarini to'liq qo'llab-quvvatlashi. | Backend nafaqat bronlarni qabul qiladi, balki PMS'dagi har qanday o'zgarishni (bandlik, bekor qilish, xona yopish, narx yangilash) Channel Manager API'ga avtomatik push qiladi. | **100% Mos** |
+| 1 | PMS OTA'ga to'g'ridan-to'g'ri emas, channel manager (Beds24) orqali ulanadi | Yagona ko'prik Beds24 API v2. OTA bilan to'g'ridan-to'g'ri aloqa yo'q | ✓ |
+| 2 | Ikki tomonlama almashinuv (READ + WRITE) | READ: webhook + polling (hamma statuslar). WRITE: bron, narx. Bo'sh joy sonini Q9 bo'yicha Beds24 o'zi hisoblaydi | ✓* |
+| 3 | Kelgan bron maydonlari (id, kanal, mehmon, xona, sana, narx, status) DB'ga yoziladi | Kanal `channel` maydonidan (Ostrovok alohida manba), valyuta obyektdan, to'lov yuqori darajadagi `invoiceItems` dan, mamlakat `country2` dan, OTA raqami `externalReference` da, kelib chiqishi `origin = CHANNEL` | ✓ |
+| 4 | Webhook tezkor qabul qilinadi, admin real vaqtda ko'radi | `POST /api/webhooks/beds24/:token`. Real v2 formati (`event` yo'q) qabul qilinadi. Beds24 imzo bermaydi — URL token rejimi. Beds24 tomonidagi sozlama ulash kuni | ✓* |
+| 5 | Yangi OTA broni darhol paydo bo'ladi | Avtomatik xona biriktirish. Unit mapping endi xona turi bilan birga qidiriladi (ilgari boshqa turdagi xonaga tushishi mumkin edi) | ✓* |
+| 6 | OTA bekor qilsa bron CANCELLED, xona bo'shaydi | Webhook ishlardi. Polling bekor qilinganlarni ko'rmasdi (Beds24 status'siz so'rovda ularni bermaydi) — tuzatildi | ✓* |
+| 7 | O'zgarish (sana, xona, mehmon soni) UPDATE qilinadi, dublikat yo'q | Beds24'da xona turi yoki unit o'zgarsa PMS ham ergashadi (ilgari faqat sana). Xonadagi mehmon holati saqlanadi | ✓* |
+| 8 | Band bo'lsa availability OTA'larga tarqaladi | Q9: Beds24 bo'sh joyni bronlardan o'zi hisoblaydi, PMS bronni yuboradi (`checkAvailability` bilan). Ta'mir yopilishi ikki tomonlama: PMS -> Beds24 `black` bron, Beds24 `black` -> PMS kunlari (`ChannelBlock`, B2) | ✓ |
+| 9 | Narx sinxronizatsiyasi | PMS -> Beds24 darhol, Beds24 -> PMS soatlik (`pullRates`). Beds24 narx webhook'i yubormaydi — ilgari teskari yo'nalish ishlamas edi. Tizim USD (Q13) — valyuta mos, narx sinxronlanadi | ✓ |
+| 10 | Parametrlar: bo'sh joy, narx, min/max stay, yopiq, kelish/ketish taqiqi | Narx va `minStay` ha. Max stay, yopiq kun, CTA/CTD sinxronlanmaydi | ◐ |
+| 11 | Xona mapping DB'da saqlanadi | Tur + unit darajasi. Unit'lar nom bo'yicha avtomatik bog'lanadi (`POST /api/admin/mapping/auto-units`). `/properties` endi `includeAllRooms=true` bilan — ilgari mapping sahifasi bo'sh qolardi | ✓* |
+| 12 | Hisob ulash, kalitlar xavfsiz saqlanadi | AES-256. Refresh token almashishi endi saqlanadi (ilgari birinchi almashishda ulanish uzilardi). Ulash faqat CLI orqali (`npm run beds24:connect`), invite code yoki refresh token bilan. Admin paneldan ulash yo'q (eski hujjatdagi `/api/admin/channel/connect` mavjud emas edi) | ◐ |
+| 13 | Bir nechta provayder | `ChannelAdapter` + `registry.ts` | ✓ |
+| 14 | Alohida servis arxitekturasi | `ping`, `getRoomTypes`, `pullReservations`, `pushReservation`, `pushAvailability`, `pushRates`, `getAvailability`, `getRates`, `getCurrency`, `parseWebhook` | ✓ |
+| 15 | Webhook + polling fallback | Polling 15 daqiqa (hamma statuslar, sahifalash), narx soatlik, drift kunlik | ✓* |
+| 16 | Sync log | `SyncLog`, admin panelda `/admin/sync-log.html` | ✓ |
+| 17 | Dublikat himoyasi | `@@unique([channelId, externalReservationId])` + webhook `payloadHash` | ✓ |
+| 18 | To'liq ikki tomonlama oqim | Q9 yo'nalishlari bilan: [BEDS24.md](BEDS24.md) 2-bo'lim jadvali | ✓* |
+| 19 | Tizim "ko'prik" bo'lishi | Ha. OTA broni PMS'da cheklangan: sana, narx va bekor qilish OTA'da qilinadi | ✓* |
 
 ---
 
-## 3. Kod Strukturasi va Asosiy Modullar
+## 3. Real hisob bilan tekshiruvda topilgan xatolar
+
+Hammasi 2026-09-25 da tuzatildi. Mock bu xatolarni ko'rsatmas edi —
+mock ham real xatti-harakatga keltirildi.
+
+| # | Xato | Oqibati | Joy |
+|---|---|---|---|
+| 1 | Almashgan refresh token saqlanmasdi | Birinchi almashishda ulanish butunlay uzilardi | `beds24/auth.ts` |
+| 2 | `/properties` `includeAllRooms`siz | Mapping sahifasida Beds24 xonalari chiqmasdi | `beds24/adapter.ts` |
+| 3 | Unit faqat id bo'yicha qidirilardi | Bron boshqa turdagi xonaga tushishi mumkin edi | `mapping.ts` `findByExternal` |
+| 4 | Polling status'siz so'rardi | OTA bekor qilishi polling orqali kelmasdi | `adapter.ts` `pullReservations` |
+| 5 | Polling sahifalamasdi | 100 dan ortiq o'zgarishda qolganlari yo'qolardi | `adapter.ts` |
+| 6 | Kalendar `include*`siz so'ralardi, oraliqlar yoyilmasdi | Drift tekshiruvi hech narsa ko'rmasdi | `adapter.ts` `getAvailability` |
+| 7 | Valyuta "USD" qattiq yozilgan, narx valyutasiz yuborilardi | So'mdagi narx dollar bo'lib OTA'ga ketardi | `adapter.ts`, `rates.ts`, `reservationSync.ts` |
+| 8 | `subStatus: arrived/departed` yuborilardi | Beds24'da yo'q — check-in yuborilmasdi | `statusMap.ts` |
+| 9 | `black` NO_SHOW deb o'qilardi va NO_SHOW `black` bo'lib ketardi | Yopilgan xona "kelmagan mehmon", kelmagan mehmon "yopilgan xona" bo'lardi | `statusMap.ts` |
+| 10 | OTA bronini yangilashda `referer: "PMS"` va narx yozilardi | Booking.com broni buzilardi, keyingi haqiqiy bekor qilish "aks-sado" deb tashlanardi | `adapter.ts` |
+| 11 | `new` + to'lovsiz -> PENDING_PAYMENT, 24 soatda avtomatik bekor | Haqiqiy OTA broni tizim tomonidan bekor qilinib, Beds24'ga yuborilardi | `statusMap.ts`, `publicBooking.ts` |
+| 12 | Webhook to'lovlarni bron ichidan qidirardi | OTA to'lovi PMS'ga tushmasdi | `adapter.ts` `parseWebhook` |
+| 13 | Beds24'dan narx faqat webhook bilan kutilardi | Beds24 bunday webhook yubormaydi — teskari yo'nalish ishlamasdi | `rates.ts` `pullRates` |
+| 14 | Webhook yangilanishi statusni qaytarardi | Check-in qilingan mehmon CONFIRMED ga qaytardi | `statusMap.ts` `mergeIncomingStatus` |
+| 15 | PMS `numAvail` ni o'z hisobidan yozardi | OTA broni bilan poygada sotilgan xona qayta ochilishi mumkin edi | `availability.ts` (Q9) |
+| 16 | `referer: "PMS"` bronga kelgan har webhook "aks-sado" deb tashlanardi | Beds24 panelida PMS bronining sanasi o'zgartirilsa PMS bilmay qolardi (real Beds24 bizning yozuvimizga webhook yubormaydi) | `webhookProcessor.ts` `matchesPms` |
+| 17 | 2026-09-16 gacha bronlar so'mdagi summa bilan `USD` yorlig'ida (seed ham) | Beds24 (USD) ga narx sifatida ketsa 800 000 dollar bo'lardi. Hal qilindi: tizim USD, eski test ma'lumoti tozalanadi (Q13) | `reservationSync.ts`, `seed.ts`, `scripts/reset-test-data.ts` |
+| 18 | Bitta 429 dan keyin 5 daqiqagacha hech bir so'rov ketmasdi | Kredit tiklangan bo'lsa ham bron va narx kechikardi | `client.ts` (30 s da sinov so'rovi) |
+| 19 | Yuborish o'rtasida restart bo'lsa bron `SYNCING` da abadiy qolardi | Bron Beds24'ga hech qachon yetmasdi — overbooking xavfi | `reservationSync.ts` |
+
+### USD va B2 bosqichida topilganlar (2026-09-25)
+
+| # | Xato | Oqibati | Joy |
+|---|---|---|---|
+| 20 | SoT = beds24 bo'lganda PMS'dagi ta'mir yopilishi Beds24'ga umuman yetmasdi | Booking.com yopiq xonani sotishda davom etardi | `channelBlocks.ts` (`black` bron) |
+| 21 | Beds24 panelidagi `black` faqat ogohlantirish edi | PMS yopiq xonaga bron qo'yishi mumkin edi | `channelBlocks.ts` `applyChannelBlock` |
+| 22 | Bekor qilish jarimasi `channelId` bo'yicha o'chirilardi | Beds24'ga yuborilgan HAR bir sayt/qabulxona broni jarimasiz bekor bo'lardi | `reservations.ts` (`origin` bo'yicha) |
+| 23 | OTA egaligi `source` nomidan taxmin qilinardi (`OTHER` — Beds24'dan so'rov) | Ostrovok broni PMS'da tahrirlanib, OTA broni buzilishi mumkin edi | `Reservation.origin`, `channelOwnership.ts` |
+| 24 | Nonushta bronga keyin yoqilsa narxi ko'chirilmasdi | Oshxona sanardi, summa qo'shilmasdi — bepul ovqat | `reservations.ts` `updateReservation` |
+| 25 | "Tarifdan past" faqat kirish kuni tarifi bilan solishtirilardi | Juma qimmat bo'lsa sayt o'rtacha narxda sotib, o'z bronini rad etardi | `reservations.ts` `tariffStayTotal` |
+| 26 | Hisobot: nonushta va jarima daromadda yo'q, xizmatlar har oyda qayta sanalardi, "qarz" = davr daromadi − davr to'lovi | Daromad va qarz noto'g'ri | `report.ts`, `stats.ts` (`lib/money.ts`) |
+| 27 | OTA komissiyasiga mehmonxonadagi xizmatlar (mini-bar) ham kirardi | Xarajat bo'rtib chiqardi | `expenses.ts` |
+| 28 | Summalar float bilan qo'shilib butun songa yaxlitlanardi | Dollarda sent yo'qolardi, $0.00000001 "qarz" to'lovni rad etardi | `lib/money.ts` (sentda) |
+| 29 | OTA jami narxi kechalarga 2 xona bilan bo'linardi | $100 / 3 kecha -> $99.99 | `pricePerNight` 4 xona |
+| 30 | Sayt narxi o'rtacha × kecha, sentga yaxlitlangan | Tariflar yig'indisidan farq qilardi | `stayPriceFromRates` |
+
+---
+
+## 4. Tekshiruv (2026-09-25, oxirgi holat)
+
+Jonli bazaga tegmasdan — vaqtinchalik mahalliy klaster (:55433),
+alohida Redis, mock `MOCK_CURRENCY=USD`, `PMS_CURRENCY=USD`:
+
+- `mock-beds24/mock.test.ts` — **42/42** (bazasiz).
+- Backend: 18 fayl, **424/424** — `AUTH_REQUIRED=false` va `true`
+  (ishlab chiqarishga yaqin, ADMIN token) ikkala rejimda ham.
+  Yangi: `beds24Real` (real API moslik), `channelBlocks` (xona yopish
+  ikki yo'nalishda, 8), `usd` (to'lov sentlari, nonushta narxi,
+  jarima, hisobot davrlari, 8), `money` (formula, 13).
+- Avvalgi 36 ta yiqiluvchi test (eski fixture'lar) tuzatilgan.
+- B2 migratsiyasi test bazasida qo'llangan, `prisma migrate diff` —
+  sxema bilan farq yo'q. `scripts/reset-test-data.ts` test bazasida
+  sinalgan (quruq rejim, noto'g'ri nom rad etiladi, keyin tozalash).
+- Frontend (Shaxmatka, admin panel, sayt, admin sahifalari) — vendor
+  Babel bilan kompilyatsiya tekshiruvi.
+
+---
+
+## 5. Kod tuzilmasi
 
 ```
 backend/src/
 ├── services/
 │   ├── channel/
-│   │   ├── types.ts          <- ChannelAdapter interfeysi (TZ 13, 14-band)
-│   │   ├── registry.ts       <- Multi-provider registri (TZ 13-band)
-│   │   └── propertyCache.ts  <- Xonalar keshini boshqarish
+│   │   ├── types.ts          ChannelAdapter interfeysi (TZ 13, 14)
+│   │   ├── registry.ts       provayderlar ro'yxati
+│   │   └── propertyCache.ts  /properties keshi
 │   ├── beds24/
-│   │   ├── adapter.ts        <- ChannelAdapter realizatsiyasi (TZ 14-band)
-│   │   ├── client.ts         <- API v2 HTTP mijozi va kredit limiti nazorati
-│   │   ├── auth.ts           <- Token yangilash va AES-256 shifrlash (TZ 12-band)
-│   │   └── statusMap.ts      <- OTA va PMS statuslari mosligi (TZ 6, 7-band)
-│   ├── webhook.ts            <- Webhook validatsiyasi (TZ 4-band)
-│   ├── webhookProcessor.ts   <- Yangi bron, o'zgarish, duplicate himoyasi (TZ 3, 5, 6, 7, 17-band)
-│   ├── mapping.ts            <- Room Mapping logikasi (TZ 11-band)
-│   ├── availability.ts       <- Availability hisoblash va push (TZ 8, 10-band)
-│   ├── rates.ts              <- Narxlar va minStay push (TZ 9, 10-band)
-│   ├── reconciliation.ts     <- Polling fallback va drift tekshiruvi (TZ 15-band)
-│   └── auditLog.ts           <- Audit va xavfsizlik jurnali
-├── queues/
-│   ├── index.ts              <- BullMQ navbatlari (availability, rate, reservation, retry)
-│   └── scheduler.ts          <- Polling (15 min) va drift (kunlik) cron vazifalari
+│   │   ├── adapter.ts        real API formati <-> PMS shakli
+│   │   ├── client.ts         HTTP, kredit, 401/429
+│   │   ├── auth.ts           token, almashish, shifrlash
+│   │   └── statusMap.ts      status va bayroq xaritasi, Q9 qoidasi
+│   ├── webhook.ts            webhook validatsiya, dedup, navbat
+│   ├── webhookProcessor.ts   bronni yaratish/yangilash
+│   ├── reservationSync.ts    PMS -> Beds24 bron
+│   ├── channelBlocks.ts      xona yopish <-> Beds24 black (B2)
+│   ├── mealPrice.ts          nonushta narxi, faol bronlarga qo'llash
+│   ├── mapping.ts            mapping, auto-units, health
+│   ├── availability.ts       bo'sh joy hisobi (SoT=pms da yuborish)
+│   ├── rates.ts              narx: yuborish va pullRates
+│   ├── reconciliation.ts     polling, drift, catch-up
+│   └── settings.ts           SoT, PMS valyutasi
+├── lib/
+│   ├── money.ts              yagona pul formulasi (USD, sentda)
+│   ├── moneySchema.ts        USD chegaralari (Zod)
+│   └── channelOwnership.ts   OTA egaligi (origin bo'yicha)
+├── queues/                   BullMQ worker'lar va jadval
 └── routes/
-    ├── admin.ts              <- Mapping, credential ulanishi, sync loglar API
-    └── webhook.ts            <- Webhook qabul qilish endpointi
+    ├── admin.ts              mapping, ulanish holati, maintenance
+    └── webhooks.ts           POST /api/webhooks/beds24/:token
 ```
-
----
-
-## 4. Xulosa
-
-Bizning loyihamiz siz taqdim etgan **Texnik Topshiriqning barcha 19 ta talabiga 100% to'liq javob beradi**:
-1. **Multi-Provider Arxitektura:** Dastur faqat Beds24 ga qattiq bog'lanmagan — `ChannelAdapter` interfeysi va `registry.ts` orqali xohlagan vaqtda boshqa Channel Manager provayderini qo'shish mumkin.
-2. **To'liq Ikki Tomonlama Sinxronizatsiya (READ + WRITE):** Webhook va Polling orqali qabul qilish hamda BullMQ orqali zudlik bilan availability va narxlarni OTA'larga tarqatish to'liq yo'lga qo'yilgan.
-3. **Overbooking va Duplicate Himoyasi:** Ham ma'lumotlar bazasi darajasida (`@@unique([channelId, externalReservationId])`), ham tranzaksiya darajasida PostgreSQL `EXCLUDE USING gist` orqali to'liq kafolatlangan.

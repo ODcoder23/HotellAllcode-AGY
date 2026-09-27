@@ -31,15 +31,16 @@ cp .env.example .env
 |---|---|
 | `DATABASE_URL` | PostgreSQL manzili |
 | `REDIS_URL` | Redis manzili |
-| `ENCRYPTION_KEY` | Beds24 token'larini shifrlash (32 bayt **hex** = 64 belgi) |
 | `JWT_SECRET` | Sessiya imzosi (32+ belgi) |
-| `WEBHOOK_URL_TOKEN` | Webhook URL'idagi maxfiy token |
 
-Kalit yasash (**hex**, base64 emas):
+Kalit yasash:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
+`NODE_ENV=production` da server `AUTH_REQUIRED=false`,
+`RATE_LIMIT_DISABLED=true` yoki qisqa `JWT_SECRET` bilan ISHGA TUSHMAYDI.
 
 ---
 
@@ -51,14 +52,9 @@ npx prisma migrate deploy
 npm run db:seed          # 18 xona, 9 tarif, 3285 narx, test foydalanuvchilar
 ```
 
-**Seed mavjud ma'lumotni o'chiradi.** Ishlatilayotgan bazada
-ehtiyot bo'ling.
-
-Seed'dan keyin Beds24 ulanishi va mapping tiklanadi:
-
-```bash
-npm run beds24:mock
-```
+**Seed mavjud ma'lumotni o'chiradi.** Himoya: baza nomida "test"
+bo'lmasa va unda bron bor bo'lsa, seed to'xtaydi
+(`SEED_ALLOW_WIPE=true` — ataylab, oldin `pg_dump`).
 
 ---
 
@@ -77,39 +73,61 @@ alohida server kerak emas:
 | `/shaxmatka` | Bandlik jadvali |
 | `/admin-panel` | Xodimlar paneli |
 
-Kirish: `founder@imron.local` / `admin12345`
-
----
-
-## Mock Beds24
-
-Beds24 hisobisiz sinash uchun:
-
-```bash
-cd mock-beds24 && npm install && npm run dev   # :4000
-```
-
-`.env` da `BEDS24_BASE_URL="http://localhost:4000"`.
-
-Mock 9 room type / 18 xona qaytaradi — PMS inventari bilan
-aynan mos (`mock-beds24/fixtures/properties.ts`).
-
-Real Beds24'ga ulash qadamlari: [`../TODO.md`](../TODO.md).
+Kirish (faqat mahalliy seed bazada): `founder@imron.local` / `admin12345`.
+Bu parol ochiq repoda — serverda ishlatilmasin.
 
 ---
 
 ## Testlar
 
+**Testlar bazani tozalaydi** — har test faylidan oldin seed chaqiriladi.
+Lokal `.env` dagi `localhost:5433` tunnel orqali **jonli bazaga** olib
+boradi. Himoya (`vitest.setup.ts`): baza nomida "test" bo'lmasa testlar
+ishga tushmaydi. Baribir: tunnel ochiq bo'lsa `npm test` ishga tushirmang,
+serverda test ishga tushirilmaydi.
+
+### Alohida test bazasi (2026-09-26 da sinalgan)
+
+Vaqtinchalik PostgreSQL klasteri va Redis alohida portlarda,
+hammasi bitta papkada (keyin o'chiriladi). Windows + scoop misoli:
+
 ```bash
-PMS_URL=http://127.0.0.1:3000 MOCK_URL=http://127.0.0.1:4000 npm test
+T=/tmp/pms-test; mkdir -p $T
+initdb -D $T/pg -U postgres --auth=trust -E UTF8 --no-locale
+pg_ctl -D $T/pg -o "-p 55433 -c listen_addresses=127.0.0.1" -l $T/pg.log start
+createdb -h 127.0.0.1 -p 55433 -U postgres imron_test
+redis-server --port 56380 --bind 127.0.0.1 --save "" &
 ```
 
-**`127.0.0.1` yozing, `localhost` emas.** Node 18+ da
-`localhost` avval IPv6 (`::1`) ga hal bo'ladi va SSH tunnel
-orqali ishlaganda ulanish rad etiladi.
+`$T/test.env`:
 
-**Testlar bazani tozalaydi** — har test faylidan oldin seed
-chaqiriladi. Ishlatilayotgan bazada ishlatmang.
+```
+DATABASE_URL=postgresql://postgres@127.0.0.1:55433/imron_test
+REDIS_URL=redis://127.0.0.1:56380
+PORT=3399
+HOST=127.0.0.1
+AUTH_REQUIRED=false
+RATE_LIMIT_DISABLED=true
+JWT_SECRET=<yangi 64 belgili kalit>
+# barcha TELEGRAM_* BO'SH — aks holda mahalliy bot serverdagi bot bilan to'qnashadi
+```
+
+```bash
+set -a; . $T/test.env; set +a                    # test jarayoni ham shu qiymatlarni olsin
+npx prisma migrate deploy                        # "127.0.0.1:55433" chiqishini tekshiring
+npx tsx --env-file=$T/test.env src/server.ts &
+PMS_URL=http://127.0.0.1:3399 npx vitest run
+```
+
+**`127.0.0.1` yozing, `localhost` emas.** Node 18+ da `localhost` avval
+IPv6 (`::1`) ga hal bo'ladi.
+
+Ishlab chiqarishga yaqin rejim: `test.env` da `AUTH_REQUIRED=true` —
+`vitest.setup.ts` ADMIN tokenini o'zi qo'shadi, `security.test.ts`
+rollar chegarasini (401/403) tekshiradi. **Ikkala rejimda ham hamma test
+o'tishi kerak** (2026-09-26: 13 fayl, 226 test — ikkala rejimda o'tdi).
+
+Tashqi xizmat kerak emas: testlar internetsiz ishlaydi.
 
 ---
 
@@ -120,11 +138,11 @@ chaqiriladi. Ishlatilayotgan bazada ishlatmang.
 | `npm run dev` | Ishlab chiqish (tsx watch) |
 | `npm run build` | TypeScript → `dist/` |
 | `npm start` | `dist/server.js` |
-| `npm test` | Vitest |
+| `npm test` | Vitest (faqat test bazasida) |
 | `npm run db:migrate` | Yangi migratsiya |
 | `npm run db:deploy` | Migratsiyalarni qo'llash |
 | `npm run db:seed` | Baza to'ldirish |
 | `npm run db:studio` | Prisma Studio |
-| `npm run beds24:connect` | Real Beds24 ulanishi |
-| `npm run beds24:mock` | Mock ulanish + 9 mapping |
 | `npm run build:css` | Shaxmatka Tailwind CSS |
+| `npm run data:reset` | Test bronlarini tozalash (narx, maosh, sozlama qoladi). Avval quruq ishga tushadi, `-- --confirm=<baza>` bilan o'chiradi. OLDIN pg_dump — ../SERVER.md |
+| `npm run beds24:purge` | Bir martalik: Beds24 qoldiqlarini tozalash. Serverda 2026-09-26 da bajarilgan — qayta kerak emas ([../BEDS24.md](../BEDS24.md)) |

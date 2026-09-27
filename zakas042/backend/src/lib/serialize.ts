@@ -8,6 +8,7 @@
  * (`p.amount` ustida `reduce` qiladi) — shu yerda o'giriladi.
  */
 
+import { reservationMoney } from "./money.js";
 import type { Prisma } from "@prisma/client";
 
 // --- Ibtidoiy konvertorlar ----------------------------------
@@ -32,6 +33,14 @@ export const fromDateKey = (s: string): Date => {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d));
 };
+
+/**
+ * Haqiqiy kalendar sanasimi: "2026-02-31" shaklan to'g'ri, lekin
+ * `Date.UTC` uni jimgina 3-martga aylantiradi. Qaytarib yozilganda
+ * bir xil chiqsagina sana to'g'ri.
+ */
+export const isValidDateKey = (s: string): boolean =>
+  /^\d{4}-\d{2}-\d{2}$/.test(s) && toDateKey(fromDateKey(s)) === s;
 
 /** BOOKING_COM → "booking_com" (frontend SOURCES kaliti) */
 export const enumToKey = (e: string): string => e.toLowerCase();
@@ -102,7 +111,6 @@ type PaymentRow = {
   method: string;
   paymentDate: Date;
   note: string | null;
-  externalPaymentId: string | null;
 };
 
 export const serializeCharge = (c: ChargeRow) => ({
@@ -113,11 +121,10 @@ export const serializeCharge = (c: ChargeRow) => ({
 
 export const serializePayment = (p: PaymentRow) => ({
   id: p.id,
-  amount: toNumber(p.amount),
+  amount: toNumber(p.amount),        // so'm; manfiy — qaytarish
   method: p.method,
   date: toDateKey(p.paymentDate),   // frontend `p.date` kutadi
   note: p.note ?? "",
-  externalPaymentId: p.externalPaymentId,
 });
 
 // --- Reservation --------------------------------------------
@@ -132,18 +139,15 @@ type ReservationRow = {
   children: number;
   source: string;
   pricePerNight: Prisma.Decimal;
-  currency: string;
   notes: string | null;
   withMeal: boolean;
   mealPricePerPerson?: Prisma.Decimal | null;
   cancellationFee?: Prisma.Decimal | null;
   priceReason?: string | null;
   status: string;
-  channelId: string | null;
-  externalReservationId: string | null;
+  code?: string | null;
   checkedInAt: Date | null;
   checkedOutAt: Date | null;
-  syncStatus: string;
   createdAt: Date;
   charges?: ChargeRow[];
   payments?: PaymentRow[];
@@ -159,38 +163,14 @@ export function serializeReservation(r: ReservationRow) {
   const charges = (r.charges ?? []).map(serializeCharge);
   const payments = (r.payments ?? []).map(serializePayment);
 
-  // TZ 14-band formulasi (08-fayl §6) — frontend bilan bir xil
-  const nights = Math.max(
-    1,
-    Math.round((r.checkOut.getTime() - r.checkIn.getTime()) / 86_400_000)
-  );
-  const chargesTotal = charges.reduce((s, c) => s + c.amount, 0);
-
   /**
-   * Nonushta (SAVOLLAR.md S10): kishi boshiga, har kecha uchun.
+   * TZ 14-band formulasi — `lib/money.ts` (YAGONA MANBA).
    *
-   * Narx BRONDAN olinadi (sozlamadan emas): bron yaratilganda
-   * ko'chirilgan, keyin narx ko'tarilsa eski bron summasi
-   * o'zgarmasin.
+   * Nonushta (S10): kishi boshiga, har kecha; narx BRONDAN olinadi.
+   * Bekor qilingan / kelmagan bron (S11): summa = faqat jarima.
+   * Hammasi tiyinda qo'shiladi — float qoldig'i yo'q.
    */
-  const guests = r.adults + r.children;
-  const mealPrice = r.mealPricePerPerson ? toNumber(r.mealPricePerPerson) : 0;
-  const mealTotal = r.withMeal ? mealPrice * guests * nights : 0;
-
-  /**
-   * Bekor qilish jarimasi (SAVOLLAR.md S11).
-   *
-   * Bekor qilingan bronda xona narxi hisoblanmaydi — mehmon
-   * kelmagan. Faqat jarima to'lanadi.
-   */
-  const isCancelled = r.status === "CANCELLED" || r.status === "NO_SHOW";
-  const cancellationFee = r.cancellationFee ? toNumber(r.cancellationFee) : 0;
-
-  const totalPrice = isCancelled
-    ? cancellationFee
-    : toNumber(r.pricePerNight) * nights + chargesTotal + mealTotal;
-
-  const paidAmount = payments.reduce((s, p) => s + p.amount, 0);
+  const m = reservationMoney(r);
 
   return {
     id: r.id,
@@ -203,13 +183,15 @@ export function serializeReservation(r: ReservationRow) {
     children: r.children,
     source: enumToKey(r.source),          // "booking_com"
     pricePerNight: toNumber(r.pricePerNight),
+    nights: m.nights,
+    roomTotal: m.roomTotal,
     notes: r.notes ?? "",
     withMeal: r.withMeal,
     // Nonushta tafsiloti — Shaxmatka hisobni ko'rsatishi uchun
-    mealPricePerPerson: mealPrice,
-    mealTotal,
+    mealPricePerPerson: m.mealPricePerPerson,
+    mealTotal: m.mealTotal,
     // Bekor qilish jarimasi (0 bo'lsa bepul bekor qilingan)
-    cancellationFee,
+    cancellationFee: m.cancellationFee,
     priceReason: r.priceReason ?? "",
     status: enumToKey(r.status),          // "pending_payment" (Q5)
     charges,
@@ -218,18 +200,15 @@ export function serializeReservation(r: ReservationRow) {
 
     // Hisoblangan (TZ 14-band) — frontend o'zi ham hisoblaydi,
     // lekin API tayyor qaytaradi
-    totalPrice,
-    paidAmount,
-    remainingAmount: Math.max(totalPrice - paidAmount, 0),
-    refundDue: Math.max(paidAmount - totalPrice, 0),
+    totalPrice: m.total,
+    paidAmount: m.paid,
+    remainingAmount: m.remaining,
+    refundDue: m.refundDue,
 
-    // Yangi maydonlar — frontend e'tiborsiz qoldiradi
-    currency: r.currency,
-    channelId: r.channelId,
-    externalReservationId: r.externalReservationId,
+    // Sayt broni kodi (IMR-XXXXX) — qabulxona mehmon bilan gaplashganda
+    code: r.code ?? null,
     checkedInAt: r.checkedInAt?.toISOString() ?? null,
     checkedOutAt: r.checkedOutAt?.toISOString() ?? null,
-    syncStatus: enumToKey(r.syncStatus),
   };
 }
 

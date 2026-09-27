@@ -21,16 +21,16 @@ export const PMS_EVENTS = [
   "payment.updated",
 ] as const;
 
-/** Admin panel ogohlantirishlari — Shaxmatka e'tiborsiz qoldiradi */
-export const ADMIN_EVENTS = [
-  "sync.failed",
-  "webhook.needs_attention",
-  "rate.sync.updated",
-] as const;
+/**
+ * Tizim holati — HAMMA ochiq oynaga (Shaxmatka ham): STOP bosilsa
+ * jadval darhol xiralashadi, stopdan chiqarilsa qayta faollashadi
+ * (Sozlamalar -> Tizim nazorati, 2026-09-26)
+ */
+export const SYSTEM_EVENTS = ["system.sales_stop"] as const;
 
 export type PmsEvent = (typeof PMS_EVENTS)[number];
-export type AdminEvent = (typeof ADMIN_EVENTS)[number];
-export type EventType = PmsEvent | AdminEvent;
+export type SystemEvent = (typeof SYSTEM_EVENTS)[number];
+export type EventType = PmsEvent | SystemEvent;
 
 /** Serializatsiya qilingan bron (serializeReservation natijasi) */
 export type SerializedReservation = Record<string, unknown> & { id: string; roomId: string };
@@ -61,24 +61,13 @@ export type RealtimeMessage =
       to: string;
     }
   | {
-      type: "sync.failed";
+      type: "system.sales_stop";
       timestamp: string;
-      action: string;
-      reservationId?: string;
-      error: string;
-    }
-  | {
-      type: "webhook.needs_attention";
-      timestamp: string;
-      webhookEventId: string;
-      reason: string;
-    }
-  | {
-      type: "rate.sync.updated";
-      timestamp: string;
-      roomTypeId: string;
-      date: string;
-      syncStatus: "pending" | "synced" | "error";
+      active: boolean;
+      allRooms: boolean;
+      roomIds: string[];
+      reason: string | null;
+      since: string | null;
     }
   | {
       type: "connected";

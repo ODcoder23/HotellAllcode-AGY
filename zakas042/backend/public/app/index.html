@@ -1334,16 +1334,18 @@ const ROOM_TYPE_LABEL = { 'standard':"Standart", 'double':"Ikki kishilik", 'delu
 // Haqiqiy manba — `GET /api/public/room-types` (pastdagi loadRooms).
 // Bu yerda faqat tarif darajasi: sayt mehmonga aniq xona emas,
 // TUR sotadi (aniq xonani tizim bron paytida o'zi tanlaydi).
+// Narx 0 — backend javob bermasa mehmonga o'ylab topilgan narx
+// ko'rsatilmaydi. Haqiqiy narx so'mda, RatePlan'dan (Q15, 2026-09-25).
 const DEFAULT_ROOMS = [
-  { id:'standard3', name:'Standart 3 kishilik',        price:400000, capacity:3, desc:"Uch kishilik standart xona.", img:null },
-  { id:'comfort3',  name:'Komfort 3 kishilik',         price:450000, capacity:3, desc:"Uch kishilik komfort xona.", img:null },
-  { id:'semilux',   name:'Oilaviy yarim lyuks',        price:500000, capacity:3, desc:"Oilaviy yarim lyuks xona.", img:null },
-  { id:'comfort4',  name:'Komfort 4 kishilik',         price:550000, capacity:4, desc:"To'rt kishilik komfort xona.", img:null },
-  { id:'premium4',  name:'Premium 4 kishilik',         price:600000, capacity:4, desc:"To'rt kishilik premium xona.", img:null },
-  { id:'deluxe4',   name:'Delyuks 4 kishilik',         price:650000, capacity:4, desc:"To'rt kishilik delyuks xona.", img:null },
-  { id:'famdeluxe', name:'Oilaviy Delyuks',            price:700000, capacity:3, desc:"Oilaviy delyuks xona.", img:null },
-  { id:'famlux201', name:'Oilaviy lyuks balkonli 201', price:800000, capacity:4, desc:"Balkonli oilaviy lyuks.", img:null },
-  { id:'famlux301', name:'Oilaviy lyuks balkonli 301', price:800000, capacity:3, desc:"Balkonli oilaviy lyuks.", img:null },
+  { id:'standard3', name:'Standart 3 kishilik',        price:0, capacity:3, desc:"Uch kishilik standart xona.", img:null },
+  { id:'comfort3',  name:'Komfort 3 kishilik',         price:0, capacity:3, desc:"Uch kishilik komfort xona.", img:null },
+  { id:'semilux',   name:'Oilaviy yarim lyuks',        price:0, capacity:3, desc:"Oilaviy yarim lyuks xona.", img:null },
+  { id:'comfort4',  name:'Komfort 4 kishilik',         price:0, capacity:4, desc:"To'rt kishilik komfort xona.", img:null },
+  { id:'premium4',  name:'Premium 4 kishilik',         price:0, capacity:4, desc:"To'rt kishilik premium xona.", img:null },
+  { id:'deluxe4',   name:'Delyuks 4 kishilik',         price:0, capacity:4, desc:"To'rt kishilik delyuks xona.", img:null },
+  { id:'famdeluxe', name:'Oilaviy Delyuks',            price:0, capacity:3, desc:"Oilaviy delyuks xona.", img:null },
+  { id:'famlux201', name:'Oilaviy lyuks balkonli 201', price:0, capacity:4, desc:"Balkonli oilaviy lyuks.", img:null },
+  { id:'famlux301', name:'Oilaviy lyuks balkonli 301', price:0, capacity:3, desc:"Balkonli oilaviy lyuks.", img:null },
 ];
 
 function placeholderImg(seedIndex){
@@ -1390,11 +1392,15 @@ async function loadRooms(){
   renderRooms();
 }
 
+/* Narx — so'mda (egasi qarori Q15, 2026-09-25): tizimning yagona
+   valyutasi. Til bo'yicha ko'rinish:
+   "450 000 so'm", "450 000 сум", "450,000 UZS". Butun so'mga yaxlitlanadi. */
 function formatPrice(n){
   const dict = translations[currentLang];
+  const v = Math.round(Number(n) || 0);
   let numStr;
-  try{ numStr = Number(n).toLocaleString(dict.locale); }
-  catch(e){ numStr = Number(n).toLocaleString(); }
+  try{ numStr = v.toLocaleString(dict.locale); }
+  catch(e){ numStr = v.toLocaleString(); }
   return numStr + ' ' + dict.currency_suffix;
 }
 
@@ -1409,7 +1415,7 @@ function renderRooms(){
     card.innerHTML = `
       <div class="room-img">
         <img src="${imgSrc}" alt="${esc(room.name)}">
-        <div class="price-tag">${formatPrice(room.price)}</div>
+        <div class="price-tag">${room.price > 0 ? formatPrice(room.price) : (translations[currentLang].price_on_request || "—")}</div>
       </div>
       <div class="room-body">
         <div class="rmeta">${esc(room.capacity)} ${dict.room_capacity_suffix}</div>
