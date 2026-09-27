@@ -51,20 +51,24 @@ export class ValidationError extends AppError {
  * P2025 — yozuv topilmadi.
  */
 export function translatePrismaError(e: unknown): AppError | null {
-  // Raw SQL constraint (EXCLUDE) — Prisma uni P2010 ichida beradi
-  const raw = String(e);
+  // Raw SQL constraint (EXCLUDE) — Prisma uni P2010 ichida beradi.
+  // `message` ham qaraladi: `PrismaClientUnknownRequestError` ning
+  // `toString()` kodni bermasligi mumkin
+  const raw = `${String(e)} ${e instanceof Error ? e.message : ""}`;
   if (raw.includes("reservation_no_overlap") || raw.includes("23P01")) {
     return new RoomUnavailableError();
   }
 
-  // P2034 / 40001 — serializatsiya konflikti.
+  // P2034 / 40001 — serializatsiya konflikti, 40P01 — deadlock.
   // Bu XATO EMAS: ikki tranzaksiya bir vaqtda bir xil ma'lumotga
   // tegdi va PostgreSQL birini bekor qildi. Qayta urinish kerak.
   // Bu yerga yetib kelsa — retry tugagan, demak haqiqiy to'qnashuv.
   if (
     e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034" ||
     raw.includes("40001") ||
-    raw.includes("could not serialize")
+    raw.includes("could not serialize") ||
+    raw.includes("40P01") ||
+    raw.includes("deadlock detected")
   ) {
     return new AppError(
       409,
