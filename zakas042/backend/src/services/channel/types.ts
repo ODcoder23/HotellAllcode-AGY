@@ -14,6 +14,9 @@
  * ulanadi.
  */
 
+/** Kanal mehmon ismini bermasa — PMS'dagi ism shu bilan almashtirilmaydi */
+export const UNKNOWN_GUEST = "Noma'lum mehmon";
+
 // --- Tashqi kanaldan keladigan bron (TZ 1-band maydonlari) --
 export type ExternalReservation = {
   externalId: string;

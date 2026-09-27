@@ -8,7 +8,8 @@
  *   a. externalReservationId bo'yicha mavjud bron qidiriladi
  *   b. Topilmasa — qo'lda kiritilgan shu OTA broni qidiriladi (bog'lanadi)
  *   c. Hech biri yo'q — mapping orqali xona tanlanadi, yangi bron
- *   d. Topilsa — mavjud bron yangilanadi (Beds24 ustuvor, Q9)
+ *   d. Topilsa — mavjud bron yangilanadi (Beds24 ustuvor, Q9), mehmon
+ *      ma'lumoti bilan (TZ 7-band, `applyGuestChanges`)
  *   e. Availability qayta hisoblanadi, Shaxmatka darhol ko'radi
  *
  * MIJOZ QARORI Q3: xona AVTOMATIK biriktiriladi, admin aralashmaydi.
@@ -27,7 +28,8 @@ import { isRoomFree } from "./reservations.js";
 import { recalcRoomStatus } from "./roomStatus.js";
 import { toPmsStatus, classifyExternal, mergeIncomingStatus } from "./beds24/statusMap.js";
 import { onAvailabilityChanged } from "./availability.js";
-import type { ExternalReservation } from "./channel/types.js";
+import { isChannelOwned } from "../lib/channelOwnership.js";
+import { UNKNOWN_GUEST, type ExternalReservation } from "./channel/types.js";
 import {
   notifyReservation, notifyPayment, notifyRoomStatus, notifyWebhookNeedsAttention, notifySyncFailed,
 } from "../realtime/notify.js";
@@ -430,6 +432,9 @@ export async function applyReservation(ext: ExternalReservation): Promise<Proces
       }
     }
 
+    // TZ 7-band: mehmon ma'lumoti ham (ism, telefon, email) — OTA'da o'zgargan bo'lishi mumkin
+    const guestId = await applyGuestChanges(existing, ext);
+
     // Valyuta farq qilsa PMS narxi saqlanadi: PMS'da tug'ilgan so'm broni
     // Beds24'ga dollarda boradi, Beds24 esa o'sha dollar narxni qaytaradi —
     // u so'mdagi narx ustiga yozilib ketardi
@@ -439,6 +444,7 @@ export async function applyReservation(ext: ExternalReservation): Promise<Proces
       where: { id: existing.id },
       data: {
         roomId,
+        guestId,
         checkIn: fromDateKey(ext.checkIn),
         checkOut: fromDateKey(ext.checkOut),
         adults: ext.adults,
@@ -612,7 +618,7 @@ async function findOrCreateGuest(ext: ExternalReservation) {
 
   if (existing) {
     const patch: Record<string, string> = {};
-    if (fullName && fullName !== "Noma'lum mehmon" && fullName !== existing.fullName) patch.fullName = fullName;
+    if (fullName && fullName !== UNKNOWN_GUEST && fullName !== existing.fullName) patch.fullName = fullName;
     if (email && !existing.email) patch.email = email;
     if (phone && !existing.phone) patch.phone = phone;
     if (country && !existing.country) patch.country = country;
@@ -623,6 +629,58 @@ async function findOrCreateGuest(ext: ExternalReservation) {
   }
 
   return prisma.guest.create({ data: { fullName, phone, email, country, address } });
+}
+
+/**
+ * Mavjud bronning mehmoni Beds24'dagi ma'lumotga moslanadi (TZ 7-band).
+ * Bron qaysi mehmonga bog'lanishi kerakligini qaytaradi.
+ *
+ * OTA broni (`isChannelOwned`): mehmon ma'lumoti OTA'niki (Q9) — ism,
+ * telefon, email Beds24'dagidek bo'ladi. Bitta `Guest` bir necha bronda
+ * bo'lishi mumkin: boshqa odam kelsa (telefon ham, email ham mos emas)
+ * va eski mehmonning boshqa bronlari bo'lsa — bron boshqa mehmonga
+ * bog'lanadi, eski mehmon o'zgarmaydi.
+ *
+ * PMS broni: xodim kiritgan ma'lumot ustun — faqat bo'sh maydonlar
+ * to'ldiriladi. Aks holda Beds24'dagi eski nusxa xodim tuzatgan ismni
+ * qaytarib yozardi.
+ */
+async function applyGuestChanges(
+  res: {
+    id: string; guestId: string; origin: string; source: ReservationSource;
+    channelId: string | null; externalReservationId: string | null;
+  },
+  ext: ExternalReservation
+): Promise<string> {
+  const current = await prisma.guest.findUniqueOrThrow({ where: { id: res.guestId } });
+  const { phone, email, country, address } = ext.guest;
+  const fullName = ext.guest.fullName !== UNKNOWN_GUEST ? ext.guest.fullName : undefined;
+  const patch: Record<string, string> = {};
+
+  if (!isChannelOwned(res)) {
+    if (phone && !current.phone) patch.phone = phone;
+    if (email && !current.email) patch.email = email;
+    if (country && !current.country) patch.country = country;
+    if (address && !current.address) patch.address = address;
+  } else {
+    const samePerson =
+      (!phone && !email) ||
+      (!current.phone && !current.email) ||
+      (!!phone && phone === current.phone) ||
+      (!!email && email.toLowerCase() === (current.email ?? "").toLowerCase());
+    if (!samePerson) {
+      const shared = await prisma.reservation.count({ where: { guestId: current.id, id: { not: res.id } } });
+      if (shared > 0) return (await findOrCreateGuest(ext)).id;
+    }
+    if (fullName && fullName !== current.fullName) patch.fullName = fullName;
+    if (phone && phone !== current.phone) patch.phone = phone;
+    if (email && email !== current.email) patch.email = email;
+    if (country && country !== current.country) patch.country = country;
+    if (address && address !== current.address) patch.address = address;
+  }
+
+  if (Object.keys(patch).length > 0) await prisma.guest.update({ where: { id: current.id }, data: patch });
+  return current.id;
 }
 
 /**

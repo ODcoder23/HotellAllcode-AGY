@@ -687,6 +687,38 @@ describe("Webhook (TZ 10-band)", () => {
     expect(r2.body.status).toBe("duplicate");
   });
 
+  it("OTA'da mehmon ismi va telefoni o'zgardi — PMS'da yangilanadi, yangi bron yaratilmaydi (TZ 7)", async () => {
+    if (!ready() || WEBHOOK_TOKEN.length < 16) return;
+    const b = fake.bookings.find((x) => x.id === 9001)!;
+    b.firstName = "Alisher";
+    b.lastName = ".";                          // bir so'zli ism: nuqta ismga qo'shilmasin
+    (b as any).phone = "+998901234599";
+    b.modifiedTime = nowStamp();
+    await hook({ timeStamp: new Date().toISOString(), booking: { ...b } });
+
+    const guest = await waitFor(async () => {
+      const r = await prisma.reservation.findFirst({ where: { externalReservationId: "9001" }, include: { guest: true } });
+      return r?.guest.phone === "+998901234599" ? r.guest : null;
+    }, "webhook mehmon");
+    expect(guest.fullName).toBe("Alisher");
+    expect(await prisma.reservation.count({ where: { externalReservationId: "9001" } })).toBe(1);
+  });
+
+  it("PMS boshqaradigan bron: Beds24'dagi ism xodim kiritganini bosmaydi, bo'sh maydon to'ldiriladi", async () => {
+    if (!ready() || WEBHOOK_TOKEN.length < 16) return;
+    const b = fake.bookings.find((x) => x.id === 9002)!;   // channel "direct" — PMS boshqaradi
+    b.lastName = "Smithson";
+    (b as any).phone = "+998901234598";
+    b.modifiedTime = nowStamp();
+    await hook({ timeStamp: new Date().toISOString(), booking: { ...b } });
+
+    const guest = await waitFor(async () => {
+      const r = await prisma.reservation.findFirst({ where: { externalReservationId: "9002" }, include: { guest: true } });
+      return r?.guest.phone === "+998901234598" ? r.guest : null;
+    }, "webhook bo'sh telefon");
+    expect(guest.fullName).toBe("John Smith");
+  });
+
   it("yangi OTA broni webhook bilan darhol Shaxmatkada", async () => {
     if (!ready() || WEBHOOK_TOKEN.length < 16) return;
     const b = book({ id: 9011, roomId: 5002, arrival: day(40), departure: day(41), price: 45, firstName: "Yangi",

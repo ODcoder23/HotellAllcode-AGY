@@ -32,6 +32,7 @@
  */
 
 import { prisma } from "../../lib/prisma.js";
+import { UNKNOWN_GUEST } from "../channel/types.js";
 import type {
   ChannelAdapter,
   ExternalProperty,
@@ -179,7 +180,12 @@ function toExternalReservation(
   b: Beds24Booking,
   opts: { currency: string; invoiceItems?: Beds24InvoiceItem[] }
 ): ExternalReservation {
-  const fullName = [b.firstName, b.lastName].filter(Boolean).join(" ").trim();
+  // Bir so'zli ism Beds24'ga "Ali" + "." bo'lib ketadi (`splitName`) —
+  // qaytib kelganda nuqta ism ichiga qo'shilmasin (mehmon yangilanadi)
+  const fullName = [b.firstName, b.lastName]
+    .map((s) => s?.trim())
+    .filter((s) => s && s !== ".")
+    .join(" ");
   const items = opts.invoiceItems ?? b.invoiceItems ?? [];
   const notes = bookingNotes(b);
 
@@ -196,7 +202,7 @@ function toExternalReservation(
     price: b.price ?? 0,
     currency: opts.currency,
     guest: {
-      fullName: fullName || "Noma'lum mehmon",
+      fullName: fullName || UNKNOWN_GUEST,
       phone: b.phone || b.mobile || undefined,
       email: b.email || undefined,
       country: b.country2 || b.country || undefined,
