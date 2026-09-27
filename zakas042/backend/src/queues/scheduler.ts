@@ -278,19 +278,21 @@ export async function scheduleMaintenance(): Promise<void> {
       { name: "kitchen_evening", data: { task: "kitchen_report", offset: 1 } }
     );
 
-    // Beds24 (ulanish bo'lmasa har vazifa jim o'tadi). 0 — o'chiq (testlar)
+    // Beds24 (ulanish bo'lmasa har vazifa jim o'tadi). Polling 0 — hammasi o'chiq (testlar)
     const every = config.beds24.pollIntervalMinutes * 60_000;
+    const catchUpEvery = config.beds24.catchUpIntervalMinutes * 60_000;
     const beds24Jobs: Array<[string, { every?: number; pattern?: string; offset?: number; tz?: string }, MaintenanceJob]> = [
-      // Polling (webhook zaxirasi) va catch-up — har 15 daqiqa, bir-biridan 1 daqiqa keyin
+      // Polling (webhook zaxirasi) — har 5 daqiqa (TZ 15-band)
       ["cron_poll_beds24", { every }, { task: "poll_beds24" }],
-      ["cron_catch_up", { every, offset: 60_000 }, { task: "catch_up" }],
+      // Catch-up — har 15 daqiqa, pollingdan 1 daqiqa keyin
+      ["cron_catch_up", { every: catchUpEvery, offset: 60_000 }, { task: "catch_up" }],
       // Beds24 -> PMS narx — soatlik (~2 kredit)
       ["cron_pull_rates", { every: 60 * 60_000, offset: 5 * 60_000 }, { task: "pull_rates" }],
       // Bo'sh joy farqi — kunlik 04:00 (kam yuklama)
       ["cron_drift_check", { pattern: "0 4 * * *", tz: HOTEL_TIMEZONE }, { task: "drift_check" }],
     ];
     for (const [id, repeat, data] of beds24Jobs) {
-      if (every > 0) {
+      if (every > 0 && (repeat.every === undefined || repeat.every > 0)) {
         await maintenanceQueue.upsertJobScheduler(id, repeat, { name: data.task, data });
       } else {
         await maintenanceQueue.removeJobScheduler(id).catch(() => false);
@@ -308,7 +310,9 @@ export async function scheduleMaintenance(): Promise<void> {
       console.log(
         `  Davriy vazifalar (${HOTEL_TIMEZONE}): to'lanmagan bronlar (soatlik), tozalash (10 daq), ` +
         `xona holati (soatlik), audit (haftalik), oshxona (07:30, 20:00), kurs (3 soat), ` +
-        `Beds24 polling + catch-up (${config.beds24.pollIntervalMinutes || "o'chiq"} daq), narx (soatlik), drift (04:00)`
+        `Beds24 polling (${config.beds24.pollIntervalMinutes || "o'chiq"} daq), ` +
+        `catch-up (${config.beds24.pollIntervalMinutes ? config.beds24.catchUpIntervalMinutes || "o'chiq" : "o'chiq"} daq), ` +
+        `narx (soatlik), drift (04:00)`
       );
     }
   } catch (e) {

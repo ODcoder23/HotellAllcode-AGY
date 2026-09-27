@@ -110,6 +110,7 @@ async function connectionView() {
     fx,
     webhookConfigured: config.beds24.webhookUrlToken.length >= 16,
     pollIntervalMinutes: config.beds24.pollIntervalMinutes,
+    catchUpIntervalMinutes: config.beds24.pollIntervalMinutes > 0 ? config.beds24.catchUpIntervalMinutes : 0,
     baseUrl: config.beds24.baseUrl,
   };
 }

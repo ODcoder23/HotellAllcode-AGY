@@ -143,10 +143,16 @@ export const config = {
     /** Shundan kam qolsa ogohlantiriladi */
     creditSafetyThreshold: num("BEDS24_CREDIT_SAFETY_THRESHOLD", 10),
     /**
-     * Polling (webhook zaxirasi) va catch-up oralig'i, daqiqa.
-     * 0 — o'chiq (faqat tugma bilan; testlar)
+     * Polling (webhook zaxirasi) oralig'i, daqiqa. TZ 15-band: 1–5 daqiqa.
+     * Bitta yurish odatda 2–4 kredit (5 daqiqalik limit ~100).
+     * 0 — Beds24 jadvallari o'chiq (faqat tugma bilan; testlar)
      */
-    pollIntervalMinutes: num("POLL_INTERVAL_MINUTES", 15),
+    pollIntervalMinutes: num("POLL_INTERVAL_MINUTES", 5),
+    /**
+     * Catch-up oralig'i, daqiqa: yuborilmay qolgan bron va yopishlar,
+     * navbatga tushmagan webhook'lar. Polling o'chiq (0) bo'lsa bu ham o'chiq
+     */
+    catchUpIntervalMinutes: num("CATCH_UP_INTERVAL_MINUTES", 15),
     /**
      * Webhook URL'idagi maxfiy token: `/api/webhooks/beds24/<token>`.
      * Bo'sh bo'lsa webhook qabul qilinmaydi (404). Beds24 webhook'ida

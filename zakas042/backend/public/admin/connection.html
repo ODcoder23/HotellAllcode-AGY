@@ -77,7 +77,8 @@ async function load() {
       ["Shifrlash kaliti", c.encryptionKeySet ? "sozlangan" : '<span class="badge b-err">ENCRYPTION_KEY yo\'q — ulab bo\'lmaydi</span>'],
       ["Valyuta", "PMS: so'm · Beds24: " + esc((c.currency && c.currency.channel) || "—") +
         (c.fx ? " · 1 $ = " + esc(c.fx.rate) + " so'm (" + (c.fx.source === "cbu" ? "Markaziy bank" : "qo'lda") + ")" : "")],
-      ["Polling", c.pollIntervalMinutes > 0 ? "har " + c.pollIntervalMinutes + " daqiqa" : "o'chiq"],
+      ["Polling", c.pollIntervalMinutes > 0 ? "har " + c.pollIntervalMinutes + " daqiqa" +
+        (c.catchUpIntervalMinutes > 0 ? " · catch-up har " + c.catchUpIntervalMinutes + " daqiqa" : "") : "o'chiq"],
       ["Bronlarni oxirgi o'qish", when(s.lastPollAt)],
       ["Webhook", c.webhookConfigured ? "sozlangan (24 soatda " + s.webhooks24h + ")" : "sozlanmagan — bronlar polling bilan keladi"],
       ["Mapping", s.mapping.roomsMapped + " / " + s.mapping.roomsTotal + " xona"],

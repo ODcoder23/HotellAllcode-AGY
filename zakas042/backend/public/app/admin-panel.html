@@ -5893,7 +5893,8 @@
             '<div class="ch-sub">Muammolilar — "Bronlar" bo\'limida; rad etilgan bron avtomatik qayta yuborilmaydi</div>' +
           '</div>' +
           '<div class="card"><div class="card-title">Avtomatika</div>' +
-            kv('Polling', c.pollIntervalMinutes > 0 ? 'har ' + c.pollIntervalMinutes + ' daq.' : "o'chiq") +
+            kv('Polling', c.pollIntervalMinutes > 0 ? 'har ' + c.pollIntervalMinutes + ' daq.' +
+              (c.catchUpIntervalMinutes > 0 ? ' · catch-up ' + c.catchUpIntervalMinutes + ' daq.' : '') : "o'chiq") +
             kv("Oxirgi o'qish", when(s.lastPollAt)) +
             kv('Webhook', (c.webhookConfigured ? 'sozlangan' : "yo'q") + ' · 24 soatda ' + s.webhooks24h) +
             kv("Qo'lda hal qilish", s.needsAction, s.needsAction > 0) +
