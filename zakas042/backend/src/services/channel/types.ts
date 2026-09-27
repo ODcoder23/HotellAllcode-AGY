@@ -271,7 +271,11 @@ export interface ChannelAdapter {
     cancel?: boolean;
   }): Promise<SyncResult>;
 
-  /** Availability yuborish (TZ 6-band, 07-fayl §4) */
+  /**
+   * Availability yuborish (TZ 8-band `updateAvailability()`). Bo'sh joyni
+   * bronlardan o'zi hisoblaydigan kanal (Beds24) uchun chaqirilmaydi —
+   * u yerda bron va yopish yuborishning o'zi yetadi (adapter izohi)
+   */
   pushAvailability(payload: AvailabilityPush): Promise<SyncResult>;
 
   /**

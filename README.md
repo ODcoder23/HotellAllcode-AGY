@@ -109,7 +109,7 @@ HotellAllcode/
 | Vaqt | Mehmonxona kuni — Toshkent (UTC+5), `lib/hotelTime.ts` |
 | Prisma | 24 model, 12 enum |
 | Migratsiyalar | 25 |
-| Testlar | 13 fayl, 263 test (ikkala AUTH_REQUIRED rejimida o'tadi, CI ham) |
+| Testlar | 13 fayl, 271 test (ikkala AUTH_REQUIRED rejimida o'tadi, CI ham) |
 
 ---
 

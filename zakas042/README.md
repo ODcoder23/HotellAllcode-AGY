@@ -135,7 +135,7 @@ IPv6 (`::1`) ga hal bo'ladi.
 Ishlab chiqarishga yaqin rejim: `test.env` da `AUTH_REQUIRED=true` —
 `vitest.setup.ts` ADMIN tokenini o'zi qo'shadi, `security.test.ts`
 rollar chegarasini (401/403) tekshiradi. **Ikkala rejimda ham hamma test
-o'tishi kerak** (2026-09-27: 14 fayl, 253 test — ikkala rejimda o'tdi).
+o'tishi kerak** (2026-09-27: 13 fayl, 271 test — ikkala rejimda o'tdi).
 GitHub Actions (`.github/workflows/ci.yml`) ham xuddi shuni ikkala rejimda
 ishga tushiradi.
 

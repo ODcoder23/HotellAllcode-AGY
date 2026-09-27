@@ -24,9 +24,18 @@ boshqarish oynasi.
 | Beds24 panelida yopilgan xona (`black`) | Beds24'da | PMS'da yopiladi, PMS ocholmaydi (`409`) |
 | Tarif narxi | admin (PMS, so'm) | Beds24'ga `so'm / bugungi kurs = $` bo'lib ketadi |
 | Beds24 panelidagi narx (tur darajasida bog'langan tarif) | Beds24'da | soatlik tortiladi; yuborilmagan PMS narxi ustiga yozilmaydi |
+| Cheklovlar: kamida / ko'pi bilan kecha, kirish / chiqish taqiqi (TZ 10) | admin (Narxlar) yoki Beds24 paneli | narx bilan birga Beds24'ga; PMS boshqarmaydigani (bo'sh) yuborilmaydi; tur darajasida — Beds24'dagisi soatlik tortiladi |
+| Mehmon ma'lumoti (ism, telefon, email) — TZ 7 | OTA broni — OTA'da; PMS broni — PMS'da | OTA bronida Beds24'dagidek yangilanadi; PMS bronida faqat bo'sh maydon to'ldiriladi |
 
 - PMS Beds24'ga `numAvail` **yozmaydi** — Beds24 bo'sh joyni bronlar va
-  `black` dan o'zi hisoblaydi.
+  `black` dan o'zi hisoblaydi. TZ 8-band ("availability yuborish") shu
+  bilan bajariladi: bron yoki yopish Beds24'ga yetishi bilan son kamayadi
+  va OTA'larga tarqaladi. `numAvail` ham yozilsa bitta bron ikki marta
+  ayirilardi. Farq har kuni 04:00 da tekshiriladi (faqat qayd).
+- Kirish/chiqish taqiqi Beds24'da `override` maydoni — kunni butunlay
+  yopish (`blackout`) ham shu yerda. Beds24 panelida yopilgan
+  (`blackout` / `exception`) kunga PMS taqiqi **yozilmaydi** — kun ochilib
+  ketmasin. Closed/Open (STOP) PMS'da yo'q — Beds24 panelida.
 - PMS broni `checkAvailability` bilan yuboriladi. Beds24'da joy yo'q bo'lsa
   bron **`REJECTED`** bo'ladi va **avtomatik qayta yuborilmaydi** (2026-09-26
   dagi shovqin sababi shu edi). Xodim xona yoki sanani o'zgartiradi,
@@ -72,8 +81,11 @@ boshqarish oynasi.
    bookings (o'qish + **yozish**, shaxsiy va moliyaviy), inventory
    (o'qish + **yozish**), properties (o'qish). Faqat o'qish bilan ulansa
    panel ogohlantiradi — bronlar va narx yuborilmaydi.
-3. Admin panel → Channel manager → Ulash → invite code (obyekt ID
-   ixtiyoriy; noto'g'ri ID rad etiladi).
+3. Admin panel → Channel manager → Ulash → invite code (yoki ishlatilgan
+   bo'lsa refresh token; obyekt ID ixtiyoriy, noto'g'ri ID rad etiladi).
+   Hisobda bir necha obyekt bo'lsa — Ulanish sahifasi → "Obyekt":
+   boshqa obyektga o'tilsa eski obyekt bog'lanishlari o'chadi (qaytib
+   o'tilganda tiklanadi), bronlar yangi obyektdan to'liq o'qiladi.
 4. "Unit'larni avtomatik bog'lash" (unit nomi = PMS xona raqami),
    qolganini qo'lda. Bog'langach import va yuborish fonda boshlanadi.
 5. Webhook: `.env` da `WEBHOOK_URL_TOKEN` (16+ belgi), Beds24'da URL
@@ -98,16 +110,33 @@ ketadi.
 | `beds24-rate-sync` | narx → Beds24 (3 s debounce) |
 | `beds24-webhook` | kelgan webhook → PMS |
 | `beds24-retry` | bir necha urinishdan keyin ham bajarilmagan vazifa (Channel manager → Yiqilgan vazifalar) |
-| `pms-maintenance` | polling va catch-up (`POLL_INTERVAL_MINUTES`, standart 15, 0 — o'chiq), narx tortish (soatlik), bo'sh joy farqi (04:00, faqat qayd), kurs (3 soat) |
+| `pms-maintenance` | polling (`POLL_INTERVAL_MINUTES`, standart 5 — TZ 15-band; 0 — Beds24 jadvallari o'chiq), catch-up (`CATCH_UP_INTERVAL_MINUTES`, 15), narx va cheklov tortish (soatlik), bo'sh joy farqi (04:00, faqat qayd), kurs (3 soat) |
 
 Birinchi polling (va bog'lanish o'zgarganda) — to'liq: Beds24'dagi barcha
 faol bronlar. Keyingilari — `modifiedFrom` bilan faqat o'zgarganlar.
 Redis ishlamasa PMS to'xtamaydi: bron `PENDING` qoladi, catch-up yuboradi.
 
 **Muammolar qayerda:** Channel manager → Bronlar ("Muammoli": rad
-etilgan / xato / kutmoqda, sababi bilan), Sinxronizatsiya (jurnal,
+etilgan / xato / kutmoqda, sababi bilan), Sinxronizatsiya (jurnal:
+Provider, amal, xona/tarif, sana, qiymat, holat, xato — TZ 16-band;
 yiqilgan vazifalar), Umumiy hisobot → Kanal (Beds24). Telegram — faqat
 overbooking xavfida (joy yo'q, mehmon boshqa xonaga joylandi).
+
+**Bitta bronni Beds24'dan qayta olish:** Shaxmatka → bron → "Beds24'dan
+yangilash" (egasi, admin) — webhook bilan bir xil yo'l; yuborilmagan PMS
+o'zgarishi ustiga yozilmaydi.
+
+**TZ 14-band metodlari ↔ kod** (`services/channel/types.ts` `ChannelAdapter`):
+
+| TZ | Kod |
+|---|---|
+| `connect()` | `connect()`, `disconnect()`, `connectionStatus()`, `listProperties()`, `selectProperty()` |
+| `getProperties()`, `getRooms()` | `getRoomTypes()` (obyekt va uning xona turlari/unit'lari birga) |
+| `getBookings()` | `pullReservations(since)`, `pullActiveReservations()` |
+| `getBooking()` | `getBooking(externalId)` |
+| `updateAvailability()` | `pushAvailability()` — Beds24'da chaqirilmaydi (1-bo'lim) |
+| `updatePrices()`, `updateRestrictions()` | `pushRates()` — narx va cheklovlar bitta so'rovda |
+| `updateBooking()`, `cancelBooking()` | `pushReservation()` (status bilan), xona yopish — `pushBlock()` |
 
 ## 6. Real API faktlari
 
@@ -143,11 +172,15 @@ faqat `roomId` bilan birga noyob.
   javobda `new.id`; o'zgartirish — `id` bilan, javobda `modified.id`.
   Joy yo'q — `errors[].message` da "availability".
 
-**Kalendar:** `GET /inventory/rooms/calendar` — `includeNumAvail`,
-`includePrices` bayroqlarisiz **bo'sh** keladi; kunlar oraliqqa siqilgan
-(`{from, to, numAvail, price1}`); narxsiz kun — yopiq. Narx yuborish —
-`POST /inventory/rooms/calendar` (`price1`, faqat narx: `minStay`
-yuborilmaydi, Beds24'dagi cheklov buzilmasin).
+**Kalendar:** `GET /inventory/rooms/calendar` — `include*` bayroqlarisiz
+(`includeNumAvail`, `includePrices`, `includeMinStay`, `includeMaxStay`,
+`includeOverride`) **bo'sh** keladi; kunlar oraliqqa siqilgan
+(`{from, to, numAvail, price1, ...}`); narxsiz kun — yopiq. `minStay` /
+`maxStay` kalendarda bo'lmasa xona standarti qaytadi. Yuborish —
+`POST /inventory/rooms/calendar`: `price1`, `minStay` (1–365), `maxStay`
+(1–364), `override` (`none`, `blackout`, `exception`, `noCheckIn`,
+`noCheckOut`, `noCheckInOrCheckOut`). Berilmagan maydon o'zgarmaydi,
+`null` — olib tashlanadi. PMS faqat o'zi boshqaradigan cheklovni yuboradi.
 
 **Webhook:** payload `{timeStamp, booking, invoiceItems, retries, ...}`,
 `event` maydoni yo'q. **Imzo yo'q** — himoya URL'dagi maxfiy token. Takror

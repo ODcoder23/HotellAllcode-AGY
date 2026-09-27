@@ -594,6 +594,15 @@ export class Beds24Adapter implements ChannelAdapter {
     }
   }
 
+  /**
+   * BEDS24'DA ISHLATILMAYDI (TZ 8-band boshqa yo'l bilan bajariladi):
+   * Beds24 bo'sh joyni o'zidagi bronlar va `black` yopishlardan o'zi
+   * hisoblaydi. PMS bronni (`pushReservation`) va xona yopilishini
+   * (`pushBlock`) yuboradi — Beds24 soni o'zi kamayadi va OTA'larga
+   * tarqatadi. `numAvail` ham yozilsa bitta bron ikki marta ayirilardi.
+   * Farq har kuni `checkDrift` bilan tekshiriladi. Interfeysda qoladi:
+   * bo'sh joyni o'zi hisoblamaydigan boshqa channel manager uchun.
+   */
   async pushAvailability(payload: AvailabilityPush): Promise<SyncResult> {
     try {
       // Ketma-ket bir xil qiymatli kunlarni oraliqqa yig'ish (07-fayl §4)

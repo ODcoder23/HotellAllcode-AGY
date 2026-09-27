@@ -405,7 +405,7 @@ Batafsil: [BEDS24.md](BEDS24.md). Qisqasi:
 
 | Yo'nalish | Nima | Qanday |
 |---|---|---|
-| Beds24 → PMS | bronlar (OTA, Beds24 paneli) | webhook (darhol) + polling (`POLL_INTERVAL_MINUTES`, 15) |
+| Beds24 → PMS | bronlar (OTA, Beds24 paneli) | webhook (darhol) + polling (`POLL_INTERVAL_MINUTES`, 5) |
 | Beds24 → PMS | `black` — xona yopilishi | PMS'da yopiladi, PMS ocholmaydi |
 | Beds24 → PMS | narx (tur darajasida bog'langan tarif) | soatlik; yuborilmagan PMS narxi ustiga yozilmaydi |
 | PMS → Beds24 | qabulxona/sayt broni, o'zgarishi, kirish/chiqish belgisi | `beds24-reservation-sync`, `checkAvailability` |
@@ -521,7 +521,8 @@ Redis'dan o'chiriladi (`OBSOLETE_SCHEDULERS`).
 | Vazifa | Davr |
 |---|---|
 | To'lanmagan sayt bronlarini bekor qilish | har soat boshida |
-| Beds24 polling + catch-up | `POLL_INTERVAL_MINUTES` (15; 0 — o'chiq) |
+| Beds24 polling | `POLL_INTERVAL_MINUTES` (5; 0 — Beds24 jadvallari o'chiq) |
+| Beds24 catch-up | `CATCH_UP_INTERVAL_MINUTES` (15) |
 | Beds24 narxini tortish | har soat |
 | Beds24 bo'sh joy farqi (faqat qayd) | 04:00 |
 | Dollar kursi (Markaziy bank) | 3 soat |
@@ -654,8 +655,9 @@ Egasi 2026-09-25 da aytdi: narxni admin qo'yadi.
 **Sig'im.** Sayt qidiruvi va bron `maxAdults` bo'yicha tekshiradi;
 bolalar sig'imga qanday kirishi aniq belgilanmagan.
 
-**Minimal kecha (`minStay`).** `RatePlan.minStay` saqlanadi, lekin
-sayt va qabulxona bronida tekshirilmaydi.
+**Cheklovlar (`minStay`, `maxStay`, kirish/chiqish taqiqi).** `RatePlan`
+da saqlanadi va Beds24 orqali OTA'larga ketadi (TZ 10-band), lekin sayt
+va qabulxona bronida tekshirilmaydi.
 
 **Bolalar porsiyasi.** Nonushta narxi bola va kattalar uchun
 bir xil. Bola uchun arzonroq bo'lishi kerakmi — hal qilinmagan.

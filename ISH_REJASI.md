@@ -76,8 +76,9 @@ kod tashqarisida (server, Beds24 kabineti).
 - [ ] **[qaror]** Qaytim (sdacha): `Payment` ga "berilgan summa" maydoni kerakmi.
 - [ ] **[qaror]** Mehmon pasporti: `Guest` da maydon yo'q — qonun talab
       qilsa migratsiya bilan qo'shiladi.
-- [ ] **[qaror]** `minStay` sayt/qabulxona bronida tekshirilmaydi;
-      bolalar sig'imga kiradimi (PROJECT_LOGIC 17-bo'lim).
+- [ ] **[qaror]** Cheklovlar (`minStay`, `maxStay`, kirish/chiqish
+      taqiqi) sayt/qabulxona bronida tekshirilmaydi — faqat Beds24 orqali
+      OTA'larga ketadi; bolalar sig'imga kiradimi (PROJECT_LOGIC 17-bo'lim).
 - [ ] **[qaror]** Tasdiqlash kerak bo'lgan standart qiymatlar: OTA
       komissiyasi 15%, audit jurnali 365 kun, bolalar nonushtasi = kattalar
       narxi, 8 ta xarajat turi.

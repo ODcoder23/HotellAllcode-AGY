@@ -113,7 +113,7 @@ Davriy vazifalar (BullMQ `pms-maintenance`, Toshkent vaqti):
 to'lanmagan bronlar (soatlik), tozalash (10 daq), xona holati (har soat
 :01), audit tozalash (yakshanba 03:30), oshxona hisoboti (07:30, 20:00),
 dollar kursi (3 soat), Beds24 polling va catch-up
-(`POLL_INTERVAL_MINUTES`, 15), Beds24 narxi (soatlik), bo'sh joy farqi
+(`POLL_INTERVAL_MINUTES`, 5; catch-up 15), Beds24 narxi (soatlik), bo'sh joy farqi
 (04:00). Beds24 navbatlari — [BEDS24.md](BEDS24.md) 5-bo'lim.
 
 ---
@@ -159,7 +159,7 @@ narxlar Beds24'ga avtomatik ketmaydi. Egasining roziligi bilan:
 1. Zaxira → mashq bazasida migratsiya (`migrate diff --exit-code` 0).
 2. `.env`: `ENCRYPTION_KEY` va `WEBHOOK_URL_TOKEN` v2 da bor (2026-09-27
    tekshirildi). Eskirgan `CHANNEL_MONITOR_MINUTES` qatori o'rniga
-   (ixtiyoriy) `POLL_INTERVAL_MINUTES=15`.
+   (ixtiyoriy) `POLL_INTERVAL_MINUTES=5`, `CATCH_UP_INTERVAL_MINUTES=15`.
 3. `bash tools/sync.sh` → `migrate deploy` → `restart.sh` → tekshiruv.
 4. 101-xonadagi qo'lda yopiq (30.09–03.10, Booking.com broni uchun)
    bog'lashdan **oldin** ochiladi.
