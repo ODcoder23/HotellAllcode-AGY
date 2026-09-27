@@ -397,7 +397,7 @@ Tashqi channel manager yo'q (Beds24 2026-09-26 da olib tashlangan —
 Egasi qarori: integratsiya qaytmaydi, lekin egasi Beds24 holatini ko'rib
 turadi. **Faqat o'qish** — `services/beds24/client.ts` faqat `GET`
 yuboradi; PMS bronlari, narxlari, xonalari o'zgarmaydi; qabulxona ishi
-o'zgarmaydi. Batafsil: [BEDS24.md](BEDS24.md), 0-bo'lim.
+o'zgarmaydi. Batafsil: [BEDS24.md](BEDS24.md).
 
 | Nima | Qayerda |
 |---|---|

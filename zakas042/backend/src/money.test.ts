@@ -1,5 +1,5 @@
 /**
- * Pul hisob-kitobi — lib/money.ts (2026-09-25, ISH_REJASI B3)
+ * Pul hisob-kitobi — lib/money.ts (2026-09-25)
  *
  * Egasi talabi: "hamma hisob-kitoblar mukammal bo'lishi lozim".
  * Bu fayl formulani toza (bazasiz) tekshiradi; API darajasidagi

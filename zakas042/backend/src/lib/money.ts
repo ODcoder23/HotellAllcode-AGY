@@ -1,5 +1,5 @@
 /**
- * Pul hisob-kitobi — YAGONA MANBA (2026-09-25, ISH_REJASI B3).
+ * Pul hisob-kitobi — YAGONA MANBA (2026-09-25).
  *
  * Egasi talabi: "hamma hisob-kitoblar mukammal bo'lishi lozim, qolib
  * ketmasligi kerak". Ilgari bron summasi olti joyda alohida

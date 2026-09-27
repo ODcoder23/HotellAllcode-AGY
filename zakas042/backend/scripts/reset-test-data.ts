@@ -3,8 +3,7 @@
  *
  * Egasi: bazadagi bronlar TEST ma'lumoti. Faqat TEST BRONLARI va
  * ularga bog'liq yozuvlar o'chiriladi — narxlar, maoshlar va
- * sozlamalar QOLADI. Beds24 qoldiqlari alohida skript bilan
- * tozalanadi: `npm run beds24:purge` (migratsiyadan oldin).
+ * sozlamalar QOLADI.
  *
  *   npm run data:reset -- --confirm=<baza_nomi>
  *

@@ -135,7 +135,7 @@ ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> 'bash /opt/hotel-pms/restart.sh'
 Xavfli migratsiyadan oldin **mashq** qiling: zaxirani vaqtinchalik
 bazaga (`createdb imron_pms_rehearsal` + `pg_restore`) tiklab, migratsiyani
 o'sha bazada sinang, keyin o'chiring. 2026-09-26 dagi Beds24 olib
-tashlash shu tartibda qilingan ([BEDS24.md](BEDS24.md), 4-bo'lim).
+tashlash shu tartibda qilingan ([BEDS24.md](BEDS24.md), 5-bo'lim).
 
 **Tekshiruv:** `/health` 200; sayt, Shaxmatka, admin panel ochiladi;
 `journalctl` da xato yo'q.

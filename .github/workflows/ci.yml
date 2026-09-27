@@ -14,6 +14,13 @@ on:
   pull_request:
 
 jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Hujjat havolalari va invariantlar
+        run: bash zakas042/check-docs.sh
+
   backend:
     runs-on: ubuntu-latest
     strategy:

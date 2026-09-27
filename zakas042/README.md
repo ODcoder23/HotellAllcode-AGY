@@ -156,4 +156,3 @@ Tashqi xizmat kerak emas: testlar internetsiz ishlaydi.
 | `npm run db:studio` | Prisma Studio |
 | `npm run build:css` | Shaxmatka Tailwind CSS |
 | `npm run data:reset` | Test bronlarini tozalash (narx, maosh, sozlama qoladi). Avval quruq ishga tushadi, `-- --confirm=<baza>` bilan o'chiradi. OLDIN pg_dump — ../SERVER.md |
-| `npm run beds24:purge` | Bir martalik: Beds24 qoldiqlarini tozalash. Serverda 2026-09-26 da bajarilgan — qayta kerak emas ([../BEDS24.md](../BEDS24.md)) |

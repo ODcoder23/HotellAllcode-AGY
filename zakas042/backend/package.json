@@ -18,8 +18,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:css": "tailwindcss -c tools/tailwind.config.cjs -i tools/tailwind.css -o public/app/vendor/tailwind.css --minify",
-    "data:reset": "tsx --env-file=.env scripts/reset-test-data.ts",
-    "beds24:purge": "tsx --env-file=.env scripts/purge-beds24.ts"
+    "data:reset": "tsx --env-file=.env scripts/reset-test-data.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -37,7 +36,6 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/bcryptjs": "^2.4.6",
     "@types/express": "^5.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.10.5",

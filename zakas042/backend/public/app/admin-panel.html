@@ -520,18 +520,6 @@
     width:100%; padding:11px; border-radius:8px; border:none; cursor:pointer;
     background:var(--turquoise); color:#F7FAF8; font-size:14px; font-weight:600; font-family:var(--sans);
   }
-  .login-advanced-toggle{
-    margin-top:18px; text-align:center; font-size:11.5px; color:var(--text-faint); cursor:pointer;
-  }
-  .login-advanced{ margin-top:12px; border-top:1px solid var(--border); padding-top:14px; }
-  .login-advanced label{ display:block; font-size:11.5px; color:var(--text-muted); margin-bottom:6px; }
-  .login-advanced input{
-    width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px;
-    background:var(--bg); color:var(--text); font-size:12.5px; font-family:var(--mono); margin-bottom:8px;
-  }
-  .login-adv-save{
-    display:inline-block; font-size:12px; font-weight:600; color:var(--turquoise); cursor:pointer;
-  }
 
   /* ---------- Custom modal (replaces native prompt/confirm) ---------- */
   .modal-overlay{
@@ -661,13 +649,6 @@
       </div>
       <div class="login-error" id="loginError" style="display:none;"></div>
       <button class="login-btn" id="loginBtn">Kirish</button>
-
-      <div class="login-advanced-toggle" id="loginAdvToggle">API manzilini sozlash</div>
-      <div class="login-advanced" id="loginAdv" style="display:none;">
-        <label>Backend API manzili</label>
-        <input type="text" id="apiBaseInput" placeholder="https://sizning-backend.com/api">
-        <div class="login-adv-save" id="apiBaseSave">Saqlash</div>
-      </div>
     </div>
   </div>
 
@@ -930,7 +911,7 @@
             <div class="page-title">Xona turlari</div>
             <div class="page-sub">Barcha tariflar bitta jadvalda — narx va rasmni o'zingiz sozlaysiz</div>
           </div>
-          <div class="date-chip"><span class="dot"></span> Jami 3 ta tarif</div>
+          <div class="date-chip"><span class="dot"></span> Yuklanmoqda…</div>
         </div>
 
         <div class="table-wrap">
@@ -947,63 +928,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td class="num">1</td>
-                <td>
-                  <div class="rt-name-cell">
-                    <div class="rt-thumb"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="16" rx="2" stroke="currentColor" stroke-width="1.4"/><circle cx="7.5" cy="9" r="1.8" stroke="currentColor" stroke-width="1.2"/><path d="M3 17L8.5 12L12 15L16.5 10.5L21 15" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg></div>
-                    <div class="rt-name-text"><div class="rt-title">Standart</div><div class="rt-sub">101, 102, 105, 107, 109, 111</div></div>
-                  </div>
-                </td>
-                <td><div class="rt-chips"><span class="rt-chip">101</span><span class="rt-chip">102</span><span class="rt-chip">105</span><span class="rt-chip">107</span><span class="rt-chip">109</span><span class="rt-chip">111</span></div></td>
-                <td>2 kishi</td>
-                <td class="rt-price">400 000 so'm</td>
-                <td><span class="pill ok"><span class="dot"></span>Faol</span></td>
-                <td>
-                  <div class="rt-actions">
-                    <div class="icon-btn edit"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11 2L14 5L5.5 13.5L2 14L2.5 10.5L11 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></div>
-                    <div class="icon-btn del"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.5H13.5M6 4.5V2.8C6 2.36 6.36 2 6.8 2H9.2C9.64 2 10 2.36 10 2.8V4.5M6.5 7.5V11.5M9.5 7.5V11.5M3.5 4.5L4.2 13C4.24 13.55 4.7 14 5.25 14H10.75C11.3 14 11.76 13.55 11.8 13L12.5 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td class="num">2</td>
-                <td>
-                  <div class="rt-name-cell">
-                    <div class="rt-thumb"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="16" rx="2" stroke="currentColor" stroke-width="1.4"/><circle cx="7.5" cy="9" r="1.8" stroke="currentColor" stroke-width="1.2"/><path d="M3 17L8.5 12L12 15L16.5 10.5L21 15" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg></div>
-                    <div class="rt-name-text"><div class="rt-title">Ikki kishilik</div><div class="rt-sub">103, 104, 108, 112</div></div>
-                  </div>
-                </td>
-                <td><div class="rt-chips"><span class="rt-chip">103</span><span class="rt-chip">104</span><span class="rt-chip">108</span><span class="rt-chip">112</span></div></td>
-                <td>3 kishi</td>
-                <td class="rt-price">500 000 so'm</td>
-                <td><span class="pill ok"><span class="dot"></span>Faol</span></td>
-                <td>
-                  <div class="rt-actions">
-                    <div class="icon-btn edit"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11 2L14 5L5.5 13.5L2 14L2.5 10.5L11 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></div>
-                    <div class="icon-btn del"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.5H13.5M6 4.5V2.8C6 2.36 6.36 2 6.8 2H9.2C9.64 2 10 2.36 10 2.8V4.5M6.5 7.5V11.5M9.5 7.5V11.5M3.5 4.5L4.2 13C4.24 13.55 4.7 14 5.25 14H10.75C11.3 14 11.76 13.55 11.8 13L12.5 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
-                  </div>
-                </td>
-              </tr>
-              <tr>
-                <td class="num">3</td>
-                <td>
-                  <div class="rt-name-cell">
-                    <div class="rt-thumb"><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="2" y="4" width="20" height="16" rx="2" stroke="currentColor" stroke-width="1.4"/><circle cx="7.5" cy="9" r="1.8" stroke="currentColor" stroke-width="1.2"/><path d="M3 17L8.5 12L12 15L16.5 10.5L21 15" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/></svg></div>
-                    <div class="rt-name-text"><div class="rt-title">Lyuks</div><div class="rt-sub">106, 110</div></div>
-                  </div>
-                </td>
-                <td><div class="rt-chips"><span class="rt-chip">106</span><span class="rt-chip">110</span></div></td>
-                <td>4 kishi</td>
-                <td class="rt-price">650 000 so'm</td>
-                <td><span class="pill ok"><span class="dot"></span>Faol</span></td>
-                <td>
-                  <div class="rt-actions">
-                    <div class="icon-btn edit"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M11 2L14 5L5.5 13.5L2 14L2.5 10.5L11 2Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></div>
-                    <div class="icon-btn del"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2.5 4.5H13.5M6 4.5V2.8C6 2.36 6.36 2 6.8 2H9.2C9.64 2 10 2.36 10 2.8V4.5M6.5 7.5V11.5M9.5 7.5V11.5M3.5 4.5L4.2 13C4.24 13.55 4.7 14 5.25 14H10.75C11.3 14 11.76 13.55 11.8 13L12.5 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg></div>
-                  </div>
-                </td>
-              </tr>
+              <tr><td colspan="7" style="text-align:center;color:var(--text-faint);padding:24px;">Yuklanmoqda…</td></tr>
             </tbody>
           </table>
           <div class="rt-add-row">
@@ -1915,13 +1840,12 @@
 
 
   // ================= BACKEND: bitta umumiy backendga ulash (sayt bilan bir xil) =================
-  const DEFAULT_BACKEND_BASE = window.location.origin;
-  // `window.location.origin` to'g'ridan-to'g'ri (2026-09-25): restoreSession()
-  // bu funksiyani yuqorida, `const DEFAULT_BACKEND_BASE` e'lon qilinishidan
-  // OLDIN chaqiradi — TDZ xatosi "token yaroqsiz" deb ushlanardi va har
-  // sahifa yangilanganda admin tizimdan chiqib ketardi
-  function getBackendBase(){ return (localStorage.getItem('imron_backend_base') || window.location.origin).replace(/\/$/, ''); }
-  function setBackendBase(url){ localStorage.setItem('imron_backend_base', url.replace(/\/$/, '')); }
+  // Frontend backendning o'zidan beriladi — API har doim shu origin'da.
+  // `function` (const emas): restoreSession() uni e'londan OLDIN chaqiradi.
+  // Ilgari localStorage'dagi `imron_backend_base` ham o'qilardi, lekin uni
+  // o'rnatadigan tugma yo'q edi — eskirgan qiymat token'ni boshqa manzilga
+  // yuborib qo'yishi mumkin edi.
+  function getBackendBase(){ return window.location.origin; }
 
   // Eski JSON-fayl backendi (`/api/storage/...`) 2026-09-16 da
   // o'chirildi. Ma'lumot endi PostgreSQL'dan keladi.
@@ -3158,27 +3082,16 @@
   // ============================================================
   //  TOZALIK (TOZALIK-BOT.md)
   //
-  //  Topshiriq aniq farroshga biriktiriladi va uning SHAXSIY
-  //  Telegram chatiga boradi. Guruh ishlatilmaydi.
+  //  So'rov farroshlar Telegram GURUHIGA boradi, kim bo'sh bo'lsa
+  //  oladi, tozalagach shu yerda tasdiqlanadi.
   // ============================================================
-
-  const CLEAN_STATUS = {
-    NEW:         { label: 'Kutmoqda',      cls: 'wait' },
-    IN_PROGRESS: { label: 'Tozalanmoqda',  cls: 'busy' },
-    DONE:        { label: 'Bajarildi',     cls: 'ok' },
-    CANCELLED:   { label: 'Bekor qilindi', cls: '' },
-  };
 
   let cleanData = { tasks: [], cleaners: [] };
 
   async function loadCleaning(){
-    const note = document.getElementById('cleanNote');
-    if(note) note.innerHTML = '<span class="dot"></span> Yuklanmoqda...';
-
     try{
       const res = await authFetch(getBackendBase() + '/api/admin/cleaning');
       if(res.status === 403){
-        if(note) note.innerHTML = '<span class="dot"></span> Bu bo\'lim uchun huquq yetarli emas';
         return;
       }
       if(!res.ok) throw new Error('status ' + res.status);
@@ -3186,7 +3099,6 @@
       cleanData = await res.json();
       renderCleaning();
     }catch(e){
-      if(note) note.innerHTML = '<span class="dot"></span> Yuklab bo\'lmadi';
     }
   }
 
@@ -4766,23 +4678,6 @@
     return roomsOk;
   }
 
-  const backendSettingsBtn = document.getElementById('backendSettingsBtn');
-  if(backendSettingsBtn){
-    backendSettingsBtn.addEventListener('click', () => {
-      openFormModal('Backend ulanishi', [
-        { label: 'Backend manzili', key: 'base', value: getBackendBase(), placeholder: 'https://sizning-domen.com' }
-      ], 'Saqlash va sinxronlash', async (vals) => {
-        if(vals.base) setBackendBase(vals.base);
-        const ok = await syncWithBackend();
-        openConfirmModal(
-          ok ? 'Ulandi' : 'Ulanmadi',
-          ok ? 'Backend bilan muvaffaqiyatli sinxronlandi. Xonalar va bronlar backenddagi real ma\'lumot bilan yangilandi.' : 'Backendga ulanib bo\'lmadi yoki hotel:rooms topilmadi. Manzilni va serverning ishlab turganini tekshiring.',
-          'Tushunarli', () => {}
-        );
-      });
-    });
-  }
-
   // Sahifa ochilganda avtomatik (jimgina) sinxronlashga urinib ko'ramiz — bo'lmasa demo ma'lumot qoladi
   // Ma'lumot login (`doLogin`) yoki saqlangan sessiya (`restoreSession`)
   // tekshirilgach yuklanadi. Ilgari shu yerda ham chaqirilardi: login
@@ -5381,47 +5276,6 @@
       setTimeout(connectAdminWebSocket, 10000);
     }
   }
-
-  // ================= XONA TURLARI: Tahrirlash / O'chirish / Rasm yuklash / Qo'shish =================
-  const rtFileInput = document.createElement('input');
-  rtFileInput.type = 'file';
-  rtFileInput.accept = 'image/*';
-  rtFileInput.style.display = 'none';
-  document.body.appendChild(rtFileInput);
-  let rtActiveThumb = null;
-
-  rtFileInput.addEventListener('change', () => {
-    const file = rtFileInput.files[0];
-    if(file && rtActiveThumb){
-      const url = URL.createObjectURL(file);
-      rtActiveThumb.innerHTML = '<img src="'+url+'" alt="Xona rasmi">';
-    }
-    rtFileInput.value = '';
-  });
-
-  function updateRoomTypeCount(){
-    const count = document.querySelectorAll('#room-types tbody tr').length;
-    const dateChip = document.querySelector('#room-types .date-chip');
-    if(dateChip) dateChip.innerHTML = '<span class="dot"></span> Jami ' + count + ' ta tarif';
-    const navTag = document.querySelector('.nav-item[data-target="room-types"] .tag');
-    if(navTag) navTag.textContent = count;
-  }
-
-  function buildChips(roomsStr){
-    return roomsStr.split(',').map(s => s.trim()).filter(Boolean)
-      .map(n => '<span class="rt-chip">'+n+'</span>').join('');
-  }
-
-  // Eski namunaviy ishchilar kodi 2026-09-17 da olib tashlandi.
-  //
-  // U DOM'ga bevosita yozardi (jadvalga soxta karta qo'shardi)
-  // va bazaga bormasdi. Endi `loadStaff()` haqiqiy ma'lumot
-  // bilan ishlaydi — BOT-RUXSAT.md ga qarang.
-  // Eski namunaviy tozalik kodi 2026-09-17 da olib tashlandi.
-  // Endi haqiqiy ma'lumot bilan ishlaydi — `loadCleaning()` ga
-  // qarang (TOZALIK-BOT.md). Eski kod jadvalga soxta qator
-  // qo'shardi va ROOM_LIST 12 xonali eski tuzilishdan edi.
-
 
   // ================= SHAXMATKA: probel bosilganda to'liq ekran =================
   document.addEventListener('keydown', (e) => {

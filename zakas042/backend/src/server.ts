@@ -115,7 +115,7 @@ app.get("/health", async (_req, res) => {
   });
 });
 
-/** Navbat holati (05-fayl §8). Auth bilan — ISH_REJASI 1.2 */
+/** Navbat holati (05-fayl §8). Faqat auth bilan */
 app.get("/api/admin/queues", requireAuth, requirePermission("audit.read"), async (_req, res) => {
   try {
     res.json({ redis: await isRedisHealthy(), queues: await getQueueCounts() });

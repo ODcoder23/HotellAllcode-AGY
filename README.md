@@ -17,7 +17,7 @@ egasi qarori bilan olib tashlandi, Booking.com va boshqa OTA bronlarini
 qabulxona qo'lda kiritadi (manba "Booking.com" va h.k., komissiya
 avtomatik). 2026-09-27 dan **egasi (FOUNDER)** uchun Channel manager
 **kuzatuv rejimida** qaytdi: PMS Beds24'dan faqat o'qiydi va o'zi bilan
-solishtiradi, hech narsa yozmaydi — [BEDS24.md](BEDS24.md), 0-bo'lim.
+solishtiradi, hech narsa yozmaydi — [BEDS24.md](BEDS24.md).
 
 ---
 
@@ -29,9 +29,7 @@ solishtiradi, hech narsa yozmaydi — [BEDS24.md](BEDS24.md), 0-bo'lim.
 | **[ISH_REJASI.md](ISH_REJASI.md)** | Qolgan ishlar, qarorlar, tartib |
 | [SERVER.md](SERVER.md) | Serverda ishlash, yangilash, zaxira |
 | [zakas042/README.md](zakas042/README.md) | Kompyuterda ishga tushirish va testlar |
-| [BEDS24.md](BEDS24.md) | Arxiv: Beds24 qanday ishlagan va qanday olib tashlangan |
-| [CHANNEL_MANAGER_SPEC_AND_ANALYSIS.md](CHANNEL_MANAGER_SPEC_AND_ANALYSIS.md) | Arxiv: eski channel manager TZ tahlili |
-| [TODO.md](TODO.md) | Eski ro'yxat (ISH_REJASI'ga birlashtiriladi) |
+| [BEDS24.md](BEDS24.md) | Beds24 kuzatuvi (faqat egasi), ulash, egasining ishlari, real API faktlari |
 | [zakas042/TZ-ASL.md](zakas042/TZ-ASL.md) | Mijozning asl topshirig'i va qarorlari |
 
 ---
@@ -78,7 +76,8 @@ HotellAllcode/
 ├── PROJECT_LOGIC.md          loyiha logikasi — asosiy referens
 ├── ISH_REJASI.md             qolgan ishlar
 ├── SERVER.md                 server bilan ishlash
-├── BEDS24.md                 arxiv: olib tashlangan integratsiya
+├── BEDS24.md                 Beds24 kuzatuvi (faqat egasi)
+├── .github/workflows/ci.yml  testlar (har PR'da)
 │
 ├── zakas042/                 asosiy loyiha
 │   ├── backend/
@@ -89,9 +88,10 @@ HotellAllcode/
 │   │   │   ├── realtime/     WebSocket
 │   │   │   ├── bot/          Telegram (3 bot)
 │   │   │   └── lib/          config, pul formulasi, mehmonxona vaqti, auth
-│   │   ├── prisma/           sxema, 22 migratsiya, seed
-│   │   ├── scripts/          reset-test-data, purge-beds24 (bir martalik)
-│   │   └── public/app/       frontend: sayt, Shaxmatka, admin panel
+│   │   ├── prisma/           sxema, 24 migratsiya, seed
+│   │   ├── scripts/          reset-test-data (test bronlarini tozalash)
+│   │   ├── public/app/       frontend: sayt, Shaxmatka, admin panel
+│   │   └── public/admin/     Channel manager alohida sahifalari (faqat egasi)
 │   └── TZ-ASL.md             mijoz talabi (arxiv)
 │
 └── tools/                    tunnel, sync, status
@@ -113,7 +113,7 @@ HotellAllcode/
 
 ---
 
-## Hozirgi holat (2026-09-26)
+## Hozirgi holat (2026-09-27)
 
 **Ishlaydi:** sayt → bron → Shaxmatka zanjiri, overbooking himoyasi
 (DB `EXCLUDE` constraint + tranzaksiya), tozalik boti (Telegram guruh),
@@ -121,6 +121,6 @@ oshxona hisobi, 4 rolli RBAC, parol o'zgartirish, STOP (sotuvni
 to'xtatish), mavjudlik jadvali, moliya hisoboti, kunlik zaxira.
 Autentifikatsiya, so'rov cheklovi va production rejimi yoqilgan.
 
-**Beds24:** olib tashlangan (kod, navbatlar, jadvallar, server
-sozlamalari). Beds24 kabinetidagi hisob va Booking.com ulanishi Beds24
-tomonida hali turibdi — egasi o'zi yopishi kerak ([BEDS24.md](BEDS24.md), 5-bo'lim).
+**Beds24:** integratsiya yo'q; egasi uchun faqat kuzatuv (Channel
+manager). Beds24 kabinetidagi hisob va Booking.com ulanishi Beds24
+tomonida hali turibdi — egasi o'zi yopishi kerak ([BEDS24.md](BEDS24.md), 3-bo'lim).

@@ -45,9 +45,6 @@ export const isValidDateKey = (s: string): boolean =>
 /** BOOKING_COM → "booking_com" (frontend SOURCES kaliti) */
 export const enumToKey = (e: string): string => e.toLowerCase();
 
-/** "booking_com" → BOOKING_COM */
-export const keyToEnum = (k: string): string => k.toUpperCase();
-
 // --- Room ---------------------------------------------------
 
 type RoomRow = {

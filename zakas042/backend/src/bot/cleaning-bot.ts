@@ -619,8 +619,3 @@ export async function stopCleaningBot(): Promise<void> {
     bot = null;
   }
 }
-
-/** Bot ishlayaptimi — admin panel holatni ko'rsatishi uchun */
-export function isCleaningBotRunning(): boolean {
-  return bot !== null;
-}

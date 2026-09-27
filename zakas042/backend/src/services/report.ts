@@ -202,7 +202,7 @@ async function bookingReport(from: Date, toEx: Date): Promise<BookingReport> {
 
 async function moneyReport(from: Date, toEx: Date, days: number): Promise<MoneyReport> {
   /**
-   * 2026-09-25 QAYTA YOZILDI (ISH_REJASI B3, "barcha hisob-kitoblar
+   * 2026-09-25 QAYTA YOZILDI ("barcha hisob-kitoblar
    * mukammal bo'lsin"). Ilgari:
    *   - nonushta va bekor qilish jarimasi daromadga kirmasdi;
    *   - davr bilan kesishgan har bronning BARCHA qo'shimcha xizmatlari
