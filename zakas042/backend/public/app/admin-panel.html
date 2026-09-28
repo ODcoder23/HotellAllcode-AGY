@@ -368,6 +368,39 @@
     background:var(--turquoise); color:#F7FAF8; font-size:12.5px; font-weight:600;
     padding:10px 18px; border-radius:20px; cursor:pointer; border:none; flex-shrink:0;
   }
+  .btn-add.busy{ opacity:.6; pointer-events:none; }
+  .btn-outline{
+    display:inline-flex; align-items:center; gap:7px;
+    background:var(--surface); color:var(--text); font-size:12.5px; font-weight:600;
+    padding:9px 16px; border-radius:20px; cursor:pointer; border:1px solid var(--border); flex-shrink:0;
+  }
+  .btn-outline:hover{ border-color:var(--turquoise); color:var(--turquoise); }
+  .btn-outline.busy{ opacity:.6; pointer-events:none; }
+  .card-title{ font-family:var(--serif); font-size:16px; font-weight:600; margin-bottom:6px; }
+
+  /* ---------- Sozlamalar, audit, tizim holati ---------- */
+  .set-group h3{ font-family:var(--serif); font-size:16px; font-weight:600; margin-bottom:4px; }
+  .set-row{ display:flex; justify-content:space-between; align-items:center; gap:16px; padding:13px 0; border-bottom:1px solid var(--border); }
+  .set-row:last-child{ border-bottom:none; }
+  .set-row .set-text{ min-width:0; }
+  .set-row .set-label{ font-size:13.5px; color:var(--text); font-weight:500; }
+  .set-row .set-hint{ font-size:12px; color:var(--text-faint); margin-top:3px; line-height:1.45; }
+  .set-row .set-input{ display:flex; align-items:center; gap:7px; flex-shrink:0; font-size:12.5px; color:var(--text-muted); }
+  .set-row input[type=number]{
+    width:92px; font:inherit; font-family:var(--mono); padding:8px 10px; text-align:right;
+    border:1px solid var(--border); border-radius:var(--radius-s); background:var(--bg); color:var(--text);
+  }
+  .set-row input[type=number]:focus{ outline:none; border-color:var(--turquoise); }
+  .set-row input[type=checkbox]{ width:18px; height:18px; accent-color:var(--turquoise); }
+  .set-row.changed .set-label::after{ content:" •"; color:var(--gold); }
+  .tool-row{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px; }
+  .tool-row select, .tool-row input[type=date], .tool-row input[type=text]{
+    font:inherit; font-size:13px; padding:8px 11px; border:1px solid var(--border);
+    border-radius:var(--radius-s); background:var(--surface); color:var(--text);
+  }
+  .audit-detail{ font-size:12px; color:var(--text-muted); line-height:1.5; max-width:420px; word-break:break-word; }
+  .audit-detail b{ color:var(--text); font-weight:600; }
+  .hint-text{ font-size:12.5px; color:var(--text-muted); line-height:1.55; }
 
   #sx-overview:fullscreen{ margin:0; padding:0; background:#000; }
   #sx-overview:fullscreen iframe{ height:100vh !important; }
@@ -695,7 +728,7 @@
           Xona turlari
           <span class="tag" id="navTypeCount">—</span>
         </button>
-        <button class="nav-item" data-target="website">
+        <button class="nav-item role-settings" data-target="website" style="display:none;">
           <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><circle cx="8.5" cy="8.5" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M2 8.5h13" stroke="currentColor" stroke-width="1.3"/><path d="M8.5 2a10 10 0 0 1 0 13a10 10 0 0 1 0-13z" stroke="currentColor" stroke-width="1.3"/></svg>
           Sayt boshqaruvi
         </button>
@@ -703,15 +736,15 @@
           <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M2.5 8.5H14.5A2 2 0 0 1 12.5 12.5H4.5A2 2 0 0 1 2.5 8.5Z" stroke="currentColor" stroke-width="1.4"/><path d="M4 8.5V4" stroke="currentColor" stroke-width="1.4"/><path d="M6.5 8.5V3" stroke="currentColor" stroke-width="1.4"/><path d="M9 8.5V4" stroke="currentColor" stroke-width="1.4"/></svg>
           Oshxona
         </button>
-        <button class="nav-item" data-target="staff">
+        <button class="nav-item role-employee" data-target="staff" style="display:none;">
           <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><circle cx="6" cy="5.5" r="2.5" stroke="currentColor" stroke-width="1.4"/><path d="M1.5 15C1.5 11.8 3.5 10 6 10S10.5 11.8 10.5 15" stroke="currentColor" stroke-width="1.4"/><circle cx="12.3" cy="6.3" r="2" stroke="currentColor" stroke-width="1.3"/><path d="M11 15C11 12.3 12 11 13.5 11S16 12.3 16 15" stroke="currentColor" stroke-width="1.3"/></svg>
           Ishchilar
         </button>
-        <button class="nav-item" data-target="cleaning">
+        <button class="nav-item role-roomblock" data-target="cleaning" style="display:none;">
           <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M10 2L15 7L7 15L2 15L2 10Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M7.5 4.5L12.5 9.5" stroke="currentColor" stroke-width="1.2"/></svg>
           Tozalik
         </button>
-        <button class="nav-item" data-target="finance">
+        <button class="nav-item founder-only" data-target="finance" style="display:none;">
           <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M1.5 15.5H15.5" stroke="currentColor" stroke-width="1.4"/><rect x="3" y="9.5" width="2.6" height="6" stroke="currentColor" stroke-width="1.3"/><rect x="7.2" y="6" width="2.6" height="9.5" stroke="currentColor" stroke-width="1.3"/><rect x="11.4" y="3" width="2.6" height="12.5" stroke="currentColor" stroke-width="1.3"/></svg>
           Moliya hisoboti
         </button>
@@ -728,6 +761,20 @@
         <button class="nav-item founder-only" data-target="bots" style="display:none;">
           <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="2.5" y="4" width="12" height="10" rx="2" stroke="currentColor" stroke-width="1.3"/><circle cx="6" cy="8.5" r="1.2" fill="currentColor"/><circle cx="11" cy="8.5" r="1.2" fill="currentColor"/><path d="M8.5 1.5v2.5M5 14v1.5M12 14v1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           Bot boshqaruvi
+        </button>
+        <!-- Rolga qarab `showApp()` ko'rsatadi (backend huquqlari bilan bir xil):
+             Sozlamalar — settings.write; Audit va Tizim holati — audit.read -->
+        <button class="nav-item role-settings" data-target="settings" style="display:none;">
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M2 4.5h7M12 4.5h3M2 8.5h3M8 8.5h7M2 12.5h9M14 12.5h1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="10.5" cy="4.5" r="1.5" stroke="currentColor" stroke-width="1.3"/><circle cx="6.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="1.3"/><circle cx="12.5" cy="12.5" r="1.5" stroke="currentColor" stroke-width="1.3"/></svg>
+          Sozlamalar
+        </button>
+        <button class="nav-item role-audit" data-target="audit" style="display:none;">
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><rect x="3" y="1.5" width="11" height="14" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 5.5h6M5.5 8.5h6M5.5 11.5h3.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          Audit jurnali
+        </button>
+        <button class="nav-item role-audit" data-target="system-status" style="display:none;">
+          <svg width="17" height="17" viewBox="0 0 17 17" fill="none"><path d="M1.5 9h3l2-5 3.5 9 2-4h3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Tizim holati
         </button>
       </nav>
       <div class="sidebar-foot">
@@ -862,24 +909,40 @@
         <div class="topline">
           <div>
             <div class="page-title">Xonalar</div>
-            <div class="page-sub">Jami 12 xona — "Xona turlari" bo'limidagi haqiqiy raqamlar bilan mos</div>
+            <div class="page-sub">Xonalarning bugungi holati — bazadan</div>
           </div>
-          <div class="date-chip"><span class="dot"></span> 7 to'liq band · 3 qisman band · 2 bo'sh</div>
+          <div class="date-chip"><span class="dot"></span> Yuklanmoqda...</div>
         </div>
 
-        <div class="rooms-grid">
-          <div class="room-card full"><div class="room-top"><div><div class="room-num">101</div><div class="room-type">Standart</div></div><span class="pill busy"><span class="dot"></span>Band</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot on"></div><div class="occ-dot on"></div></div><div class="occ-count">2 / 2 kishi</div></div></div>
-          <div class="room-card partial"><div class="room-top"><div><div class="room-num">102</div><div class="room-type">Standart</div></div><span class="pill wait"><span class="dot"></span>Qisman</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot on"></div><div class="occ-dot"></div></div><div class="occ-count">1 / 2 kishi</div></div></div>
-          <div class="room-card full"><div class="room-top"><div><div class="room-num">103</div><div class="room-type">Ikki kishilik</div></div><span class="pill busy"><span class="dot"></span>Band</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot on"></div><div class="occ-dot on"></div><div class="occ-dot on"></div></div><div class="occ-count">3 / 3 kishi</div></div></div>
-          <div class="room-card full"><div class="room-top"><div><div class="room-num">104</div><div class="room-type">Ikki kishilik</div></div><span class="pill busy"><span class="dot"></span>Band</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot on"></div><div class="occ-dot on"></div><div class="occ-dot on"></div></div><div class="occ-count">3 / 3 kishi</div></div></div>
-          <div class="room-card empty"><div class="room-top"><div><div class="room-num">105</div><div class="room-type">Standart</div></div><span class="pill free"><span class="dot"></span>Bo'sh</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot"></div><div class="occ-dot"></div></div><div class="occ-count">0 / 2 kishi</div></div></div>
-          <div class="room-card full"><div class="room-top"><div><div class="room-num">106</div><div class="room-type">Lyuks</div></div><span class="pill busy"><span class="dot"></span>Band</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot on"></div><div class="occ-dot on"></div><div class="occ-dot on"></div><div class="occ-dot on"></div></div><div class="occ-count">4 / 4 kishi</div></div></div>
-          <div class="room-card partial"><div class="room-top"><div><div class="room-num">107</div><div class="room-type">Standart</div></div><span class="pill wait"><span class="dot"></span>Qisman</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot on"></div><div class="occ-dot"></div></div><div class="occ-count">1 / 2 kishi</div></div></div>
-          <div class="room-card empty"><div class="room-top"><div><div class="room-num">108</div><div class="room-type">Ikki kishilik</div></div><span class="pill free"><span class="dot"></span>Tozalanmoqda</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot"></div><div class="occ-dot"></div><div class="occ-dot"></div></div><div class="occ-count">0 / 3 kishi</div></div></div>
-          <div class="room-card full"><div class="room-top"><div><div class="room-num">109</div><div class="room-type">Standart</div></div><span class="pill busy"><span class="dot"></span>Band</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot on"></div><div class="occ-dot on"></div></div><div class="occ-count">2 / 2 kishi</div></div></div>
-          <div class="room-card partial"><div class="room-top"><div><div class="room-num">110</div><div class="room-type">Lyuks</div></div><span class="pill wait"><span class="dot"></span>Qisman</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot on"></div><div class="occ-dot on"></div><div class="occ-dot"></div><div class="occ-dot"></div></div><div class="occ-count">2 / 4 kishi</div></div></div>
-          <div class="room-card full"><div class="room-top"><div><div class="room-num">111</div><div class="room-type">Standart</div></div><span class="pill busy"><span class="dot"></span>Band</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot on"></div><div class="occ-dot on"></div></div><div class="occ-count">2 / 2 kishi</div></div></div>
-          <div class="room-card full"><div class="room-top"><div><div class="room-num">112</div><div class="room-type">Ikki kishilik</div></div><span class="pill busy"><span class="dot"></span>Band</span></div><div class="room-occ"><div class="occ-people"><div class="occ-dot on"></div><div class="occ-dot on"></div><div class="occ-dot on"></div></div><div class="occ-count">3 / 3 kishi</div></div></div>
+        <div class="rooms-grid"></div>
+
+        <!-- Butun qavatni yopish/ochish — POST/DELETE /api/rooms/blocks/floor
+             (room.block: egasi, admin, menejer). Bitta xona — Shaxmatkada -->
+        <div class="role-roomblock" style="display:none;">
+          <div class="section-head">
+            <h2>Qavatni yopish</h2>
+            <span class="muted">ta'mir yoki xizmatdan chiqarish — butun qavat bir amalda</span>
+          </div>
+          <div class="card">
+            <div class="tool-row" style="margin-bottom:10px;">
+              <select id="floorBlockFloor" aria-label="Qavat"></select>
+              <label class="hint-text">dan <input type="date" id="floorBlockFrom"></label>
+              <label class="hint-text">gacha <input type="date" id="floorBlockTo"></label>
+              <input type="text" id="floorBlockReason" maxlength="200" placeholder="Sabab (masalan: ta'mir)" style="min-width:220px;">
+            </div>
+            <div class="tool-row" style="margin-bottom:6px;">
+              <div class="btn-add" id="floorBlockBtn" role="button" tabindex="0">Qavatni yopish</div>
+              <div class="btn-outline" id="floorUnblockBtn" role="button" tabindex="0">Qavatni ochish</div>
+              <span class="hint-text" id="floorBlockMsg"></span>
+            </div>
+            <div class="hint-text">Ikkala sana ham kiradi. Shu kunlarda bron bor xona bo'lsa yopilmaydi — avval bronni ko'chiring.
+              Yopilgan kunlar saytda sotilmaydi, Shaxmatkada kulrang ko'rinadi va Beds24 ulangan bo'lsa u yerda ham yopiladi.</div>
+            <div class="section-head" style="margin:22px 0 10px;">
+              <h2 style="font-size:15px;">Yopiq kunlar</h2>
+              <span class="muted">bugundan 90 kun</span>
+            </div>
+            <div class="table-wrap"><table id="floorBlockList"></table></div>
+          </div>
         </div>
       </section>
 
@@ -948,11 +1011,11 @@
 
       <!-- KITCHEN -->
       <!-- ============================================================
-           OSHXONA — ovqat hisobi (BOTLAR-REJA.md)
+           OSHXONA — nonushta hisobi (services/kitchen.ts)
 
-           Oshpazlar botiga yuboriladigan shablonning aynan o'zi.
-           Kim hisoblanadi: hozir xonada turganlar + bugun
-           keladiganlar (2026-09-17 qarori).
+           Oshpazlar botiga yuboriladigan ma'lumotning aynan o'zi.
+           Nonushta tunashdan keyingi ertalab: kelgan kuni yo'q,
+           ketadigan kuni bor.
            ============================================================ -->
       <section class="section" id="kitchen">
         <div class="topline">
@@ -984,6 +1047,14 @@
             <div class="stat-value" id="kitTomorrow">—</div>
             <div class="stat-note" id="kitTomorrowNote">tayyorgarlik uchun</div>
           </div>
+        </div>
+
+        <!-- Oshxona botiga qo'lda yuborish — POST /api/admin/kitchen/send-telegram.
+             Jadval bo'yicha o'zi ham ketadi: 07:30 (bugun), 20:00 (ertaga) -->
+        <div class="tool-row" style="margin-top:16px;">
+          <div class="btn-outline" data-kitchen-send="0" role="button" tabindex="0">Bugungi hisobotni Telegramga yuborish</div>
+          <div class="btn-outline" data-kitchen-send="1" role="button" tabindex="0">Ertangisini yuborish</div>
+          <span class="hint-text" id="kitSendMsg">Oshxona boti o'zi ham yuboradi: 07:30 da bugungi, 20:00 da ertangi.</span>
         </div>
 
         <!-- Nonushta narxi (2026-09-25, egasi talabi): o'zgartirilsa
@@ -1028,7 +1099,7 @@
 
       <!-- STAFF -->
       <!-- Ishchilar — ko'rinish o'zgarmagan, ma'lumot bazadan
-           (BOT-RUXSAT.md). Farosh lavozimi tanlanganda Telegram
+          . Farosh lavozimi tanlanganda Telegram
            maydoni ochiladi. -->
       <section class="section" id="staff">
         <div class="topline">
@@ -1062,7 +1133,7 @@
 
       <!-- CLEANING -->
       <!-- ============================================================
-           TOZALIK — haqiqiy ma'lumot (TOZALIK-BOT.md)
+           TOZALIK — haqiqiy ma'lumot
 
            Uch tab: Faol / Tasdiqlash kutilmoqda / Tarix.
            Namunaviy jadval 2026-09-17 da haqiqiy ma'lumotga
@@ -1081,7 +1152,7 @@
         </div>
 
         <!-- DIQQAT TALAB QILADI — muammo bo'lmasa ko'rinmaydi
-             (TOZALIK-TAHLIL.md §1, §2) -->
+             -->
         <div id="cleanAlerts" style="display:none;margin-bottom:18px;"></div>
 
         <div class="seg-toggle">
@@ -1232,7 +1303,7 @@
       </section>
 
       <!-- Moliya — ko'rinish o'zgarmagan, raqamlar haqiqiy
-           (SAVOLLAR.md S14). Namunaviy qiymatlar 2026-09-17 da
+          . Namunaviy qiymatlar 2026-09-17 da
            API'dan keladigan bo'ldi. -->
       <section class="section" id="finance">
         <div class="topline">
@@ -1264,6 +1335,75 @@
         <div class="section-head"><h2>Xarajatlar ro'yxati</h2><span class="muted">Shu oy</span></div>
         <div class="card">
           <div class="table-wrap"><table id="expTable"></table></div>
+        </div>
+      </section>
+
+      <!-- BIZNES SOZLAMALARI — GET/PUT /api/admin/business-settings
+           (settings.write: egasi, admin). Nonushta narxi — Oshxona bo'limida -->
+      <section class="section" id="settings">
+        <div class="topline">
+          <div>
+            <div class="page-title">Biznes sozlamalari</div>
+            <div class="page-sub">Bekor qilish, komissiya, sayt bronlari va tozalash qoidalari. O'zgarish darhol kuchga kiradi va audit jurnaliga yoziladi</div>
+          </div>
+          <div class="date-chip" id="setChip"><span class="dot"></span> Yuklanmoqda...</div>
+        </div>
+
+        <div class="grid g2" id="setGroups"></div>
+
+        <div style="margin-top:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;">
+          <div class="btn-add" id="setSave" role="button" tabindex="0">Saqlash</div>
+          <div class="btn-outline" id="setReset" role="button" tabindex="0">Bekor qilish</div>
+          <span class="hint-text" id="setMsg"></span>
+        </div>
+        <div class="hint-text" style="margin-top:14px;">Nonushta narxi — <b>Oshxona</b> bo'limida (faol bronlar summasini ham yangilaydi).</div>
+      </section>
+
+      <!-- AUDIT JURNALI — GET /api/admin/audit-log (audit.read: egasi, admin, menejer) -->
+      <section class="section" id="audit">
+        <div class="topline">
+          <div>
+            <div class="page-title">Audit jurnali</div>
+            <div class="page-sub">Kim, qachon, nimani o'zgartirdi: to'lovlar, bronlar, narxlar, xona yopish, sozlamalar, foydalanuvchilar</div>
+          </div>
+          <div class="date-chip" id="auditChip"><span class="dot"></span> Yuklanmoqda...</div>
+        </div>
+
+        <div class="tool-row">
+          <select id="auditAction" aria-label="Amal turi"></select>
+          <div class="btn-outline" id="auditRefresh" role="button" tabindex="0">Yangilash</div>
+        </div>
+
+        <div class="card">
+          <div class="table-wrap"><table id="auditTable"></table></div>
+        </div>
+        <div style="margin-top:14px;text-align:center;">
+          <div class="btn-outline" id="auditMore" role="button" tabindex="0" style="display:none;">Ko'proq yuklash</div>
+        </div>
+      </section>
+
+      <!-- TIZIM HOLATI — /health va GET /api/admin/queues (audit.read) -->
+      <section class="section" id="system-status">
+        <div class="topline">
+          <div>
+            <div class="page-title">Tizim holati</div>
+            <div class="page-sub">Baza, Redis, jonli ulanishlar va fon vazifalari navbatlari</div>
+          </div>
+          <div class="btn-outline" id="sysRefresh" role="button" tabindex="0">Yangilash</div>
+        </div>
+
+        <div class="grid g4" id="sysCards"></div>
+
+        <div class="section-head">
+          <h2>Navbatlar</h2>
+          <span class="btn-outline role-settings" id="sysClean" role="button" tabindex="0" style="display:none;">Tugagan va xato vazifalar tarixini tozalash</span>
+        </div>
+        <div class="card">
+          <div class="table-wrap"><table id="sysQueues"></table></div>
+        </div>
+        <div class="hint-text" style="margin-top:14px;">
+          <b>Kutmoqda</b> va <b>ishlanmoqda</b> — hozirgi ish. <b>Kechiktirilgan</b> — jadval bo'yicha keyinroq yoki qayta urinish kutayotgan vazifalar.
+          <b>Xato</b> ko'payib borsa — Channel manager → Sinxronizatsiya. Redis o'chsa bron, to'lov va Shaxmatka ishlayveradi, faqat fon vazifalari kechikadi.
         </div>
       </section>
 
@@ -1568,6 +1708,13 @@
    */
   const CHANNEL_READ_ROLES = ['FOUNDER', 'ADMIN', 'MANAGER'];
   const CHANNEL_WRITE_ROLES = ['FOUNDER', 'ADMIN'];
+  // settings.write, audit.read, room.block (services/auth.ts)
+  // settings.write — Sozlamalar, Sayt boshqaruvi; report.read (Moliya) — `.founder-only`
+  const SETTINGS_ROLES = ['FOUNDER', 'ADMIN'];
+  const AUDIT_ROLES = ['FOUNDER', 'ADMIN', 'MANAGER'];
+  const ROOM_BLOCK_ROLES = ['FOUNDER', 'ADMIN', 'MANAGER'];
+  // employee.read — Ishchilar (maosh ma'lumoti bor)
+  const EMPLOYEE_ROLES = ['FOUNDER', 'ADMIN'];
 
   const ROLE_LABEL = {
     FOUNDER: 'Egasi',
@@ -1658,6 +1805,15 @@
     document.querySelectorAll('.channel-write').forEach(el => {
       el.style.display = CHANNEL_WRITE_ROLES.includes(userRole) ? '' : 'none';
     });
+    // Sozlamalar, audit/tizim holati, xona va qavat yopish — backend
+    // PERMISSIONS bilan bir xil (faqat ko'rinish, himoya backendda)
+    [['.role-settings', SETTINGS_ROLES], ['.role-audit', AUDIT_ROLES], ['.role-roomblock', ROOM_BLOCK_ROLES],
+     ['.role-employee', EMPLOYEE_ROLES]]
+      .forEach(([sel, roles]) => {
+        document.querySelectorAll(sel).forEach(el => {
+          el.style.display = roles.includes(userRole) ? '' : 'none';
+        });
+      });
 
     passTokenToFrame();
     if(typeof connectAdminWebSocket === 'function') connectAdminWebSocket();
@@ -1749,7 +1905,7 @@
 
       if(!res.ok){
         // Server ataylab bir xil xabar beradi: qaysi email mavjudligi
-        // oshkor qilinmaydi (10-fayl §3)
+        // oshkor qilinmaydi
         setLoginError("Login yoki parol noto'g'ri.");
         return;
       }
@@ -2437,11 +2593,11 @@
   }
 
   // ============================================================
-  //  OSHXONA (BOTLAR-REJA.md)
+  //  OSHXONA (services/kitchen.ts)
   //
-  //  Oshpazlar botiga yuboriladigan shablonning aynan o'zi.
-  //  Kim hisoblanadi: hozir xonada turganlar + bugun
-  //  keladiganlar.
+  //  Oshpazlar botiga yuboriladigan ma'lumotning aynan o'zi.
+  //  Nonushta tunashdan keyingi ertalab: kelgan kuni yo'q,
+  //  ketadigan kuni bor.
   // ============================================================
 
   let kitchenData = null;
@@ -2490,11 +2646,12 @@
         : 'ovqat tarifi bilan mehmon yo\'q';
     }
 
-    // Xonada turganlar va keladiganlar ajratiladi: oshpaz
-    // qachon tayyorlashni bilsin
+    // Nonushta tunashdan keyin: kelgan kuni yo'q, ketadigan kuni bor
+    // (services/kitchen.ts). Holatlar oshpaz qachon tayyorlashni bilsin
     const split = document.getElementById('kitSplit');
     if(split){
-      split.textContent = t.staying + ' ta xonada \u00b7 ' + t.arriving + ' ta keladi';
+      split.textContent = t.staying + ' ta xonada \u00b7 ' + t.departing + ' ta bugun ketadi' +
+        (t.arriving ? ' \u00b7 ' + t.arriving + ' ta kirish belgilanmagan' : '');
     }
 
     const tmNote = document.getElementById('kitTomorrowNote');
@@ -2502,11 +2659,22 @@
       tmNote.textContent = tm.totalAdults + ' kattalar, ' + tm.totalChildren + ' bolalar';
     }
 
-    renderKitchenTable('kitTable', t.rooms);
-    renderKitchenTable('kitTomorrowTable', tm.rooms);
+    renderKitchenTable('kitTable', t.rooms, false);
+    renderKitchenTable('kitTomorrowTable', tm.rooms, true);
   }
 
-  function renderKitchenTable(id, rows){
+  // Holat nomi \u2014 oshxona boti bilan bir xil (bot/kitchen-bot.ts)
+  function kitchenStatePill(state, isTomorrow){
+    if(state === 'departing'){
+      return '<span class="pill wait"><span class="dot"></span>' + (isTomorrow ? 'Ertaga ketadi' : 'Bugun ketadi') + '</span>';
+    }
+    if(state === 'arriving'){
+      return '<span class="pill wait"><span class="dot"></span>' + (isTomorrow ? 'Bugun keladi' : 'Kirish belgilanmagan') + '</span>';
+    }
+    return '<span class="pill ok"><span class="dot"></span>Xonada</span>';
+  }
+
+  function renderKitchenTable(id, rows, isTomorrow){
     const t = document.getElementById(id);
     if(!t) return;
 
@@ -2520,9 +2688,7 @@
     }
 
     t.innerHTML = head + '<tbody>' + rows.map(function(r){
-      const pill = r.arriving
-        ? '<span class="pill wait"><span class="dot"></span>Keladi</span>'
-        : '<span class="pill ok"><span class="dot"></span>Xonada</span>';
+      const pill = kitchenStatePill(r.state, isTomorrow);
 
       return '<tr>' +
         '<td class="num">' + esc(r.roomId) + '</td>' +
@@ -2845,7 +3011,7 @@
   });
 
   // ============================================================
-  //  ISHCHILAR (BOT-RUXSAT.md)
+  //  ISHCHILAR
   //
   //  Lavozim ro'yxatdan tanlanadi — erkin matn bo'lsa bir
   //  lavozim turli nomlar bilan yozilib ketardi va tozalash
@@ -2917,6 +3083,9 @@
         '<div class="meta-row"><span>Oylik maosh</span><span>' + fmtMoney(e.salary) + '</span></div>' +
         '<div class="meta-row"><span>Passport</span><span>' + esc(e.passport || '—') + '</span></div>' +
         '<div class="meta-row"><span>Ishga kirgan</span><span>' + hired + '</span></div>' +
+        '<div class="meta-row"><span>Telegram</span><span>' +
+        (e.telegramId ? esc(e.telegramId) : '<span style="color:var(--text-faint);">bog\'lanmagan</span>') +
+        '</span></div>' +
         '</div></div>';
     });
 
@@ -2935,8 +3104,9 @@
   /**
    * Xodim formasi — qo'shish va tahrirlash uchun bir xil.
    *
-   * Lavozim ochiluvchi ro'yxatdan. "Farrosh" tanlansa Telegram
-   * maydoni ko'rinadi — boshqa lavozimlarga u kerak emas.
+   * Telegram ID — farroshlar guruhida "Men olaman" bosilganda topshiriq
+   * shu xodimga yoziladi, hisobotda uning ismi chiqadi (Telegram ismi
+   * emas). Xodim ID'sini tozalik botiga /id yozib biladi. Bo'sh — uzish.
    */
   function openStaffForm(emp){
     const isEdit = Boolean(emp);
@@ -2959,6 +3129,7 @@
       { label: 'Passport', key: 'passport', value: isEdit ? emp.passport : '' },
       { label: "Oylik maosh (so'm)", key: 'salary', value: isEdit ? String(emp.salary || '') : '', placeholder: '3500000' },
       { label: 'Ishga kirgan sana', key: 'hiredAt', type: 'date', value: isEdit ? emp.hiredAt : today },
+      { label: 'Telegram ID (farrosh uchun; botga /id yozib biladi)', key: 'telegramId', value: isEdit ? (emp.telegramId || '') : '', placeholder: '1048572407' },
     ];
 
     openFormModal(
@@ -2973,7 +3144,7 @@
           passport: String(vals.passport || '').trim(),
           photoUrl: String(vals.photoUrl || ''),
           hiredAt: String(vals.hiredAt || today),
-          notes: '',
+          telegramId: String(vals.telegramId || '').trim(),
         };
 
         const salary = parseMoney(vals.salary);
@@ -3072,7 +3243,7 @@
   });
 
   // ============================================================
-  //  TOZALIK (TOZALIK-BOT.md)
+  //  TOZALIK
   //
   //  So'rov farroshlar Telegram GURUHIGA boradi, kim bo'sh bo'lsa
   //  oladi, tozalagach shu yerda tasdiqlanadi.
@@ -3144,7 +3315,7 @@
    * hisoblagichlar 0 ko'rsatardi, jadvallar bo'sh turardi —
    * garchi API 7 ta topshiriq qaytargan bo'lsa ham.
    *
-   * Ikki turdagi ogohlantirish (TOZALIK-TAHLIL.md §1, §2):
+   * Ikki turdagi ogohlantirish:
    *   1. Iflos xona, lekin topshiriq yo'q — xodim yuborishni
    *      unutgan, xona sotilmay turibdi
    *   2. Kechikkan topshiriq — me'yordan uzoq davom etmoqda
@@ -3221,7 +3392,7 @@
       return;
     }
 
-    // Kechikkanlar tepada (TOZALIK-TAHLIL.md §2)
+    // Kechikkanlar tepada
     const lateIds = new Set(((cleanData.alerts || {}).late || []).map(function(l){ return l.id; }));
     const sorted = rows.slice().sort(function(a, b){
       const la = lateIds.has(a.id) ? 0 : 1;
@@ -3356,7 +3527,7 @@
   }
 
   /**
-   * Tayyor sabablar (TOZALIK-BOT.md).
+   * Tayyor sabablar.
    *
    * Eng ko'p uchraydiganlar ro'yxatda. "Boshqa" tanlansa
    * qo'shimcha matn maydoni ochiladi — har safar qo'lda
@@ -3406,7 +3577,7 @@
    */
   function openNewCleaning(preRoomId){
     // Farosh tanlanmaydi — so'rov guruhga boradi
-    // (BOTLAR-REJA.md, 2026-09-17)
+    // (2026-09-17)
     const rooms = roomOptions();
     if(rooms.length === 0){
       openConfirmModal('Xona yo\'q', 'Xonalar ro\'yxati yuklanmadi.', 'Tushunarli', function(){});
@@ -3483,11 +3654,6 @@
     );
   }
 
-  /** Diqqat blokidan: xona allaqachon ma'lum */
-  function quickTask(roomId){
-    openNewCleaning(roomId);
-  }
-
   async function cancelCleaning(taskId){
     try{
       const res = await authFetch(
@@ -3507,7 +3673,7 @@
 
   /**
    * Diqqat blokidagi "Topshiriq yuborish" — xona allaqachon
-   * ma'lum, faqat sabab so'raladi (TOZALIK-TAHLIL.md §1).
+   * ma'lum, faqat sabab so'raladi.
    */
   function quickTask(roomId){
     openFormModal(
@@ -3662,14 +3828,14 @@
   });
 
   const newCleanBtn = document.getElementById('newCleanBtn');
-  if(newCleanBtn) newCleanBtn.addEventListener('click', openNewCleaning);
+  if(newCleanBtn) newCleanBtn.addEventListener('click', function(){ openNewCleaning(); });
 
   document.querySelectorAll('.nav-item[data-target="cleaning"]').forEach(function(btn){
     btn.addEventListener('click', loadCleaning);
   });
 
   // ============================================================
-  //  MOLIYA — haqiqiy ma'lumot (SAVOLLAR.md S14)
+  //  MOLIYA — haqiqiy ma'lumot
   //
   //  Ikki manbadan yig'iladi:
   //    /api/admin/report   — daromad, maosh, foyda
@@ -3818,7 +3984,7 @@
   /**
    * Xarajatlar taqsimoti — eski ko'rinishdagi kpi-row ro'yxati.
    *
-   * OTA komissiyasi avtomatik hisoblanadi (SAVOLLAR.md S14).
+   * OTA komissiyasi avtomatik hisoblanadi.
    */
   function renderExpenseBreakdown(m, summary){
     const box = document.getElementById('finExpenses');
@@ -4695,6 +4861,542 @@
   // qilmagan odam darhol 401 va "Sessiya tugadi" xabarini ko'rardi,
   // kirgan foydalanuvchida esa hammasi ikki marta yuklanardi.
 
+  // ============================================================
+  //  BIZNES SOZLAMALARI — GET/PUT /api/admin/business-settings
+  //
+  //  Ro'yxat backenddagi BUSINESS_FIELDS bilan bir xil (routes/admin.ts),
+  //  chegaralar ham o'sha. Faqat o'zgargan maydonlar yuboriladi.
+  // ============================================================
+
+  const SETTINGS_SPEC = [
+    { title: 'Bron va bekor qilish', items: [
+      { key: 'freeCancelHours', label: 'Bepul bekor qilish muddati', unit: 'soat', min: 0, max: 720, int: true,
+        hint: "Kirishga shuncha soat qolguncha bekor qilish bepul. Jarima 0 bo'lsa ta'sir qilmaydi." },
+      { key: 'cancelFeeNights', label: 'Kech bekor qilish jarimasi', unit: 'kecha', min: 0, max: 30, step: 0.5,
+        hint: "Muddatdan keyin bekor qilinsa necha kecha narxi olinadi. 0 — jarima yo'q. Beds24 (OTA) bronlariga qo'llanmaydi." },
+      { key: 'websiteUnpaidCancelHours', label: "To'lanmagan sayt bronini bekor qilish", unit: 'soat', min: 0, max: 720, int: true,
+        hint: "0 — o'chiq: sayt mehmoni to'lovni kelganda qiladi. Yoqilsa, qabulxona shu muddatda tasdiqlamagan sayt broni avtomatik bekor bo'ladi (mehmonga xabar bormaydi)." },
+    ]},
+    { title: 'Moliya', items: [
+      { key: 'otaCommissionPercent', label: 'OTA komissiyasi', unit: '%', min: 0, max: 100, step: 0.1,
+        hint: "Qabulxonada qo'lda kiritilgan Booking.com, Airbnb va boshqa OTA bronlari uchun xarajatga avtomatik yoziladi." },
+    ]},
+    { title: 'Tozalash', items: [
+      { key: 'cleaningAuto', label: "Chiqishda tozalash topshirig'i", bool: true,
+        hint: "Mehmon chiqqanda (yoki chiqish soati o'tganda) farroshlar guruhiga topshiriq avtomatik ketadi." },
+      { key: 'checkoutHour', label: 'Chiqish soati', unit: 'soat', min: 0, max: 23, int: true,
+        hint: "Toshkent vaqti. Shu soatdan keyin chiqish kuni kelgan xonalarga tozalash xabari ketadi." },
+      { key: 'cleaningRemindMinutes', label: 'Eslatma', unit: 'daqiqa', min: 5, max: 1440, int: true,
+        hint: "Topshiriqni hech kim olmasa, shuncha daqiqadan keyin eslatma ketadi." },
+      { key: 'cleaningTargetMinutes', label: "Tozalash me'yori", unit: 'daqiqa', min: 5, max: 480, int: true,
+        hint: "Hisobotda shundan uzoq davom etgan tozalash \"kechikdi\" deb sanaladi." },
+    ]},
+    { title: 'Audit jurnali', items: [
+      { key: 'auditRetentionDays', label: 'Saqlash muddati', unit: 'kun', min: 30, max: 3650, int: true,
+        hint: "Bundan eski yozuvlar haftada bir o'chiriladi. Bron va to'lovlarning o'zi o'chirilmaydi." },
+    ]},
+  ];
+
+  let settingsData = null;
+
+  function settingsItems(){
+    return SETTINGS_SPEC.reduce(function(all, g){ return all.concat(g.items); }, []);
+  }
+
+  async function loadSettings(){
+    const chip = document.getElementById('setChip');
+    if(chip) chip.innerHTML = '<span class="dot"></span> Yuklanmoqda...';
+    try{
+      const res = await authFetch(getBackendBase() + '/api/admin/business-settings');
+      if(res.status === 403){ if(chip) chip.innerHTML = '<span class="dot"></span> Huquq yetarli emas'; return; }
+      if(!res.ok) throw new Error('status ' + res.status);
+      settingsData = await res.json();
+      renderSettings();
+      if(chip) chip.innerHTML = '<span class="dot"></span> Joriy qiymatlar';
+    }catch(e){
+      if(chip) chip.innerHTML = '<span class="dot"></span> Yuklab bo\'lmadi';
+    }
+  }
+
+  function renderSettings(){
+    const box = document.getElementById('setGroups');
+    if(!box || !settingsData) return;
+    const cur = settingsData.current || {};
+    const def = settingsData.defaults || {};
+
+    box.innerHTML = SETTINGS_SPEC.map(function(g){
+      return '<div class="card set-group"><h3>' + esc(g.title) + '</h3>' + g.items.map(function(it){
+        const v = cur[it.key];
+        const d = def[it.key];
+        const input = it.bool
+          ? '<input type="checkbox" id="set_' + it.key + '"' + (v ? ' checked' : '') + '>'
+          : '<input type="number" id="set_' + it.key + '" value="' + esc(v) + '" min="' + it.min + '" max="' + it.max +
+            '" step="' + (it.step || 1) + '"><span>' + esc(it.unit) + '</span>';
+        const defText = it.bool ? (d ? 'yoqilgan' : "o'chiq") : (d + ' ' + it.unit);
+        return '<div class="set-row" data-set-row="' + it.key + '">' +
+          '<div class="set-text"><div class="set-label">' + esc(it.label) + '</div>' +
+          '<div class="set-hint">' + esc(it.hint) + ' Standart: ' + esc(defText) + '.</div></div>' +
+          '<div class="set-input">' + input + '</div></div>';
+      }).join('') + '</div>';
+    }).join('');
+
+    const msg = document.getElementById('setMsg');
+    if(msg) msg.textContent = '';
+  }
+
+  function settingsValue(it){
+    const el = document.getElementById('set_' + it.key);
+    if(!el) return undefined;
+    return it.bool ? el.checked : Number(String(el.value).replace(',', '.'));
+  }
+
+  // O'zgargan qator belgilanadi — saqlashdan oldin nima o'zgarishi ko'rinsin
+  function markSettingChanged(e){
+    const row = e.target.closest && e.target.closest('[data-set-row]');
+    if(!row || !settingsData) return;
+    const it = settingsItems().find(function(x){ return x.key === row.dataset.setRow; });
+    if(it) row.classList.toggle('changed', settingsValue(it) !== settingsData.current[it.key]);
+  }
+  document.addEventListener('input', markSettingChanged);
+  document.addEventListener('change', markSettingChanged);
+
+  async function saveSettings(){
+    if(!settingsData) return;
+    const msg = document.getElementById('setMsg');
+    const body = {};
+    for(const it of settingsItems()){
+      const v = settingsValue(it);
+      if(v === undefined || v === settingsData.current[it.key]) continue;
+      if(!it.bool && (!Number.isFinite(v) || v < it.min || v > it.max || (it.int && !Number.isInteger(v)))){
+        if(msg) msg.textContent = '"' + it.label + '": ' + it.min + '–' + it.max + ' oralig\'ida' + (it.int ? ' butun son' : '') + ' bo\'lishi kerak';
+        return;
+      }
+      body[it.key] = v;
+    }
+    if(Object.keys(body).length === 0){ if(msg) msg.textContent = "O'zgarish yo'q"; return; }
+
+    const btn = document.getElementById('setSave');
+    if(btn) btn.classList.add('busy');
+    try{
+      const res = await authFetch(getBackendBase() + '/api/admin/business-settings', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(function(){ return {}; });
+      if(!res.ok){ if(msg) msg.textContent = data.error || 'Saqlanmadi'; return; }
+      settingsData.current = data.current || settingsData.current;
+      renderSettings();
+      const m = document.getElementById('setMsg');
+      if(m) m.textContent = 'Saqlandi: ' + Object.keys(data.changed || {}).length + " ta o'zgarish (audit jurnalida ko'rinadi).";
+    }catch(e){
+      if(msg && e.message !== 'unauthorized') msg.textContent = "Serverga ulanib bo'lmadi";
+    }finally{
+      if(btn) btn.classList.remove('busy');
+    }
+  }
+
+  (function(){
+    const save = document.getElementById('setSave');
+    const reset = document.getElementById('setReset');
+    if(save) save.addEventListener('click', saveSettings);
+    if(reset) reset.addEventListener('click', renderSettings);
+    document.querySelectorAll('.nav-item[data-target="settings"]').forEach(function(btn){
+      btn.addEventListener('click', loadSettings);
+    });
+  })();
+
+  // ============================================================
+  //  AUDIT JURNALI — GET /api/admin/audit-log
+  //
+  //  Amallar services/auditLog.ts AUDIT_ACTIONS ro'yxatidan.
+  //  "Ko'proq yuklash" — oxirgi yozuv vaqtidan eskilari (`before`).
+  // ============================================================
+
+  const AUDIT_LABEL = {
+    'payment.received': "To'lov qabul qilindi",
+    'payment.refunded': 'Pul qaytarildi',
+    'payment.reversed': "To'lov bekor qilindi",
+    'charge.added': "Xizmat qo'shildi",
+    'reservation.cancelled': 'Bron bekor qilindi',
+    'reservation.no_show': 'Kelmadi',
+    'reservation.room_changed': 'Xona almashtirildi',
+    'reservation.dates_changed': "Sana o'zgardi",
+    'reservation.sync_retry': "Bron Beds24'ga qayta yuborildi",
+    'reservation.channel_refresh': "Bron Beds24'dan yangilandi",
+    'rate.changed': "Narx o'zgardi",
+    'meal_price.changed': "Nonushta narxi o'zgardi",
+    'settings.changed': "Sozlama o'zgardi",
+    'room.blocked': 'Xona yopildi',
+    'room.unblocked': 'Xona ochildi',
+    'room.status_changed': "Xona holati o'zgardi",
+    'floor.blocked': 'Qavat yopildi',
+    'floor.unblocked': 'Qavat ochildi',
+    'expense.created': "Xarajat qo'shildi",
+    'expense.deleted': "Xarajat o'chirildi",
+    'user.created': "Foydalanuvchi qo'shildi",
+    'user.role_changed': "Rol o'zgardi",
+    'user.password_changed': "Parol o'zgardi",
+    'user.login': 'Tizimga kirdi',
+    'bot.access_granted': 'Botga ruxsat berildi',
+    'bot.access_changed': "Bot ruxsati o'zgardi",
+    'bot.access_revoked': 'Bot ruxsati olindi',
+    'channel.connected': 'Beds24 ulandi',
+    'channel.disconnected': 'Beds24 uzildi',
+    'channel.maintenance': "Beds24: qo'lda amal",
+    'mapping.created': "Beds24: xona bog'landi",
+    'mapping.updated': "Beds24: bog'lash o'zgardi",
+    'mapping.deleted': "Beds24: bog'lash o'chirildi",
+    'webhook.reprocessed': 'Beds24 webhook qayta ishlandi',
+    'fx.changed': "Dollar kursi o'zgardi",
+  };
+
+  const AUDIT_ENTITY = {
+    Reservation: 'Bron', Room: 'Xona', Floor: 'Qavat', User: 'Foydalanuvchi',
+    BusinessSettings: 'Sozlamalar', Expense: 'Xarajat', BotAccess: 'Bot ruxsati',
+    RoomType: 'Tarif', RatePlan: 'Narx', ChannelMapping: 'Beds24',
+  };
+
+  const AUDIT_KEY = {
+    amount: 'Summa', method: 'Usul', currency: 'Valyuta', roomId: 'Xona', checkIn: 'Kirish',
+    checkOut: 'Chiqish', from: 'Dan', to: 'Gacha', reason: 'Sabab', status: 'Holat', role: 'Rol',
+    label: 'Nom', rooms: 'Xonalar', price: 'Narx', mealPrice: 'Nonushta', paymentId: "To'lov",
+  };
+  SETTINGS_SPEC.forEach(function(g){ g.items.forEach(function(it){ AUDIT_KEY[it.key] = it.label; }); });
+
+  const AUDIT_PAGE = 50;
+  let auditRows = [];
+
+  /** Toshkent vaqti: "28.09.2026 14:32" */
+  function hotelDateTime(iso){
+    const t = new Date(new Date(iso).getTime() + 5 * 3600000);
+    const p = function(n){ return String(n).padStart(2, '0'); };
+    return p(t.getUTCDate()) + '.' + p(t.getUTCMonth() + 1) + '.' + t.getUTCFullYear() + ' ' + p(t.getUTCHours()) + ':' + p(t.getUTCMinutes());
+  }
+
+  function auditValue(v){
+    if(v === null || v === undefined || v === '') return '—';
+    if(typeof v === 'boolean') return v ? 'ha' : "yo'q";
+    if(typeof v === 'object') return JSON.stringify(v).slice(0, 80);
+    return String(v).slice(0, 80);
+  }
+
+  // Oldin -> keyin: har kalit bir qator (ko'pi bilan 8)
+  function auditDetail(before, after){
+    const b = before && typeof before === 'object' ? before : {};
+    const a = after && typeof after === 'object' ? after : {};
+    const keys = Array.from(new Set(Object.keys(b).concat(Object.keys(a)))).slice(0, 8);
+    return keys.map(function(k){
+      const name = '<b>' + esc(AUDIT_KEY[k] || k) + ':</b> ';
+      if(k in b && k in a) return name + esc(auditValue(b[k])) + ' → ' + esc(auditValue(a[k]));
+      return name + esc(auditValue(k in a ? a[k] : b[k]));
+    }).join('<br>');
+  }
+
+  function auditEntity(r){
+    if(!r.entityType) return '—';
+    const id = r.entityId || '';
+    // Xona va qavat ID'si o'qiladigan ("101", "F2"), qolgani cuid — oxiri
+    const shortId = /^[A-Z]?\d+$/.test(id) ? id : (id ? '…' + id.slice(-6) : '');
+    return esc((AUDIT_ENTITY[r.entityType] || r.entityType) + (shortId ? ' ' + shortId : ''));
+  }
+
+  function renderAudit(){
+    const t = document.getElementById('auditTable');
+    if(!t) return;
+    const head = '<thead><tr><th>Vaqt</th><th>Kim</th><th>Amal</th><th>Obyekt</th><th>Tafsilot</th><th>IP</th></tr></thead>';
+    if(auditRows.length === 0){
+      t.innerHTML = head + '<tbody><tr><td colspan="6" style="color:var(--text-faint);">Yozuv yo\'q</td></tr></tbody>';
+      return;
+    }
+    t.innerHTML = head + '<tbody>' + auditRows.map(function(r){
+      const who = r.user
+        ? esc(r.user.fullName) + '<div style="font-size:11px;color:var(--text-faint);">' + esc(ROLE_LABEL[r.user.role] || r.user.role) + '</div>'
+        : '<span style="color:var(--text-faint);">tizim</span>';
+      return '<tr>' +
+        '<td class="num" style="white-space:nowrap;">' + hotelDateTime(r.createdAt) + '</td>' +
+        '<td>' + who + '</td>' +
+        '<td>' + esc(AUDIT_LABEL[r.action] || r.action) + '</td>' +
+        '<td style="white-space:nowrap;">' + auditEntity(r) + '</td>' +
+        '<td><div class="audit-detail">' + auditDetail(r.before, r.after) + '</div></td>' +
+        '<td class="num" style="font-size:11.5px;color:var(--text-faint);">' + esc(r.ipAddress || '') + '</td>' +
+        '</tr>';
+    }).join('') + '</tbody>';
+  }
+
+  async function loadAudit(more){
+    const chip = document.getElementById('auditChip');
+    const moreBtn = document.getElementById('auditMore');
+    const action = (document.getElementById('auditAction') || {}).value || '';
+    if(!more){ auditRows = []; if(chip) chip.innerHTML = '<span class="dot"></span> Yuklanmoqda...'; }
+
+    const params = new URLSearchParams({ limit: String(AUDIT_PAGE) });
+    if(action) params.set('action', action);
+    if(more && auditRows.length) params.set('before', auditRows[auditRows.length - 1].createdAt);
+
+    try{
+      const res = await authFetch(getBackendBase() + '/api/admin/audit-log?' + params.toString());
+      if(res.status === 403){ if(chip) chip.innerHTML = '<span class="dot"></span> Huquq yetarli emas'; return; }
+      if(!res.ok) throw new Error('status ' + res.status);
+      const rows = await res.json();
+      auditRows = auditRows.concat(rows);
+      renderAudit();
+      if(chip) chip.innerHTML = '<span class="dot"></span> ' + auditRows.length + ' ta yozuv';
+      if(moreBtn) moreBtn.style.display = rows.length === AUDIT_PAGE ? '' : 'none';
+    }catch(e){
+      if(chip) chip.innerHTML = '<span class="dot"></span> Yuklab bo\'lmadi';
+    }
+  }
+
+  (function(){
+    const sel = document.getElementById('auditAction');
+    if(sel){
+      sel.innerHTML = '<option value="">Barcha amallar</option>' + Object.keys(AUDIT_LABEL).map(function(k){
+        return '<option value="' + esc(k) + '">' + esc(AUDIT_LABEL[k]) + '</option>';
+      }).join('');
+      sel.addEventListener('change', function(){ loadAudit(false); });
+    }
+    const refresh = document.getElementById('auditRefresh');
+    if(refresh) refresh.addEventListener('click', function(){ loadAudit(false); });
+    const more = document.getElementById('auditMore');
+    if(more) more.addEventListener('click', function(){ loadAudit(true); });
+    document.querySelectorAll('.nav-item[data-target="audit"]').forEach(function(btn){
+      btn.addEventListener('click', function(){ loadAudit(false); });
+    });
+  })();
+
+  // ============================================================
+  //  TIZIM HOLATI — /health va GET /api/admin/queues
+  // ============================================================
+
+  const QUEUE_LABEL = {
+    'pms-maintenance': "Davriy vazifalar (to'lov, tozalash, xona holati, kurs, oshxona)",
+    'beds24-webhook': "Beds24'dan kelgan xabarlar (webhook)",
+    'beds24-reservation-sync': "Bronlarni Beds24'ga yuborish",
+    'beds24-availability-sync': "Yopiq kunlarni Beds24'ga yuborish",
+    'beds24-rate-sync': "Narxlarni Beds24'ga yuborish",
+    'beds24-retry': 'Beds24: yiqilgan vazifalar (qayta urinish)',
+  };
+
+  function sysCard(label, value, ok, note){
+    return '<div class="card stat-card"><div class="stat-label">' + esc(label) + '</div>' +
+      '<div class="stat-value" style="font-size:22px;color:' + (ok ? 'var(--turquoise)' : 'var(--terracotta)') + ';">' + esc(value) + '</div>' +
+      '<div class="stat-note">' + esc(note || '') + '</div></div>';
+  }
+
+  async function loadSystemStatus(){
+    const cards = document.getElementById('sysCards');
+    const table = document.getElementById('sysQueues');
+    try{
+      const results = await Promise.all([
+        fetch(getBackendBase() + '/health'),
+        authFetch(getBackendBase() + '/api/admin/queues'),
+      ]);
+      const hRes = results[0], qRes = results[1];
+      const h = await hRes.json().catch(function(){ return {}; });
+      const q = await qRes.json().catch(function(){ return {}; });
+
+      if(cards){
+        const rt = h.realtime || {};
+        cards.innerHTML =
+          sysCard('Umumiy holat', h.status === 'ok' ? 'Ishlayapti' : h.status === 'degraded' ? 'Qisman' : 'Muammo bor',
+            h.status === 'ok', h.timestamp ? 'Tekshirildi: ' + hotelDateTime(h.timestamp) : '') +
+          sysCard('Baza (PostgreSQL)', h.database === 'connected' ? 'Ulangan' : 'Uzilgan', h.database === 'connected',
+            "Bron, to'lov va boshqa ma'lumotlar") +
+          sysCard('Redis', h.redis === 'connected' ? 'Ulangan' : 'Uzilgan', h.redis === 'connected',
+            'Fon vazifalari va jonli yangilanish') +
+          sysCard('Jonli ulanishlar', String(rt.clients != null ? rt.clients : '—'), true,
+            'Ochiq Shaxmatka va panel oynalari');
+      }
+
+      if(table){
+        const head = '<thead><tr><th>Navbat</th><th>Kutmoqda</th><th>Ishlanmoqda</th><th>Kechiktirilgan</th><th>Bajarilgan</th><th>Xato</th></tr></thead>';
+        if(!qRes.ok || !q.queues){
+          table.innerHTML = head + '<tbody><tr><td colspan="6" style="color:var(--text-faint);">' +
+            (q.redis === false ? "Redis ishlamayapti — navbatlarni o'qib bo'lmadi" : "Navbat holatini o'qib bo'lmadi") + '</td></tr></tbody>';
+        } else {
+          const n = function(v){ return v ? String(v) : '—'; };
+          table.innerHTML = head + '<tbody>' + Object.keys(q.queues).map(function(name){
+            const c = q.queues[name] || {};
+            return '<tr><td>' + esc(QUEUE_LABEL[name] || name) +
+              '<div style="font-size:11px;color:var(--text-faint);font-family:var(--mono);">' + esc(name) + '</div></td>' +
+              '<td class="num">' + n(c.waiting) + '</td><td class="num">' + n(c.active) + '</td>' +
+              '<td class="num">' + n(c.delayed) + '</td><td class="num">' + n(c.completed) + '</td>' +
+              '<td class="num"' + (c.failed ? ' style="color:var(--terracotta);font-weight:600;"' : '') + '>' + n(c.failed) + '</td></tr>';
+          }).join('') + '</tbody>';
+        }
+      }
+    }catch(e){
+      if(cards && e.message !== 'unauthorized') cards.innerHTML = sysCard('Umumiy holat', "Javob yo'q", false, "Server bilan aloqa yo'q");
+    }
+  }
+
+  (function(){
+    const refresh = document.getElementById('sysRefresh');
+    if(refresh) refresh.addEventListener('click', loadSystemStatus);
+    const clean = document.getElementById('sysClean');
+    if(clean) clean.addEventListener('click', function(){
+      openConfirmModal(
+        'Navbat tarixini tozalash',
+        "Bajarilgan va xato bo'lgan vazifalar yozuvlari o'chiriladi. Kutayotgan vazifalarga tegilmaydi. Beds24 sinxron jurnali (Channel manager) saqlanib qoladi.",
+        'Tozalash',
+        async function(){
+          try{
+            const res = await authFetch(getBackendBase() + '/api/admin/queues/clean', { method: 'DELETE' });
+            const data = await res.json().catch(function(){ return {}; });
+            if(!res.ok){ openConfirmModal('Bajarilmadi', data.error || 'Xatolik', 'Tushunarli', function(){}); return; }
+            await loadSystemStatus();
+          }catch(e){ /* 401 — authFetch login ekraniga qaytaradi */ }
+        }
+      );
+    });
+    document.querySelectorAll('.nav-item[data-target="system-status"]').forEach(function(btn){
+      btn.addEventListener('click', loadSystemStatus);
+    });
+  })();
+
+  // ============================================================
+  //  QAVATNI YOPISH — POST/DELETE /api/rooms/blocks/floor
+  //
+  //  Sana oralig'i ikkala uchi bilan (services/roomBlocking.ts).
+  //  Bron bor xona bo'lsa backend rad etadi — sababi xabarda.
+  // ============================================================
+
+  function addDaysKey(key, n){
+    const d = new Date(key + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function dotDate(key){ return key.split('-').reverse().join('.'); }
+
+  async function loadFloorBlocks(){
+    const sel = document.getElementById('floorBlockFloor');
+    const list = document.getElementById('floorBlockList');
+    const today = hotelTodayKey();
+    const from = document.getElementById('floorBlockFrom');
+    const to = document.getElementById('floorBlockTo');
+    if(from && !from.value) from.value = today;
+    if(to && !to.value) to.value = today;
+
+    try{
+      if(sel && sel.options.length === 0){
+        const fr = await authFetch(getBackendBase() + '/api/rooms/floors');
+        if(fr.ok){
+          const floors = await fr.json();
+          sel.innerHTML = floors.filter(function(f){ return f.isActive; }).map(function(f){
+            return '<option value="' + esc(f.id) + '">' + esc(f.label) + '</option>';
+          }).join('');
+        }
+      }
+
+      if(!list) return;
+      const res = await authFetch(getBackendBase() + '/api/rooms/blocks?from=' + today + '&to=' + addDaysKey(today, 90));
+      if(!res.ok) throw new Error('status ' + res.status);
+      const days = await res.json();
+
+      // Xona bo'yicha ketma-ket kunlar bitta qator: "101: 01.10–05.10"
+      const ranges = [];
+      days.forEach(function(d){
+        const last = ranges[ranges.length - 1];
+        if(last && last.roomId === d.roomId && addDaysKey(last.to, 1) === d.date && last.reason === d.reason){
+          last.to = d.date;
+        } else {
+          ranges.push({ roomId: d.roomId, from: d.date, to: d.date, reason: d.reason });
+        }
+      });
+
+      const head = '<thead><tr><th>Xona</th><th>Dan</th><th>Gacha</th><th>Sabab</th></tr></thead>';
+      list.innerHTML = head + '<tbody>' + (ranges.length
+        ? ranges.map(function(r){
+            return '<tr><td class="num">' + esc(r.roomId) + '</td><td class="num">' + dotDate(r.from) + '</td>' +
+              '<td class="num">' + dotDate(r.to) + '</td><td>' + esc(r.reason || '—') + '</td></tr>';
+          }).join('')
+        : '<tr><td colspan="4" style="color:var(--text-faint);">Yopiq kun yo\'q</td></tr>') + '</tbody>';
+    }catch(e){
+      if(list && e.message !== 'unauthorized') list.innerHTML = '<tbody><tr><td style="color:var(--text-faint);">Yuklab bo\'lmadi</td></tr></tbody>';
+    }
+  }
+
+  function floorBlockAction(block){
+    const msg = document.getElementById('floorBlockMsg');
+    const sel = document.getElementById('floorBlockFloor');
+    const floorId = sel ? sel.value : '';
+    const from = (document.getElementById('floorBlockFrom') || {}).value;
+    const to = (document.getElementById('floorBlockTo') || {}).value;
+    const reason = ((document.getElementById('floorBlockReason') || {}).value || '').trim();
+
+    if(!floorId || !from || !to){ if(msg) msg.textContent = 'Qavat va sanalarni tanlang'; return; }
+    if(to < from){ if(msg) msg.textContent = '"gacha" sanasi "dan" dan oldin bo\'lmasin'; return; }
+
+    const label = (sel.selectedOptions[0] || {}).textContent || floorId;
+
+    openConfirmModal(
+      block ? 'Qavatni yopish' : 'Qavatni ochish',
+      label + ': ' + dotDate(from) + ' — ' + dotDate(to) + (block
+        ? '. Qavatdagi barcha xonalar shu kunlarda sotilmaydi (sayt, qabulxona, Beds24).'
+        : ". Shu kunlardagi yopish bekor qilinadi. Beds24 panelida yopilgan kunlar ochilmaydi."),
+      block ? 'Yopish' : 'Ochish',
+      async function(){
+        if(msg) msg.textContent = 'Bajarilmoqda...';
+        try{
+          const body = { floorId: floorId, from: from, to: to };
+          if(block && reason) body.reason = reason;
+          const res = await authFetch(getBackendBase() + '/api/rooms/blocks/floor', {
+            method: block ? 'POST' : 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          const data = await res.json().catch(function(){ return {}; });
+          if(!res.ok){ if(msg) msg.textContent = data.error || 'Bajarilmadi'; return; }
+          if(msg) msg.textContent = (block ? 'Yopildi: ' : 'Ochildi: ') + (data.roomIds || []).length + ' xona.';
+          await loadFloorBlocks();
+          if(typeof syncWithBackend === 'function') syncWithBackend();
+        }catch(e){
+          if(msg && e.message !== 'unauthorized') msg.textContent = "Serverga ulanib bo'lmadi";
+        }
+      },
+      block
+    );
+  }
+
+  (function(){
+    const b = document.getElementById('floorBlockBtn');
+    const u = document.getElementById('floorUnblockBtn');
+    if(b) b.addEventListener('click', function(){ floorBlockAction(true); });
+    if(u) u.addEventListener('click', function(){ floorBlockAction(false); });
+    document.querySelectorAll('.nav-item[data-target="rooms"]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        if(ROOM_BLOCK_ROLES.includes(APP_USER && APP_USER.role)) loadFloorBlocks();
+      });
+    });
+  })();
+
+  // ============================================================
+  //  OSHXONA HISOBOTINI TELEGRAMGA YUBORISH
+  //  POST /api/admin/kitchen/send-telegram { offset: 0 | 1 }
+  // ============================================================
+
+  document.addEventListener('click', async function(e){
+    const btn = e.target.closest && e.target.closest('[data-kitchen-send]');
+    if(!btn) return;
+    const offset = btn.dataset.kitchenSend === '1' ? 1 : 0;
+    const msg = document.getElementById('kitSendMsg');
+    btn.classList.add('busy');
+    try{
+      const res = await authFetch(getBackendBase() + '/api/admin/kitchen/send-telegram', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ offset: offset }),
+      });
+      const data = await res.json().catch(function(){ return {}; });
+      if(!res.ok){ if(msg) msg.textContent = data.error || 'Yuborilmadi'; return; }
+      if(msg) msg.textContent = data.sent > 0
+        ? (offset ? 'Ertangi' : 'Bugungi') + ' hisobot ' + data.sent + ' ta chatga yuborildi.'
+        : "Yuborilmadi: oshxona boti ishlamayapti yoki qabul qiluvchi yo'q (Bot boshqaruvi → Oshxona boti).";
+    }catch(err){
+      if(msg && err.message !== 'unauthorized') msg.textContent = "Serverga ulanib bo'lmadi";
+    }finally{
+      btn.classList.remove('busy');
+    }
+  });
+
   // ================= MOBIL MENYU (hamburger) =================
   const hamburgerBtn = document.getElementById('hamburgerBtn');
   const sidebarBackdrop = document.getElementById('sidebarBackdrop');
@@ -4935,7 +5637,7 @@
 
   // ================= BRON: Qabul qilish / Rad etish =================
   // ============================================================
-  //  BRON QABUL QILISH (PANEL-TAHLIL.md §1)
+  //  BRON QABUL QILISH
   //
   //  Saytdan kelgan bron `PENDING_PAYMENT` holatida keladi va
   //  tasdiqlashni kutadi. Ilgari bu bo'lim faqat jadval qatorini
@@ -5240,7 +5942,8 @@
     btn.addEventListener('click', function(){
       if(typeof loadRoomsFromBackend === 'function') loadRoomsFromBackend();
       if(typeof loadReservationsFromBackend === 'function') loadReservationsFromBackend();
-      if(typeof loadStaff === 'function') loadStaff();
+      // Xodimlar — faqat employee.read huquqi borlarga (aks holda 403)
+      if(typeof loadStaff === 'function' && EMPLOYEE_ROLES.includes(APP_USER && APP_USER.role)) loadStaff();
       if(typeof loadKitchen === 'function') loadKitchen();
     });
   });

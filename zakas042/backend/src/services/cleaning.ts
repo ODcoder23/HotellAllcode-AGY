@@ -1,7 +1,7 @@
 /**
- * Tozalash topshiriqlari — TOZALIK-BOT.md
+ * Tozalash topshiriqlari
  *
- * MANTIQ (2026-09-17 kechqurun, BOTLAR-REJA.md):
+ * MANTIQ (2026-09-17 kechqurun):
  *   Topshiriq FARROSHLAR GURUHIGA yuboriladi. Kim bo'sh bo'lsa
  *   "Men olaman" bosadi — birinchi bosgan oladi.
  *
@@ -141,7 +141,7 @@ export async function createTask(input: CreateTaskInput) {
   }
 
   /**
-   * GURUH MANTIG'I (2026-09-17, BOTLAR-REJA.md).
+   * GURUH MANTIG'I (2026-09-17).
    *
    * Topshiriq oldindan hech kimga biriktirilmaydi — guruhga
    * yuboriladi va kim bo'sh bo'lsa "Men olaman" bosadi.
@@ -197,7 +197,7 @@ export async function createTask(input: CreateTaskInput) {
 }
 
 /**
- * Mehmon chiqqanda avtomatik topshiriq (TOZALIK-BOT.md §2A).
+ * Mehmon chiqqanda avtomatik topshiriq.
  *
  * `checkOut()` dan chaqiriladi. Sozlama o'chirilgan bo'lsa
  * hech narsa qilmaydi.
@@ -304,6 +304,13 @@ export async function acceptTask(
    * ikkalasiga ham ruxsat berilardi — ikkinchisi birinchisining
    * ismini almashtirib qo'yardi.
    */
+  // Admin panelda xodimga bog'langan Telegram ID bo'lsa — topshiriq
+  // xodim yozuviga yoziladi: hisobotda xodimning ismi (Telegram ismi emas)
+  const employee = await prisma.employee.findFirst({
+    where: { telegramId, isActive: true },
+    select: { id: true },
+  });
+
   const claimed = await prisma.cleaningTask.updateMany({
     where: { id: taskId, status: "NEW" },
     data: {
@@ -311,6 +318,7 @@ export async function acceptTask(
       acceptedAt: new Date(),
       claimedByTelegramId: telegramId,
       claimedByName: claimedByName?.slice(0, 100) ?? null,
+      ...(employee ? { employeeId: employee.id } : {}),
     },
   });
 
@@ -407,7 +415,7 @@ export async function assertCanComplete(taskId: string, telegramId: string): Pro
 /**
  * Admin tozalashni tasdiqladi (2026-09-17).
  *
- * FAQAT SHU YERDA xona sotishga ochiladi (SAVOLLAR.md S12).
+ * FAQAT SHU YERDA xona sotishga ochiladi.
  * Farosh "tozaladim" degani yetarli emas — tekshiruv bor.
  *
  * Ta'mirdagi xona (`OUT_OF_ORDER`, `OUT_OF_SERVICE`) ochilmaydi:
@@ -562,7 +570,7 @@ export async function listCleaners() {
  * Ish vaqti boshlanganda to'plangan topshiriqlarni yuboradi.
  *
  * Tunda mehmon chiqsa topshiriq yaratiladi, lekin xabar
- * yuborilmaydi (TOZALIK-BOT.md §7). Ertalab shu funksiya
+ * yuborilmaydi. Ertalab shu funksiya
  * ularni jo'natadi.
  */
 export async function sendPendingTasks(): Promise<{ sent: number }> {
@@ -596,7 +604,7 @@ export async function sendPendingTasks(): Promise<{ sent: number }> {
 }
 
 /**
- * Javob bermagan topshiriqlarni topadi (TOZALIK-BOT.md §4).
+ * Javob bermagan topshiriqlarni topadi.
  *
  * Avtomatik qayta biriktirilmaydi — kim band ekanini egasi
  * biladi. Faqat eslatma yuboriladi.
@@ -620,11 +628,11 @@ export async function findStaleTasks() {
 }
 
 // ============================================================
-//  Nazorat — TOZALIK-TAHLIL.md
+//  Nazorat
 // ============================================================
 
 /**
- * Topshiriqsiz iflos xonalar (TOZALIK-TAHLIL.md §1).
+ * Topshiriqsiz iflos xonalar.
  *
  * MUAMMO: xona `DIRTY`, lekin tozalash topshirig'i yo'q —
  * hech kim bilmaydi va xona sotilmay turaveradi.
@@ -671,7 +679,7 @@ export async function dirtyWithoutTask(): Promise<
 }
 
 /**
- * Bugungi ish rejasi (TOZALIK-TAHLIL.md §4).
+ * Bugungi ish rejasi.
  *
  * Qabulxona ertalab bilishi kerak: nechta xona chiqadi
  * (tozalash kerak bo'ladi) va nechta mehmon keladi (xona
@@ -720,7 +728,6 @@ export async function todayPlan(): Promise<{
 
 /**
  * Bugun keladigan mehmonlar va xona tayyorligi
- * (TOZALIK-TAHLIL.md §5).
  *
  * Eng muhim savol qabulxona uchun: "103-xona bugun mehmonga
  * tayyormi?" Ilgari javob berish uchun uch joyga qarash kerak
@@ -777,7 +784,7 @@ export async function arrivalsReadiness(): Promise<
 }
 
 /**
- * Kechikkan topshiriqlar (TOZALIK-TAHLIL.md §2).
+ * Kechikkan topshiriqlar.
  *
  * Jadval hammasini bir xil ko'rsatardi: 5 daqiqa oldin
  * yuborilgan ham, 2 soat oldin yuborilgan ham. Endi me'yordan
@@ -830,7 +837,7 @@ export type CleanerStat = {
 };
 
 /**
- * Farroshlar samaradorligi (TOZALIK-BOT.md §9).
+ * Farroshlar samaradorligi.
  *
  * `late` — me'yordan uzoq davom etganlar. Bu bandlikka ta'sir
  * qiladi: xona tez tozalansa, tezroq sotiladi.
