@@ -2,7 +2,8 @@
  * Admin endpoint'lari — /api/admin/*
  *
  * Hisobot, audit, xarajat, biznes sozlamalari, tozalash, bot
- * ruxsatlari, xodimlar, sayt, oshxona, nonushta narxi, STOP.
+ * ruxsatlari, xodimlar, sayt, oshxona, nonushta narxi. Channel
+ * manager (Beds24) — routes/channel.ts.
  *
  * Har endpoint `requireAuth` + huquq (services/auth.ts PERMISSIONS):
  * frontend tugmani yashirsa ham backend baribir tekshiradi.
@@ -14,14 +15,15 @@ import { Prisma, type CleaningStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { asyncHandler, ValidationError, NotFoundError } from "../lib/errors.js";
 import { toDateKey, fromDateKey, isValidDateKey } from "../lib/serialize.js";
-import { addDays, hotelNow, hotelToday } from "../lib/hotelTime.js";
+import { addDays, hotelNow } from "../lib/hotelTime.js";
 import { config } from "../lib/config.js";
 import { requireAuth, requirePermission, type AuthedRequest } from "../lib/authMiddleware.js";
 import { MONEY_LIMITS, moneyAmount, positiveMoney } from "../lib/moneySchema.js";
 import {
-  setSetting, SETTING_KEYS,
-  getMealPrice, getFreeCancelHours, getCancelFeeNights,
-  getOtaCommissionPercent, getAuditRetentionDays, BUSINESS_DEFAULTS,
+  setSetting, SETTING_KEYS, BUSINESS_DEFAULTS,
+  getFreeCancelHours, getCancelFeeNights, getOtaCommissionPercent,
+  getAuditRetentionDays, getWebsiteUnpaidCancelHours, getCleaningAuto,
+  getCleaningRemindMinutes, getCleaningTargetMinutes, getCheckoutHour,
 } from "../services/settings.js";
 import {
   addExpense, deleteExpense, listExpenses, expenseSummary, CATEGORY_LABEL,
@@ -33,9 +35,6 @@ import {
 } from "../services/cleaning.js";
 import { kitchenOverview } from "../services/kitchen.js";
 import { getMealPriceInfo, setMealPrice } from "../services/mealPrice.js";
-import { releaseSalesStop, salesStopStatus, startSalesStop } from "../services/salesStop.js";
-import { notifySalesStop } from "../realtime/notify.js";
-import { sendSystemAlert } from "../bot/index.js";
 import { sendDailyKitchenReport } from "../bot/kitchen-bot.js";
 import {
   listBotAccess,
@@ -44,6 +43,7 @@ import {
   deleteBotAccess,
 } from "../services/botAccess.js";
 import { audit, listAudit } from "../services/auditLog.js";
+import { signUploadUrl } from "../lib/uploadAccess.js";
 import { runExpireNow } from "../queues/scheduler.js";
 import { cleanQueueHistory } from "../queues/index.js";
 import { getFullReport } from "../services/report.js";
@@ -111,7 +111,7 @@ adminRouter.get(
 );
 
 /**
- * GET /api/admin/audit-log — kim nima qildi (TZ 18-band, 10-fayl §4)
+ * GET /api/admin/audit-log — kim nima qildi (TZ 18-band)
  *
  * `audit.read` huquqi: MANAGER ham ko'radi. Audit — nazorat
  * vositasi, uni yashirish nazoratni yo'qotadi.
@@ -121,10 +121,22 @@ adminRouter.get(
   requireAuth,
   requirePermission("audit.read"),
   asyncHandler(async (req, res) => {
+    const q = parseOrThrow(
+      z.object({
+        limit: z.coerce.number().int().min(1).max(200).optional(),
+        action: z.string().max(60).optional(),
+        entityType: z.string().max(60).optional(),
+        entityId: z.string().max(60).optional(),
+        before: z.string().datetime().optional(),
+      }),
+      req.query
+    );
     res.json(await listAudit({
-      limit: req.query.limit ? Number(req.query.limit) : 50,
-      action: req.query.action,
-      entityType: req.query.entityType,
+      limit: q.limit ?? 50,
+      action: q.action || undefined,
+      entityType: q.entityType || undefined,
+      entityId: q.entityId || undefined,
+      before: q.before ? new Date(q.before) : undefined,
     }));
   })
 );
@@ -157,7 +169,7 @@ adminRouter.delete(
 );
 
 // ============================================================
-//  XARAJATLAR — SAVOLLAR.md S14
+//  XARAJATLAR
 //
 //  NEGA `report.read` HUQUQI: xarajat daromad va foydani
 //  ko'rsatadi, bu esa faqat egasi ko'radigan ma'lumot.
@@ -259,100 +271,105 @@ adminRouter.delete(
 );
 
 // ============================================================
-//  BIZNES SOZLAMALARI — nonushta, bekor qilish, komissiya
+//  BIZNES SOZLAMALARI — admin panel -> Biznes sozlamalari
+//
+//  Nonushta narxi bu yerda EMAS: u Oshxona bo'limida o'zgaradi
+//  (`/meal-price`) — faol bronlar summasini ham qayta hisoblaydi.
 // ============================================================
+
+/**
+ * Tahrirlanadigan sozlamalar: kalit, o'qish funksiyasi va chegarasi.
+ * Panel shu ro'yxatni ko'rsatadi, PUT faqat shularni qabul qiladi.
+ */
+const BUSINESS_FIELDS = {
+  /** Bepul bekor qilish oynasi, soat */
+  freeCancelHours: { key: SETTING_KEYS.freeCancelHours, get: getFreeCancelHours, schema: z.number().int().min(0).max(720) },
+  /** Kech bekor qilishda necha kecha narxi olinadi (0 = jarima yo'q) */
+  cancelFeeNights: { key: SETTING_KEYS.cancelFeeNights, get: getCancelFeeNights, schema: z.number().min(0).max(30) },
+  /** Qo'lda kiritilgan OTA broni komissiyasi, foiz */
+  otaCommissionPercent: { key: SETTING_KEYS.otaCommissionPercent, get: getOtaCommissionPercent, schema: z.number().min(0).max(100) },
+  /** To'lanmagan sayt bronini bekor qilish, soat (0 = o'chiq) */
+  websiteUnpaidCancelHours: { key: SETTING_KEYS.websiteUnpaidCancelHours, get: getWebsiteUnpaidCancelHours, schema: z.number().int().min(0).max(720) },
+  /** Audit jurnali saqlash muddati, kun */
+  auditRetentionDays: { key: SETTING_KEYS.auditRetentionDays, get: getAuditRetentionDays, schema: z.number().int().min(30).max(3650) },
+  /** Mehmon chiqqanda tozalash topshirig'i o'zi yaratilsinmi */
+  cleaningAuto: { key: SETTING_KEYS.cleaningAuto, get: getCleaningAuto, schema: z.boolean() },
+  /** Farrosh javob bermasa eslatma, daqiqa */
+  cleaningRemindMinutes: { key: SETTING_KEYS.cleaningRemindMinutes, get: getCleaningRemindMinutes, schema: z.number().int().min(5).max(1440) },
+  /** Tozalash me'yori, daqiqa (hisobotda "kechikdi") */
+  cleaningTargetMinutes: { key: SETTING_KEYS.cleaningTargetMinutes, get: getCleaningTargetMinutes, schema: z.number().int().min(5).max(480) },
+  /** Chiqish soati (Toshkent) — shundan keyin chiqish kuni tozalash xabari */
+  checkoutHour: { key: SETTING_KEYS.checkoutHour, get: getCheckoutHour, schema: z.number().int().min(0).max(23) },
+} as const;
+
+type BusinessField = keyof typeof BUSINESS_FIELDS;
+const BUSINESS_FIELD_NAMES = Object.keys(BUSINESS_FIELDS) as BusinessField[];
+
+async function readBusinessSettings(): Promise<Record<BusinessField, number | boolean>> {
+  const values = await Promise.all(BUSINESS_FIELD_NAMES.map((f) => BUSINESS_FIELDS[f].get()));
+  return Object.fromEntries(BUSINESS_FIELD_NAMES.map((f, i) => [f, values[i]])) as Record<BusinessField, number | boolean>;
+}
 
 /**
  * GET /api/admin/business-settings
  *
- * Joriy qiymatlar + boshlang'ich qiymatlar. Panel "qaytadan
- * standartga" tugmasi uchun ikkalasini ham ko'rsatadi.
+ * Joriy qiymatlar + boshlang'ich qiymatlar (panel "standart" ni ko'rsatadi).
  */
 adminRouter.get(
   "/business-settings",
   requireAuth,
   requirePermission("settings.write"),
   asyncHandler(async (_req, res) => {
-    const [mealPrice, freeCancelHours, cancelFeeNights, otaCommissionPercent, auditRetentionDays] =
-      await Promise.all([
-        getMealPrice(),
-        getFreeCancelHours(),
-        getCancelFeeNights(),
-        getOtaCommissionPercent(),
-        getAuditRetentionDays(),
-      ]);
-
-    res.json({
-      current: {
-        mealPrice, freeCancelHours, cancelFeeNights,
-        otaCommissionPercent, auditRetentionDays,
-      },
-      defaults: BUSINESS_DEFAULTS,
-    });
+    const defaults = Object.fromEntries(BUSINESS_FIELD_NAMES.map((f) => [f, BUSINESS_DEFAULTS[f]]));
+    res.json({ current: await readBusinessSettings(), defaults });
   })
 );
 
-/** PUT /api/admin/business-settings */
-const businessSchema = z.object({
-  /** Nonushta — kishi boshiga (S10) */
-  mealPrice: moneyAmount(MONEY_LIMITS.mealPrice).optional(),
-  /** Bepul bekor qilish oynasi, soat (S11) */
-  freeCancelHours: z.number().int().min(0).max(720).optional(),
-  /** Jarima necha kecha narxi (S11) */
-  cancelFeeNights: z.number().min(0).max(30).optional(),
-  /** OTA komissiyasi, foiz (S14) */
-  otaCommissionPercent: z.number().min(0).max(100).optional(),
-  /** Audit saqlash muddati, kun (S16). 30 kundan kam bo'lmasin */
-  auditRetentionDays: z.number().int().min(30).max(3650).optional(),
-});
+/** PUT /api/admin/business-settings — faqat yuborilgan maydonlar yoziladi */
+const businessSchema = z.object(
+  Object.fromEntries(BUSINESS_FIELD_NAMES.map((f) => [f, BUSINESS_FIELDS[f].schema.optional()])) as {
+    [K in BusinessField]: z.ZodOptional<(typeof BUSINESS_FIELDS)[K]["schema"]>
+  }
+).strict();
 
 adminRouter.put(
   "/business-settings",
   requireAuth,
   requirePermission("settings.write"),
   asyncHandler(async (req: AuthedRequest, res) => {
-    const parsed = businessSchema.safeParse(req.body);
-    if (!parsed.success) {
-      throw new ValidationError(
-        parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
-      );
-    }
+    const data = parseOrThrow(businessSchema, req.body);
+    const before = await readBusinessSettings();
 
-    const KEYS = {
-      mealPrice: SETTING_KEYS.mealPrice,
-      freeCancelHours: SETTING_KEYS.freeCancelHours,
-      cancelFeeNights: SETTING_KEYS.cancelFeeNights,
-      otaCommissionPercent: SETTING_KEYS.otaCommissionPercent,
-      auditRetentionDays: SETTING_KEYS.auditRetentionDays,
-    } as const;
+    const changed: Record<string, number | boolean> = {};
+    const previous: Record<string, number | boolean> = {};
 
-    const changed: Record<string, number> = {};
+    for (const field of BUSINESS_FIELD_NAMES) {
+      const value = data[field];
+      if (value === undefined || value === before[field]) continue;
 
-    for (const [field, key] of Object.entries(KEYS)) {
-      const value = parsed.data[field as keyof typeof KEYS];
-      if (value === undefined) continue;
-
-      await setSetting(key, String(value), req.user?.id);
+      await setSetting(BUSINESS_FIELDS[field].key, String(value), req.user?.id);
       changed[field] = value;
+      previous[field] = before[field];
     }
 
-    // Pul bilan bog'liq sozlama — jurnalda qolsin
+    // Pul va ish tartibi sozlamasi — kim, qachon, nimadan nimaga
     if (Object.keys(changed).length > 0) {
       await audit({
         userId: req.user?.id,
         action: "settings.changed",
         entityType: "BusinessSettings",
+        before: previous,
         after: changed,
         ipAddress: req.ip,
       });
     }
 
-    res.json({ ok: true, changed });
+    res.json({ ok: true, changed, current: await readBusinessSettings() });
   })
 );
 
 // ============================================================
-//  TOZALASH — TOZALIK-BOT.md
+//  TOZALASH
 //
 //  `room.block` huquqi: xona holati bilan ishlaydigan amal.
 //  MANAGER ham topshiriq yubora oladi.
@@ -368,7 +385,6 @@ adminRouter.get(
 
     /**
      * Nazorat uchun hamma ma'lumot bir so'rovda
-     * (TOZALIK-TAHLIL.md).
      *
      * NEGA BIRGA: panel ochilganda oltita alohida so'rov
      * yuborsa, tunnel orqali har biri ~700ms oladi. Bitta
@@ -398,7 +414,7 @@ adminRouter.get(
       ]);
 
     res.json({
-      // --- Diqqat talab qiladi (TOZALIK-TAHLIL.md §1, §2) ---
+      // --- Diqqat talab qiladi ---
       alerts: {
         dirtyWithoutTask: dirty,
         late: late.map((l) => ({
@@ -456,7 +472,8 @@ adminRouter.get(
         employeeName: t.employee?.fullName ?? null,
         claimedByName: t.claimedByName,
         workerName: t.claimedByName ?? t.employee?.fullName ?? null,
-        photoUrl: t.photoUrl ?? null,
+        // Imzoli havola — `/uploads` login'siz ochilmaydi (lib/uploadAccess.ts)
+        photoUrl: signUploadUrl(t.photoUrl ?? null),
         /** Guruhga xabar yuborilganmi */
         sentToGroup: Boolean(t.chatId),
         createdAt: t.createdAt.toISOString(),
@@ -560,7 +577,7 @@ adminRouter.delete(
 );
 
 // ============================================================
-//  BOT RUXSATLARI — faqat FOUNDER (TOZALIK-BOT.md §7)
+//  BOT RUXSATLARI — faqat FOUNDER
 // ============================================================
 
 /** GET /api/admin/bot-access */
@@ -684,43 +701,8 @@ adminRouter.delete(
   })
 );
 
-/** PATCH /api/admin/employees/:id/telegram — xodimni bog'lash */
-adminRouter.patch(
-  "/employees/:id/telegram",
-  requireAuth,
-  requirePermission("employee.write"),
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const { telegramId } = parseOrThrow(
-      z.object({
-        // Bo'sh satr — bog'lanishni uzish
-        telegramId: z.string().regex(/^(\d{5,15})?$/, "Telegram ID faqat raqam"),
-      }),
-      req.body
-    );
-
-    const value = telegramId || null;
-
-    if (value) {
-      const taken = await prisma.employee.findUnique({
-        where: { telegramId: value },
-        select: { id: true, fullName: true },
-      });
-      if (taken && taken.id !== req.params.id) {
-        throw new ValidationError(`Bu Telegram ID ${taken.fullName} ga biriktirilgan`);
-      }
-    }
-
-    await prisma.employee.update({
-      where: { id: req.params.id },
-      data: { telegramId: value },
-    });
-
-    res.json({ ok: true });
-  })
-);
-
 // ============================================================
-//  XODIMLAR — kadrlar hisobi (BOT-RUXSAT.md)
+//  XODIMLAR — kadrlar hisobi
 //
 //  `employee.read` / `employee.write` huquqi: FOUNDER va ADMIN.
 //  Maosh ma'lumoti bor, shuning uchun menejer ko'rmaydi.
@@ -1043,7 +1025,7 @@ adminRouter.patch(
 );
 
 // ============================================================
-//  OSHXONA — ovqat hisobi (BOTLAR-REJA.md)
+//  OSHXONA — ovqat hisobi
 //
 //  `reservation.read` huquqi: oshpaz ham ko'rishi mumkin.
 //  Mehmon ismi bor, lekin pul ma'lumoti yo'q.
@@ -1116,93 +1098,6 @@ adminRouter.put(
     });
 
     res.json({ ok: true, ...result, info: await getMealPriceInfo() });
-  })
-);
-
-// ============================================================
-//  Tizim nazorati — sotuvni vaqtincha to'xtatish (STOP, 2026-09-26)
-//
-//  Mehmonxona dam olsa / ishlamasa: sayt va qabulxona yangi bron
-//  qabul qilmaydi. Mantiq: services/salesStop.ts
-// ============================================================
-
-/** GET /api/admin/sales-stop — holat (Shaxmatka ham o'qiydi) */
-adminRouter.get(
-  "/sales-stop",
-  requireAuth,
-  requirePermission("reservation.read"),
-  asyncHandler(async (_req, res) => {
-    res.json(await salesStopStatus());
-  })
-);
-
-const salesStopSchema = z.object({
-  allRooms: z.boolean(),
-  roomIds: z.array(z.string().min(1).max(50)).max(500).optional(),
-  reason: z.string().max(120).optional(),
-});
-
-/** POST /api/admin/sales-stop { allRooms, roomIds?, reason? } — STOP */
-adminRouter.post(
-  "/sales-stop",
-  requireAuth,
-  requirePermission("settings.write"),
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const input = parseOrThrow(salesStopSchema, req.body);
-    const result = await startSalesStop(input, { email: req.user?.email });
-
-    await audit({
-      userId: req.user?.id,
-      action: "system.sales_stop",
-      entityType: "SalesStop",
-      after: {
-        allRooms: result.stop.allRooms,
-        roomIds: result.stop.roomIds,
-        reason: result.stop.reason,
-        rooms: result.rooms,
-        days: result.days,
-        keptBookings: result.keptBookings,
-      },
-      ipAddress: req.ip,
-    });
-    notifySalesStop(result.stop);
-    void sendSystemAlert(
-      `⛔ <b>Tizim vaqtincha to'xtatildi</b>\n` +
-      `${result.stop.allRooms ? "Barcha xonalar" : `${result.rooms} ta xona`}` +
-      `${result.stop.reason ? ` — ${result.stop.reason.replace(/[<>&]/g, "")}` : ""}\n` +
-      `Sayt va qabulxona yangi bron qabul qilmaydi.` +
-      (result.keptBookings > 0 ? `\nMavjud bronlar saqlandi: ${result.keptBookings} ta.` : "") +
-      (req.user?.email ? `\nKim: ${req.user.email}` : "")
-    ).catch(() => {});
-
-    res.status(201).json({ ok: true, ...result, status: await salesStopStatus() });
-  })
-);
-
-/** POST /api/admin/sales-stop/release — stopdan chiqarish */
-adminRouter.post(
-  "/sales-stop/release",
-  requireAuth,
-  requirePermission("settings.write"),
-  asyncHandler(async (req: AuthedRequest, res) => {
-    const before = await salesStopStatus();
-    const result = await releaseSalesStop({ email: req.user?.email });
-
-    await audit({
-      userId: req.user?.id,
-      action: "system.sales_resume",
-      entityType: "SalesStop",
-      before: { allRooms: before.allRooms, roomIds: before.roomIds, reason: before.reason, since: before.since },
-      after: { rooms: result.rooms, reopenedDays: result.days },
-      ipAddress: req.ip,
-    });
-    notifySalesStop(result.stop);
-    void sendSystemAlert(
-      `✅ <b>Tizim qayta ishga tushdi</b>\nSotuv ochildi: sayt va qabulxona.` +
-      (req.user?.email ? `\nKim: ${req.user.email}` : "")
-    ).catch(() => {});
-
-    res.json({ ok: true, ...result, status: await salesStopStatus() });
   })
 );
 

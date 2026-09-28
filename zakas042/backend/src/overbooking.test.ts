@@ -1,9 +1,9 @@
 /**
- * FAZA 2B — Overbooking himoyasi (TZ 3-band)
+ * Overbooking himoyasi (TZ 3-band)
  *
  * TZ: "OVERBOOKING BO'LMASLIGI SHART."
  *
- * Mezon (11-BOSQICHLAR-ROADMAP.md):
+ * Mezon:
  *   "parallel test o'tadi; hech qanday sharoitda ikkita
  *    qoplanuvchi bron yaratilmaydi"
  *
@@ -32,7 +32,7 @@ const api = async (path: string, init?: RequestInit) => {
  * Bron yaratadi.
  *
  * Narx BAZADAN olinadi: tarifdan past narx chegirma sababini
- * talab qiladi (SAVOLLAR.md S4), va test uni berishi shart emas.
+ * talab qiladi, va test uni berishi shart emas.
  */
 const book = async (roomId: string, from: number, to: number, name: string) =>
   api("/api/reservations", {
@@ -63,7 +63,7 @@ const activeBookings = async (roomId: string, from: number, to: number) => {
   );
 };
 
-describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
+describe("Overbooking himoyasi (TZ 3-band)", () => {
   beforeAll(async () => {
     const { status } = await api("/health");
     if (status !== 200) throw new Error("Server ishlamayapti — `npm run dev`");
@@ -281,7 +281,7 @@ describe("FAZA 2B — overbooking himoyasi (TZ 3-band)", () => {
       const byType: Record<string, number> = {};
       for (const r of body) byType[r.type] = (byType[r.type] ?? 0) + 1;
 
-      // 02-fayl §4: standard 6, double 4, deluxe 2
+      // Tarif bo'yicha xonalar soni seed'dan (hotelLayout.ts)
       expect(byType.standard ?? 0).toBeLessThanOrEqual(6);
       expect(byType.double ?? 0).toBeLessThanOrEqual(4);
       expect(byType.deluxe ?? 0).toBeLessThanOrEqual(2);

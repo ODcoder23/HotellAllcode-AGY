@@ -1,8 +1,6 @@
 /**
  * Log sanitizatsiyasi — TZ 16, 18-band
  *
- * Manba: 10-SECURITY-VA-SYNCLOG.md §2
- *
  * TZ: "Secret/token/password log qilinmasin."
  *
  * BITTA FUNKSIYA, BITTA JOY. Har controllerda alohida yozilmaydi.

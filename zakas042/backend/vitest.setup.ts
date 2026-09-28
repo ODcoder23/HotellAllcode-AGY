@@ -27,7 +27,7 @@ if (existsSync(envPath)) {
 }
 
 if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL yo'q — test.env ni yuklang (zakas042/README.md, \"Testlar\")");
+  throw new Error("DATABASE_URL yo'q — test.env ni yuklang (README.md, \"Testlar\")");
 }
 
 /**
@@ -67,7 +67,7 @@ if (!/test/i.test(dbName) && process.env.ALLOW_TEST_DB_WIPE !== "true") {
     `Testlar bazani TOZALAYDI, lekin baza nomida "test" yo'q: "${dbName}"\n` +
     `  ${dbUrl.replace(/:[^:@]*@/, ":***@")}\n\n` +
     `Bu ishlab chiqarish bazasi bo'lishi mumkin — barcha bronlar yo'qoladi.\n` +
-    `Alohida test bazasi: zakas042/README.md, "Testlar" bo'limi.`
+    `Alohida test bazasi: README.md, "Testlar" bo'limi.`
   );
 }
 

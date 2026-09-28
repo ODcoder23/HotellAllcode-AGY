@@ -1,5 +1,5 @@
 /**
- * 3-bot: OSHXONA (Imron Kitchen Bot) — BOTLAR-REJA.md
+ * 3-bot: OSHXONA (Imron Kitchen Bot)
  *
  * MAQSAD:
  * Oshpazlar va oshxona xodimlari ertalabki nonushta va kunlik ovqatlanish
@@ -12,9 +12,9 @@
  * 3. Davriy avtomatik hisobot yuborish (ertalab va kechqurun)
  */
 
-import { Bot, InlineKeyboard, GrammyError, type Context } from "grammy";
+import { Bot, InlineKeyboard, GrammyError } from "grammy";
 import { config } from "../lib/config.js";
-import { kitchenReport, kitchenOverview, type KitchenReport } from "../services/kitchen.js";
+import { kitchenReport, kitchenOverview, type KitchenReport, type MealState } from "../services/kitchen.js";
 import { esc } from "./format.js";
 import {
   resolveAndBindBotUser,
@@ -54,6 +54,18 @@ function kitchenMenu(): InlineKeyboard {
 //  Hisobotlarni formatlash (HTML)
 // ============================================================
 
+const MEAL_ICON: Record<MealState, string> = { staying: "🏠", departing: "🧳", arriving: "🚪" };
+
+/**
+ * Holat nomi. Nonushta tunashdan keyin (services/kitchen.ts): ertangi
+ * hisobotdagi "keladi" — BUGUN keladigan mehmon, ertaga nonushta qiladi
+ */
+function mealStateText(state: MealState, isTomorrow: boolean): string {
+  if (state === "departing") return isTomorrow ? "Ertaga ketadi" : "Bugun ketadi";
+  if (state === "arriving") return isTomorrow ? "Bugun keladi" : "Kirish belgilanmagan";
+  return "Xonada";
+}
+
 export function formatKitchenReport(report: KitchenReport, isTomorrow = false): string {
   const title = isTomorrow ? "🥐 ERTANGI OSHXONA HISOBOTI" : "🍳 BUGUNGI OSHXONA HISOBOTI";
   const dateStr = report.date;
@@ -65,8 +77,9 @@ export function formatKitchenReport(report: KitchenReport, isTomorrow = false): 
   text += `   └ 🧒 Bolalar: <b>${report.totalChildren}</b>\n\n`;
 
   text += `📊 <b>Xonalar holati:</b>\n`;
-  text += `   • 🏠 Hozir xonada: <b>${report.staying} ta xona</b>\n`;
-  text += `   • 🚪 ${isTomorrow ? "Ertaga" : "Bugun"} keladi: <b>${report.arriving} ta xona</b>\n\n`;
+  text += `   • 🏠 Xonada: <b>${report.staying} ta xona</b>\n`;
+  text += `   • 🧳 ${mealStateText("departing", isTomorrow)}: <b>${report.departing} ta xona</b>\n`;
+  text += `   • 🚪 ${mealStateText("arriving", isTomorrow)}: <b>${report.arriving} ta xona</b>\n\n`;
 
   if (report.rooms.length === 0) {
     text += `<i>Ovqat bilan bron qilingan xonalar mavjud emas.</i>`;
@@ -75,8 +88,8 @@ export function formatKitchenReport(report: KitchenReport, isTomorrow = false): 
 
   text += `📋 <b>Xonalar ro'yxati va porsiyalar:</b>\n`;
   for (const r of report.rooms) {
-    const statusIcon = r.arriving ? "🚪" : "🏠";
-    const statusText = r.arriving ? (isTomorrow ? "Ertaga keladi" : "Bugun keladi") : "Xonada";
+    const statusIcon = MEAL_ICON[r.state];
+    const statusText = mealStateText(r.state, isTomorrow);
     const guests = `${r.adults} katta${r.children > 0 ? `, ${r.children} bola` : ""}`;
     const mealCount = r.adults + r.children;
 
@@ -97,12 +110,12 @@ export async function formatKitchenOverview(): Promise<string> {
   text += `🍳 <b>BUGUN (${today.date}):</b>\n`;
   text += `• Jami ovqatlanuvchilar: <b>${today.totalGuests} kishi</b>\n`;
   text += `• Kattalar: <b>${today.totalAdults}</b> | Bolalar: <b>${today.totalChildren}</b>\n`;
-  text += `• Xonalar: <b>${today.rooms.length} ta</b> (🏠 ${today.staying} xonada, 🚪 ${today.arriving} keladi)\n\n`;
+  text += `• Xonalar: <b>${today.rooms.length} ta</b> (🏠 ${today.staying} xonada, 🧳 ${today.departing} ketadi, 🚪 ${today.arriving} kirish belgilanmagan)\n\n`;
 
   text += `🥐 <b>ERTAGA (${tomorrow.date}):</b>\n`;
   text += `• Kutilayotganlar: <b>${tomorrow.totalGuests} kishi</b>\n`;
   text += `• Kattalar: <b>${tomorrow.totalAdults}</b> | Bolalar: <b>${tomorrow.totalChildren}</b>\n`;
-  text += `• Xonalar: <b>${tomorrow.rooms.length} ta</b> (🏠 ${tomorrow.staying} xonada, 🚪 ${tomorrow.arriving} keladi)\n\n`;
+  text += `• Xonalar: <b>${tomorrow.rooms.length} ta</b> (🏠 ${tomorrow.staying} xonada, 🧳 ${tomorrow.departing} ketadi, 🚪 ${tomorrow.arriving} bugun keladi)\n\n`;
 
   text += `<i>Batafsil ma'lumot olish uchun quyidagi tugmalardan birini bosing:</i>`;
 

@@ -1,16 +1,14 @@
 /**
  * Autentifikatsiya va RBAC — TZ 18-band
  *
- * Manba: 10-SECURITY-VA-SYNCLOG.md §1 (3, 4-talab), §3
- *
- * TO'RT ROL (10-fayl §3, FOUNDER 2026-09-16 da qo'shildi):
+ * TO'RT ROL (FOUNDER 2026-09-16 da qo'shildi):
  *   FOUNDER — egasi: hamma narsa + umumiy hisobot, xarajat,
  *             foydalanuvchilar, bot ruxsatlari
  *   ADMIN   — sozlamalar, sayt, xodimlar (moliya hisobotisiz)
  *   MANAGER — bron, narx, xona yopish, audit jurnali
  *   STAFF   — check-in/out, to'lov, xona holati. Narxga tegmaydi
  *
- * ISH CHEGARASI (10-fayl §3): mavjud Admin Panel kodiga kirish yo'q,
+ * ISH CHEGARASI: mavjud Admin Panel kodiga kirish yo'q,
  * shuning uchun undagi rollar bilan moslik tekshirilmaydi. Backend
  * o'z RBAC tizimini yuritadi.
  */
@@ -22,7 +20,7 @@ import { prisma } from "../lib/prisma.js";
 import { config } from "../lib/config.js";
 
 /**
- * Huquqlar jadvali (10-fayl §3).
+ * Huquqlar jadvali.
  *
  * NEGA BITTA JOYDA: har endpoint o'z tekshiruvini yozsa, yangi rol
  * qo'shilganda o'nlab joyni tahrirlash kerak bo'ladi va bittasi
@@ -50,7 +48,17 @@ export const PERMISSIONS = {
   "audit.read":         ["FOUNDER", "ADMIN", "MANAGER"],
   "checkin.write":      ["FOUNDER", "ADMIN", "MANAGER", "STAFF"],
   "payment.write":      ["FOUNDER", "ADMIN", "MANAGER", "STAFF"],
+  // Pulni QAYTARISH (manfiy to'lov, to'lovni bekor qilish) — 2026-09-27.
+  // Qabulxona to'lov qabul qiladi, lekin qaytara olmaydi: aks holda naqd
+  // pulni olib, tizimda "qaytarildi" deb yozish mumkin edi
+  "payment.refund":     ["FOUNDER", "ADMIN", "MANAGER"],
   "reservation.read":   ["FOUNDER", "ADMIN", "MANAGER", "STAFF"],
+  // Channel manager (Beds24) — 2026-09-27, egasi qarori "avvalgidek":
+  // ulash, xonalarni bog'lash, kurs, qayta yuborish — egasi va admin;
+  // holat va sinxron jurnalini menejer ham ko'radi. Dollar summasi esa
+  // bron ichida — Shaxmatkada hamma xodimga ko'rinadi (reservation.read)
+  "channel.read":       ["FOUNDER", "ADMIN", "MANAGER"],
+  "channel.write":      ["FOUNDER", "ADMIN"],
 } as const satisfies Record<string, readonly UserRole[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

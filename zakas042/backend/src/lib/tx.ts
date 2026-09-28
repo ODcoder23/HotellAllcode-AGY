@@ -1,7 +1,7 @@
 /**
  * Tranzaksiya yordamchisi — serializatsiya konfliktida qayta urinish
  *
- * Manba: 07-AVAILABILITY-VA-RATES-SYNC.md §5 — uch qatlamli himoya
+ * Overbooking himoyasining bir qismi (PROJECT_LOGIC.md, 4-bo'lim).
  *
  * MUAMMO. `Serializable` izolyatsiya darajasi overbooking'ni to'xtatish
  * uchun kerak, lekin u haddan tashqari keng ham ishlaydi: ikki turli
@@ -14,6 +14,11 @@
  *
  * FARQ MUHIM:
  *   40001 / P2034  → qayta urinish (tasodifiy to'qnashuv)
+ *   40P01          → qayta urinish: bir xonaga parallel INSERT'lar
+ *                    EXCLUDE tekshiruvida bir-birini kutib deadlock
+ *                    bo'ladi, PostgreSQL bittasini bekor qiladi. Qayta
+ *                    urinishda g'olib allaqachon commit bo'lgan —
+ *                    mag'lub 23P01 (409) oladi, 500 emas
  *   23P01          → RAD ETISH (haqiqiy overbooking urinishi)
  *
  * Ikkinchisiga hech qachon qayta urinilmaydi — u TZ 3-bandning
@@ -26,14 +31,20 @@ import { prisma } from "./prisma.js";
 const MAX_ATTEMPTS = 5;
 const BASE_DELAY_MS = 15;
 
-/** Serializatsiya konfliktimi (qayta urinish mumkin)? */
+/** Serializatsiya konflikti yoki deadlock'mi (qayta urinish mumkin)? */
 function isSerializationError(e: unknown): boolean {
+  // `PrismaClientUnknownRequestError` ning `toString()` kodni bermasligi
+  // mumkin — `message` ham qaraladi (publicBooking.ts dagi kabi)
+  const raw = `${String(e)} ${e instanceof Error ? e.message : ""}`;
+
   // Overbooking constraint — BU QAYTA URINILMAYDI
-  const raw = String(e);
   if (raw.includes("reservation_no_overlap") || raw.includes("23P01")) return false;
 
   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2034") return true;
-  return raw.includes("40001") || raw.includes("could not serialize");
+  return (
+    raw.includes("40001") || raw.includes("could not serialize") ||
+    raw.includes("40P01") || raw.includes("deadlock detected")
+  );
 }
 
 /** Kichik tasodifiy kechikish — barcha urinishlar bir vaqtda qaytmasin */

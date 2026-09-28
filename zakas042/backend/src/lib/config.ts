@@ -91,7 +91,7 @@ export const config = {
     notifyBookings: process.env.TELEGRAM_NOTIFY_BOOKINGS !== "false",
 
     /**
-     * 2-bot: tozalik (BOTLAR-REJA.md, 2026-09-17).
+     * 2-bot: tozalik (2026-09-17).
      *
      * Alohida bot va alohida guruh — farosh mehmonxona
      * moliyasini ko'rmasligi kerak. Boshqaruv boti bilan
@@ -108,7 +108,7 @@ export const config = {
     cleaningGroupId: process.env.TELEGRAM_CLEANING_GROUP_ID ?? "",
 
     /**
-     * 3-bot: oshxona (BOTLAR-REJA.md).
+     * 3-bot: oshxona.
      *
      * Oshpazlar nonushta porsiyalarini bilishi uchun.
      */
@@ -121,7 +121,53 @@ export const config = {
 
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "12h",
 
-  pendingPaymentTimeoutHours: num("PENDING_PAYMENT_TIMEOUT_HOURS", 24),
+  /**
+   * Beds24 tokenlarini shifrlash kaliti (AES-256-GCM, 64 hex belgi).
+   *
+   * Bo'sh bo'lsa server ishlayveradi — faqat Beds24'ga ulanib bo'lmaydi
+   * va admin aniq xabar oladi (invite code ishlatilmasdan oldin).
+   */
+  encryptionKey: process.env.ENCRYPTION_KEY ?? "",
+
+  /**
+   * Beds24 — channel manager (TZ 1-13-band, 2026-09-27 da qaytdi).
+   *
+   * Ulanish admin paneldan (Channel manager -> Ulash) qilinadi, token
+   * bazada shifrlangan saqlanadi. Ulanish bo'lmasa hamma sinxron vazifa
+   * jim o'tkazib yuboriladi — PMS mustaqil ishlayveradi (TZ 17-band).
+   */
+  beds24: {
+    baseUrl: (process.env.BEDS24_BASE_URL ?? "https://beds24.com/api/v2").replace(/\/$/, ""),
+    /** 5 daqiqalik kredit limiti (Beds24 standarti ~100) */
+    creditLimit: num("BEDS24_CREDIT_LIMIT", 100),
+    /** Shundan kam qolsa ogohlantiriladi */
+    creditSafetyThreshold: num("BEDS24_CREDIT_SAFETY_THRESHOLD", 10),
+    /**
+     * Polling (webhook zaxirasi) oralig'i, daqiqa. TZ 15-band: 1–5 daqiqa.
+     * Bitta yurish odatda 2–4 kredit (5 daqiqalik limit ~100).
+     * 0 — Beds24 jadvallari o'chiq (faqat tugma bilan; testlar)
+     */
+    pollIntervalMinutes: num("POLL_INTERVAL_MINUTES", 5),
+    /**
+     * Catch-up oralig'i, daqiqa: yuborilmay qolgan bron va yopishlar,
+     * navbatga tushmagan webhook'lar. Polling o'chiq (0) bo'lsa bu ham o'chiq
+     */
+    catchUpIntervalMinutes: num("CATCH_UP_INTERVAL_MINUTES", 15),
+    /**
+     * Webhook URL'idagi maxfiy token: `/api/webhooks/beds24/<token>`.
+     * Bo'sh bo'lsa webhook qabul qilinmaydi (404). Beds24 webhook'ida
+     * imzo yo'q — himoya shu token (BEDS24.md).
+     */
+    webhookUrlToken: process.env.WEBHOOK_URL_TOKEN ?? "",
+  },
+
+  /**
+   * Dollar kursi manbai — O'zbekiston Markaziy banki. Bo'sh bo'lsa
+   * `https://cbu.uz/uz/arkhiv-kursov-valyut/json/<VALYUTA>/`
+   */
+  fx: {
+    cbuUrl: process.env.FX_CBU_URL ?? "",
+  },
 } as const;
 
 /**

@@ -1,8 +1,9 @@
 /**
  * Imron Hotel PMS — backend server
  *
- * REST API (sayt, Shaxmatka, admin panel), WebSocket, davriy
- * vazifalar va Telegram botlar. Frontend ham shu serverdan beriladi.
+ * REST API (sayt, Shaxmatka, admin panel), WebSocket, Beds24 (channel
+ * manager) navbatlari, davriy vazifalar va Telegram botlar. Frontend
+ * ham shu serverdan beriladi.
  *
  * Ishga tushirish:  npm run dev
  */
@@ -21,9 +22,15 @@ import { isRedisHealthy, getQueueCounts, shutdownQueues } from "./queues/index.j
 import { startRealtimeServer, stopRealtimeServer, getRealtimeStats } from "./realtime/server.js";
 import { authRouter } from "./routes/auth.js";
 import { publicRouter } from "./routes/public.js";
+import { channelRouter } from "./routes/channel.js";
+import { webhooksRouter } from "./routes/webhooks.js";
 import { parseAuth, authRequired, requireAuth, requirePermission } from "./lib/authMiddleware.js";
 import { internalLimiter } from "./lib/rateLimit.js";
+import { uploadAccess } from "./lib/uploadAccess.js";
 import { scheduleMaintenance } from "./queues/scheduler.js";
+// TZ 11-band: Beds24 navbatlari worker'lari va o'lik xat (beds24-retry)
+import "./queues/workers.js";
+import "./queues/deadLetter.js";
 import { startBot, stopBot } from "./bot/index.js";
 import { startCleaningBot, stopCleaningBot } from "./bot/cleaning-bot.js";
 import { startKitchenBot, stopKitchenBot } from "./bot/kitchen-bot.js";
@@ -74,11 +81,11 @@ app.use((req, res, next) => {
 });
 
 // Nginx orqasida haqiqiy IP — rate limit va AuditLog uchun
-// (10-fayl §7: cheklov IP bo'yicha)
+// (cheklov IP bo'yicha)
 app.set("trust proxy", 1);
 
 // Token bor bo'lsa o'qiladi. Majburiylikni har route o'zi
-// `requireAuth` bilan belgilaydi (10-fayl §1, 3-talab).
+// `requireAuth` bilan belgilaydi (3-talab).
 app.use(parseAuth);
 
 // So'rovlarni log qilish (dev)
@@ -89,7 +96,7 @@ if (config.isDev) {
   });
 }
 
-// --- Health (FAZA 0 mezoni) ---------------------------------
+// --- Health ------------------------------------------------
 app.get("/health", async (_req, res) => {
   const [dbOk, redisOk] = await Promise.all([
     prisma.$queryRaw`SELECT 1`.then(() => true).catch(() => false),
@@ -113,7 +120,7 @@ app.get("/health", async (_req, res) => {
   });
 });
 
-/** Navbat holati (05-fayl §8). Auth bilan — ISH_REJASI 1.2 */
+/** Navbat holati. Faqat auth bilan */
 app.get("/api/admin/queues", requireAuth, requirePermission("audit.read"), async (_req, res) => {
   try {
     res.json({ redis: await isRedisHealthy(), queues: await getQueueCounts() });
@@ -127,17 +134,23 @@ app.use("/api/auth", authRouter);
 
 // Website uchun ommaviy API (TZ 3, 20-band).
 // JWT TALAB QILINMAYDI — mijoz ro'yxatdan o'tmagan. Himoya: rate
-// limiting, honeypot, qat'iy validatsiya (13-fayl §6).
+// limiting, honeypot, qat'iy validatsiya.
 app.use("/api/public", publicRouter);
 app.use("/api/rooms", internalLimiter, roomsRouter);
 app.use("/api/reservations", internalLimiter, reservationsRouter);
 app.use("/api/rate-plans", internalLimiter, ratesRouter);
-app.use("/api/admin", internalLimiter, adminRouter);
+// channelRouter — Channel manager (Beds24): ulash, bog'lash, jurnal, kurs.
+// Limiter bitta: ikki marta qo'yilsa so'rov ikki hisoblanadi
+app.use("/api/admin", internalLimiter, channelRouter, adminRouter);
+// Beds24 webhook (TZ 10-band) — JWT emas, URL'dagi maxfiy token
+app.use("/api/webhooks", webhooksRouter);
 
 // --- Yuklangan fayllar (tozalash rasmlari) ------------------
-// fileURLToPath — Windows'da URL.pathname oldiga "/" qo'shadi
+// fileURLToPath — Windows'da URL.pathname oldiga "/" qo'shadi.
+// Login'siz ochiq emas: imzoli havola (API beradi) yoki token —
+// lib/uploadAccess.ts
 const uploadsDir = fileURLToPath(new URL("../public/uploads", import.meta.url));
-app.use("/uploads", express.static(uploadsDir));
+app.use("/uploads", uploadAccess, express.static(uploadsDir));
 
 // --- Frontend (sayt, admin panel, Shaxmatka) ----------------
 // Birlashtirishdan keyin uchala frontend shu serverdan xizmat
@@ -147,6 +160,11 @@ app.use("/uploads", express.static(uploadsDir));
 // DIQQAT: bu qator 404 handler'dan OLDIN turishi shart.
 const appDir = fileURLToPath(new URL("../public/app", import.meta.url));
 app.use(express.static(appDir));
+
+// Channel manager alohida sahifalari (/admin/connection.html va h.k.).
+// Sahifaning o'zida ma'lumot yo'q — hammasi admin token'i bilan API'dan
+const adminPagesDir = fileURLToPath(new URL("../public/admin", import.meta.url));
+app.use("/admin", express.static(adminPagesDir));
 
 // "/" → sayt (mehmonlar uchun)
 app.get("/", (_req, res) => {
@@ -191,11 +209,12 @@ function onReady() {
 }
 
 // WebSocket shu HTTP server ustiga o'rnatiladi — alohida port kerak
-// emas, Nginx ham bitta proxy qoidasi bilan o'tkazadi (09-fayl §4).
+// emas, Nginx ham bitta proxy qoidasi bilan o'tkazadi.
 startRealtimeServer(server);
 
-// Davriy vazifalar (queues/scheduler.ts). Redis yo'q bo'lsa jim
-// o'tkazib yuboriladi — PMS ishlayveradi.
+// Davriy vazifalar (queues/scheduler.ts): polling, catch-up, narx,
+// drift, kurs va PMS vazifalari. Redis yo'q bo'lsa jim o'tkazib
+// yuboriladi — PMS ishlayveradi (TZ 17, 19-band).
 void scheduleMaintenance();
 
 // Telegram botlar. Token yo'q bo'lsa jim o'tkazib yuboriladi —

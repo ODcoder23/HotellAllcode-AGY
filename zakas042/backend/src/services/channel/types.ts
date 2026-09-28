@@ -1,0 +1,306 @@
+/**
+ * ChannelAdapter interfeysi — TZ 12-band
+ *
+ * TZ: "Arxitektura faqat Beds24 bilan cheklanmasin... Bronevik,
+ * MyBooking kabi kanallarni qo'shish mumkin bo'ladigan qilib yozilsin."
+ *
+ * Bu fayl — CHEGARA. Biznes-mantiq qatlami faqat shu interfeysni
+ * biladi, "Beds24" nomini hech qayerda qattiq yozmaydi.
+ *
+ * Kelajakda `BronevikAdapter` qo'shilsa — sync queue, mapping va
+ * status-mapping mantig'i qayta yozilmaydi, faqat yangi adapter
+ * ulanadi.
+ */
+
+/** Kanal mehmon ismini bermasa — PMS'dagi ism shu bilan almashtirilmaydi */
+export const UNKNOWN_GUEST = "Noma'lum mehmon";
+
+// --- Tashqi kanaldan keladigan bron (TZ 1-band maydonlari) --
+export type ExternalReservation = {
+  externalId: string;
+  externalRoomTypeId: string;
+  externalUnitId?: string;
+  status: string;                  // kanal o'z atamasi — statusMap tarjima qiladi
+  subStatus?: string;
+  checkIn: string;                 // "YYYY-MM-DD"
+  checkOut: string;
+  adults: number;
+  children: number;
+  price: number;
+  currency: string;
+  guest: {
+    fullName: string;
+    phone?: string;
+    email?: string;
+    country?: string;
+    address?: string;
+  };
+  notes?: string;
+  /** Mehmonga ko'rinadigan nom: "Booking.com", "Airbnb", "Direct" */
+  source?: string;
+  /**
+   * Kanal kodi — Beds24 `channel` maydoni: "booking", "expedia",
+   * "airbnb", "ostrovok", "direct". Manbani aniqlashning ishonchli
+   * yo'li (`referer` erkin matn, "Agent_200" kabi bo'lishi mumkin).
+   */
+  channelCode?: string;
+  /** OTA'dagi bron raqami (Booking.com'da mehmon ko'radigan raqam) */
+  externalReference?: string;
+  /** Beds24 bayroq matni — check-in/out belgisi shu yerda yuradi */
+  flagText?: string;
+  payments?: Array<{ amount: number; description?: string; externalId?: string }>;
+  modifiedAt: string;              // ISO — polling filtri uchun
+  /** Bizning o'z aks-sadomizmi (echo loop himoyasi) */
+  isOwnEcho?: boolean;
+};
+
+/**
+ * Tashqi yozuv turi — hamma "bron" ham mehmon broni emas.
+ *
+ *   reservation — mehmon broni, PMS'da `Reservation` bo'ladi
+ *   block       — xona yopilgan (Beds24 `black`): ta'mir, egasi uchun
+ *   inquiry     — so'rov, xonani band qilmaydi
+ */
+export type ExternalKind = "reservation" | "block" | "inquiry";
+
+// --- Kanaldagi room type (mapping ekrani uchun) -------------
+export type ExternalRoomType = {
+  id: string;
+  name: string;
+  /** Shu turdagi xonalar soni — agregatsiya tekshiruvi uchun */
+  qty: number;
+  maxPeople?: number;
+  /** Unit-level mapping mavjudmi (Daraja 2) */
+  units: Array<{ id: string; name: string }>;
+};
+
+export type ExternalProperty = {
+  id: string;
+  name: string;
+  currency: string;
+  roomTypes: ExternalRoomType[];
+};
+
+// --- Sync natijasi ------------------------------------------
+export type SyncResult =
+  | { ok: true; externalId?: string; detail?: string }
+  | { ok: false; error: string; retryable: boolean; retryAfterSeconds?: number };
+
+export type WebhookResult = {
+  event: string;
+  externalId: string | null;
+  reservation?: ExternalReservation;
+  /** Bizning aks-sadomiz — e'tiborsiz qoldiriladi */
+  isOwnEcho: boolean;
+};
+
+// --- Availability / rates yuborish payload'i ----------------
+export type AvailabilityPush = {
+  externalRoomTypeId: string;
+  days: Array<{ date: string; available: number }>;
+};
+
+/**
+ * Kunlik cheklovlar (TZ 10-band). Maydon berilmasa — kanaldagi qiymat
+ * o'zgarmaydi (PMS u cheklovni boshqarmaydi).
+ */
+export type DayRestrictions = {
+  minStay?: number;
+  /** null — cheklovni olib tashlash */
+  maxStay?: number | null;
+  /** Kirish/chiqish taqiqi — biri berilsa ikkinchisi `false` hisoblanadi */
+  closedArrival?: boolean;
+  closedDeparture?: boolean;
+};
+
+export type RatesPush = {
+  externalRoomTypeId: string;
+  days: Array<{ date: string; price: number } & DayRestrictions>;
+};
+
+/** Kanaldagi narx va cheklovlar — `pullRates` (Beds24 -> PMS) uchun */
+export type ExternalRateDay = {
+  externalRoomTypeId: string;
+  date: string;
+  price?: number;
+  minStay?: number;
+  maxStay?: number;
+  closedArrival?: boolean;
+  closedDeparture?: boolean;
+};
+
+// --- Ulanish (TZ 12-band) -----------------------------------
+
+/** Ulanish ma'lumoti: Beds24'da invite code yoki refresh token + obyekt */
+export type ConnectInput = {
+  inviteCode?: string;
+  refreshToken?: string;
+  propertyId?: string;
+};
+
+/** Ulanish holati — admin panel uchun. Token hech qachon chiqmaydi */
+export type ConnectionStatus = {
+  isConnected: boolean;
+  propertyId: string | null;
+  tokenExpiresAt: string | null;
+  lastCheckedAt: string | null;
+  lastCheckOk: boolean | null;
+  lastError: string | null;
+  scopes: string[];
+  connectedAt: string | null;
+  encryptionKeySet: boolean;
+};
+
+/**
+ * Bronni kanalga yuborish rejimi.
+ *
+ *   full — bron PMS'da tug'ilgan (sayt, qabulxona): hamma maydon
+ *          yuboriladi
+ *   ota  — bron OTA'dan kelgan (Booking.com va h.k.): kanal egasi
+ *          OTA, shuning uchun narx, sana, mehmon, status va `referer`
+ *          YUBORILMAYDI. Faqat xona/unit va check-in/out belgisi.
+ *          Aks holda Beds24'dagi OTA broni buziladi va OTA'dan
+ *          kelgan keyingi bekor qilish "o'z aks-sadomiz" deb
+ *          tashlab yuboriladi.
+ */
+export type PushMode = "full" | "ota";
+
+/**
+ * Kanal adapteri.
+ *
+ * `MockAdapter` va `Beds24Adapter` — ikkalasi ham shu interfeysni
+ * bajaradi. Test mock bilan, production haqiqiy kanal bilan ishlaydi,
+ * kod bir xil.
+ */
+export interface ChannelAdapter {
+  /** Kanal kodi — `Channel.code` bilan mos (`"beds24"`) */
+  readonly code: string;
+  /** Odam o'qiydigan nom — admin panel, jurnal ("Beds24") */
+  readonly name: string;
+
+  /**
+   * Ulash (TZ 14-band `connect()`). Kalit shifrlangan saqlanadi; xato
+   * bo'lsa hech narsa saqlanmaydi. Obyekt berilmasa hisobdagi birinchisi.
+   */
+  connect(input: ConnectInput): Promise<{ id: string; propertyId: string }>;
+
+  /** Uzish — kalitlar bazadan o'chiriladi. Nechta ulanish uzilgani */
+  disconnect(): Promise<number>;
+
+  /** Ulanish holati (kalitsiz) */
+  connectionStatus(): Promise<ConnectionStatus>;
+
+  /** Hisobdagi hamma obyektlar — ulangandan keyin obyekt tanlash uchun */
+  listProperties(): Promise<Array<{ id: string; name: string; currency: string }>>;
+
+  /** Ulanishni shu hisobdagi boshqa obyektga o'tkazish (hisobda yo'q — xato) */
+  selectProperty(propertyId: string): Promise<void>;
+
+  /** Ulanish tekshiruvi ("Ulanishni tekshirish" tugmasi) */
+  ping(): Promise<{ ok: boolean; detail: string; creditsRemaining?: number }>;
+
+  /** Room type ro'yxati — mapping ekrani uchun */
+  getRoomTypes(): Promise<ExternalProperty[]>;
+
+  /** O'zgargan bronlarni tortish — polling fallback */
+  pullReservations(since: Date): Promise<ExternalReservation[]>;
+
+  /**
+   * Bitta bron (TZ 14-band `getBooking()`) — bekor qilinganlari ham.
+   * Kanalda yo'q bo'lsa null. "Beds24'dan qayta olish" tugmasi uchun.
+   */
+  getBooking(externalId: string): Promise<ExternalReservation | null>;
+
+  /**
+   * Hozirgi va kelgusi HAMMA bronlar (chiqish sanasi `departureFrom`
+   * dan keyin) — birinchi ulanishda to'liq import uchun.
+   *
+   * 2026-09-27: ilgari birinchi polling faqat oxirgi 24 soatda
+   * o'zgarganlarni olardi — ulanishdan oldin kelgan OTA bronlari PMS'ga
+   * hech qachon tushmasdi (sayt o'sha kunlarni sotishi mumkin edi).
+   */
+  pullActiveReservations(departureFrom: string): Promise<ExternalReservation[]>;
+
+  /** Token ruxsatlari (scope) — "Ulanishni tekshirish" ko'rsatadi */
+  getTokenScopes(): Promise<string[]>;
+
+  /** Bronni kanalga yuborish (TZ 2-band) */
+  pushReservation(payload: {
+    externalId?: string;
+    externalRoomTypeId: string;
+    externalUnitId?: string;
+    status: string;
+    subStatus?: string;
+    checkIn: string;
+    checkOut: string;
+    adults: number;
+    children: number;
+    /**
+     * Kanal valyutasida. Berilmasa narx yuborilmaydi — PMS va kanal
+     * valyutasi mos kelmaganda so'm raqami dollar bo'lib ketmasin.
+     */
+    totalPrice?: number;
+    guestFirstName: string;
+    guestLastName: string;
+    phone?: string;
+    email?: string;
+    notes?: string;
+    /** Check-in/out belgisi (Beds24'da bunday status yo'q) */
+    flagText?: string;
+    flagColor?: string;
+    /** Standart `full`. Mavjud bronni yangilashda adapter o'zi ham aniqlaydi */
+    mode?: PushMode;
+  }): Promise<SyncResult>;
+
+  /**
+   * Xona yopilishini kanalga yuborish (2026-09-25, B2).
+   *
+   * Beds24'da xona yopish — `status: "black"` bron. `cancel: true` —
+   * mavjud yopishni bekor qilish (xona yana sotuvga chiqadi).
+   * `checkOut` — oxirgi yopiq kundan keyingi kun (`[)` oraliq).
+   */
+  pushBlock(payload: {
+    externalId?: string;
+    externalRoomTypeId: string;
+    externalUnitId?: string;
+    checkIn: string;
+    checkOut: string;
+    note?: string;
+    cancel?: boolean;
+  }): Promise<SyncResult>;
+
+  /**
+   * Availability yuborish (TZ 8-band `updateAvailability()`). Bo'sh joyni
+   * bronlardan o'zi hisoblaydigan kanal (Beds24) uchun chaqirilmaydi —
+   * u yerda bron va yopish yuborishning o'zi yetadi (adapter izohi)
+   */
+  pushAvailability(payload: AvailabilityPush): Promise<SyncResult>;
+
+  /**
+   * Narx va cheklovlarni yuborish (TZ 9, 10-band) — `updatePrices` +
+   * `updateRestrictions`. Kanalda butunlay yopilgan kunni cheklov ochib
+   * yubormasligi kerak (adapter o'zi tekshiradi).
+   */
+  pushRates(payload: RatesPush): Promise<SyncResult>;
+
+  /** Joriy availability'ni o'qish — drift tekshiruvi */
+  getAvailability(
+    externalRoomTypeId: string,
+    from: string,
+    to: string
+  ): Promise<Array<{ date: string; available: number; price?: number }>>;
+
+  /**
+   * Barcha xonalar narxi va cheklovlarini o'qish — Beds24 -> PMS (`pullRates`).
+   *
+   * Kanal narx o'zgarishi haqida webhook yubormaydi, shuning uchun
+   * narx davriy tortib olinadi. `to` kiradi.
+   */
+  getRates(from: string, to: string): Promise<ExternalRateDay[]>;
+
+  /** Kanaldagi obyekt valyutasi — narx yuborishdan oldin tekshiruv */
+  getCurrency(): Promise<string>;
+
+  /** Kiruvchi webhook'ni normallashtirish */
+  parseWebhook(payload: unknown): WebhookResult;
+}

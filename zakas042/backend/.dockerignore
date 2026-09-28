@@ -1,0 +1,10 @@
+# Image'ga faqat kod kiradi. Sirlar, lokal bog'liqliklar va yuklangan
+# fayllar (tozalash rasmlari — serverda volume'da) KIRMAYDI.
+node_modules
+dist
+.env
+.env.*
+!.env.example
+*.bak
+public/uploads
+*.log

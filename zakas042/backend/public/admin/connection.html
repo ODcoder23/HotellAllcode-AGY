@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beds24 ulanishi</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Beds24 ulanishi</h1>
+  <div class="sub">Ikki tomonlama: Beds24 bronlari PMS'ga tushadi; PMS bronlari, narxlari va yopiq kunlari Beds24'ga yuboriladi. Token hech qachon ko'rsatilmaydi. Ulash — egasi va admin.</div>
+
+  <nav>
+    <a href="/admin/connection.html" class="on">Ulanish</a>
+    <a href="/admin/mapping.html">Mapping</a>
+    <a href="/admin/sync-log.html">Sinxronizatsiya jurnali</a>
+    <a href="/admin-panel">← Admin panel</a>
+  </nav>
+
+  <div id="msg" class="msg"></div>
+
+  <div class="card">
+    <div class="row">
+      <h2 style="margin:0">Holat</h2>
+      <div><button id="pingBtn">Ulanishni tekshirish</button> <button id="reloadBtn">Yangilash</button></div>
+    </div>
+    <div id="status" class="stats" style="margin-top:12px"><div class="empty">Yuklanmoqda...</div></div>
+  </div>
+
+  <div class="card">
+    <h2>Tizim holati</h2>
+    <table id="sys"><tbody><tr><td class="empty">Yuklanmoqda...</td></tr></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>Ulash</h2>
+    <div class="sub" style="margin:0 0 10px">
+      Beds24 → Settings → Marketplace → API: <b>invite code</b> yarating. Ruxsatlar: bookings (o'qish + yozish,
+      shaxsiy va moliyaviy), inventory (o'qish + yozish), properties (o'qish). Kod bir martalik; invite code
+      allaqachon ishlatilgan bo'lsa — Beds24'dagi <b>refresh token</b>. Kalit bazada shifrlangan saqlanadi va
+      hech qachon ko'rsatilmaydi. Ulangandan keyin xonalarni bog'lang — shundan keyin Beds24 bronlari import qilinadi.
+    </div>
+    <div class="row" style="justify-content:flex-start;flex-wrap:wrap">
+      <select id="provider" title="Channel manager"></select>
+      <select id="keyType" title="Kalit turi">
+        <option value="invite">Invite code</option>
+        <option value="refresh">Refresh token</option>
+      </select>
+      <input id="key" placeholder="Invite code" style="min-width:220px" autocomplete="off">
+      <input id="property" placeholder="Obyekt ID (ixtiyoriy)" style="width:170px">
+      <button class="primary" id="connectBtn">Ulash</button>
+      <button id="disconnectBtn">Uzish</button>
+    </div>
+  </div>
+  <div class="card" id="propCard" style="display:none">
+    <h2>Obyekt</h2>
+    <div class="sub" style="margin:0 0 10px">
+      Hisobdagi obyektlar. Boshqa obyektga o'tilsa hozirgi obyekt bog'lanishlari o'chadi (qaytib o'tilganda
+      tiklanadi) va bronlar yangi obyektdan to'liq o'qiladi.
+    </div>
+    <div class="row" style="justify-content:flex-start;flex-wrap:wrap">
+      <select id="propSelect" style="min-width:260px"></select>
+      <button id="propBtn">Shu obyektga o'tish</button>
+    </div>
+  </div>
+</div>
+
+<script src="_shared.js"></script>
+<script>
+function badge(ok, yes, no) { return '<span class="badge ' + (ok ? 'b-ok' : ok === false ? 'b-err' : 'b-mute') + '">' + (ok ? yes : no) + '</span>'; }
+
+/** Token Beds24'ga yoza oladimi — yo'q bo'lsa bronlar va narx yuborilmaydi */
+function writeScopes(scopes) {
+  const w = (area) => (scopes || []).some((x) => x === "all:" + area || x === "write:" + area);
+  return ["bookings", "inventory"].filter((a) => !w(a));
+}
+
+async function load() {
+  try {
+    const s = await api("/api/admin/status");
+    const c = s.connection, r = s.reservations;
+    document.getElementById("status").innerHTML =
+      '<div class="stat"><div class="n">' + badge(c.connected && c.lastCheckOk !== false, "ulangan", c.connected ? "xato" : "ulanmagan") + '</div><div class="l">Ulanish</div></div>' +
+      '<div class="stat"><div class="n">' + esc((c.provider && c.provider.name) || "—") + '</div><div class="l">Provider</div></div>' +
+      '<div class="stat"><div class="n">' + esc(c.propertyId || "—") + '</div><div class="l">Obyekt ID</div></div>' +
+      '<div class="stat"><div class="n">' + (c.credits.remaining === null ? "—" : c.credits.remaining) + '</div><div class="l">Kredit (5 daqiqa)</div></div>' +
+      '<div class="stat"><div class="n">' + (r.failed + r.rejected) + '</div><div class="l">Beds24\'ga yetmagan bronlar</div></div>';
+    const missing = c.connected && (c.scopes || []).length ? writeScopes(c.scopes) : [];
+    const rows = [
+      ["Oxirgi tekshiruv", when(c.lastCheckedAt) + (c.lastError ? ' <span class="badge b-err">' + esc(c.lastError) + '</span>' : "")],
+      ["Token muddati", when(c.tokenExpiresAt)],
+      ["Ruxsatlar (scope)", ((c.scopes || []).map(esc).join(", ") || "—") +
+        (missing.length ? ' <span class="badge b-err">yozish yo\'q: ' + esc(missing.join(", ")) + '</span>' : "")],
+      ["Shifrlash kaliti", c.encryptionKeySet ? "sozlangan" : '<span class="badge b-err">ENCRYPTION_KEY yo\'q — ulab bo\'lmaydi</span>'],
+      ["Valyuta", "PMS: so'm · Beds24: " + esc((c.currency && c.currency.channel) || "—") +
+        (c.fx ? " · 1 $ = " + esc(c.fx.rate) + " so'm (" + (c.fx.source === "cbu" ? "Markaziy bank" : "qo'lda") + ")" : "")],
+      ["Polling", c.pollIntervalMinutes > 0 ? "har " + c.pollIntervalMinutes + " daqiqa" +
+        (c.catchUpIntervalMinutes > 0 ? " · catch-up har " + c.catchUpIntervalMinutes + " daqiqa" : "") : "o'chiq"],
+      ["Bronlarni oxirgi o'qish", when(s.lastPollAt)],
+      ["Webhook", c.webhookConfigured ? "sozlangan (24 soatda " + s.webhooks24h + ")" : "sozlanmagan — bronlar polling bilan keladi"],
+      // To'liq manzil — faqat egasi va admin'ga keladi (maxfiy token bilan)
+      ...(c.webhookUrl ? [["Webhook URL (Beds24 paneliga)", '<span class="mono" style="word-break:break-all">' + esc(c.webhookUrl) + "</span>" +
+        '<br><span class="sub">Beds24 → Settings → Properties → Access → Booking Webhook, versiya: "twoWithPersonalData". Maxfiy — boshqalarga bermang.</span>']] : []),
+      ["Mapping", s.mapping.roomsMapped + " / " + s.mapping.roomsTotal + " xona"],
+      ["Bronlar", "Beds24'dan kelgan " + r.fromChannel + " · yuborilgan " + r.synced + " · kutmoqda " + r.pending +
+        " · xato " + r.failed + " · rad etilgan " + r.rejected],
+      ["Qo'lda hal qilinadigan webhook", s.needsAction],
+      ["Xatolar (24 soat)", s.failed24h],
+    ];
+    document.getElementById("sys").innerHTML = "<tbody>" + rows.map(x => "<tr><td>" + x[0] + "</td><td>" + x[1] + "</td></tr>").join("") + "</tbody>";
+    const prov = document.getElementById("provider");
+    if (!prov.options.length) {
+      prov.innerHTML = (c.providers || []).map((p) => '<option value="' + esc(p.code) + '">' + esc(p.name) + "</option>").join("");
+      if (c.provider) prov.value = c.provider.code;
+    }
+    loadProperties(c.connected);
+  } catch (e) { msg(e.message, true); }
+}
+/** Hisobdagi obyektlar — ulangan bo'lsa (TZ 12-band: Property ID) */
+let currentProperty = null;
+async function loadProperties(connected) {
+  const card = document.getElementById("propCard");
+  if (!connected) { card.style.display = "none"; return; }
+  try {
+    const r = await api("/api/admin/connection/properties");
+    currentProperty = r.current;
+    document.getElementById("propSelect").innerHTML = r.properties.map((p) =>
+      '<option value="' + esc(p.id) + '"' + (p.id === r.current ? " selected" : "") + ">" +
+      esc(p.name) + " · " + esc(p.id) + (p.currency ? " · " + esc(p.currency) : "") + (p.id === r.current ? " (ulangan)" : "") + "</option>").join("");
+    card.style.display = "";
+  } catch (e) { card.style.display = "none"; }
+}
+/** Obyekt almashganda bog'lanishlar haqida xabar */
+function mappingNote(m) {
+  if (!m || (!m.deactivated && !m.reactivated)) return "";
+  return " · Bog'lanishlar: " + (m.deactivated ? m.deactivated + " ta eski obyektniki o'chirildi" : "") +
+    (m.deactivated && m.reactivated ? ", " : "") + (m.reactivated ? m.reactivated + " ta tiklandi" : "");
+}
+
+document.getElementById("reloadBtn").onclick = load;
+document.getElementById("pingBtn").onclick = async () => {
+  try {
+    const r = await api("/api/admin/connection/ping", { method: "POST" });
+    msg((r.ok ? "Ishlayapti: " : "Xato: ") + (r.detail || ""), !r.ok);
+    load();
+  } catch (e) { msg(e.message, true); }
+};
+document.getElementById("keyType").onchange = (e) => {
+  const input = document.getElementById("key");
+  input.placeholder = e.target.value === "refresh" ? "Refresh token" : "Invite code";
+  input.type = e.target.value === "refresh" ? "password" : "text";
+};
+document.getElementById("connectBtn").onclick = async () => {
+  const key = document.getElementById("key").value.trim();
+  const keyType = document.getElementById("keyType").value;
+  const propertyId = document.getElementById("property").value.trim();
+  if (!key) return msg((keyType === "refresh" ? "Refresh token" : "Invite code") + " kiriting", true);
+  const body = { provider: document.getElementById("provider").value || undefined };
+  body[keyType === "refresh" ? "refreshToken" : "inviteCode"] = key;
+  if (propertyId) body.propertyId = propertyId;
+  try {
+    const r = await api("/api/admin/connection", { method: "POST", body });
+    document.getElementById("key").value = "";
+    const ok = r.ping && r.ping.ok;
+    const missing = writeScopes((r.ping && r.ping.scopes) || r.connection.scopes);
+    msg((ok ? "Ulandi: " + (r.ping.detail || "") : "Ulandi, tekshiruv xato: " + ((r.ping && r.ping.detail) || "")) +
+      (missing.length ? " · DIQQAT: token yoza olmaydi (" + missing.join(", ") + ") — bronlar va narx yuborilmaydi" : "") +
+      mappingNote(r.mappingChanges) + " · Keyingi qadam: Mapping sahifasida xonalarni bog'lang.", !ok || missing.length > 0);
+    load();
+  } catch (e) { msg(e.message, true); }
+};
+document.getElementById("propBtn").onclick = async () => {
+  const propertyId = document.getElementById("propSelect").value;
+  if (!propertyId || propertyId === currentProperty) return msg("Bu obyekt allaqachon ulangan");
+  if (!confirm("Ulanish " + propertyId + " obyektiga o'tkazilsinmi? Hozirgi obyekt bog'lanishlari o'chadi, bronlar yangi obyektdan to'liq o'qiladi.")) return;
+  try {
+    const r = await api("/api/admin/connection/property", { method: "POST", body: { propertyId } });
+    msg("Obyekt: " + propertyId + (r.ping && r.ping.ok ? " · " + (r.ping.detail || "") : "") + mappingNote(r.mappingChanges), !(r.ping && r.ping.ok));
+    load();
+  } catch (e) { msg(e.message, true); }
+};
+document.getElementById("disconnectBtn").onclick = async () => {
+  if (!confirm("Beds24 ulanishini uzasizmi? Token bazadan o'chiriladi, sinxron to'xtaydi.")) return;
+  try { await api("/api/admin/connection", { method: "DELETE" }); msg("Uzildi"); load(); } catch (e) { msg(e.message, true); }
+};
+load();
+</script>
+</body>
+</html>

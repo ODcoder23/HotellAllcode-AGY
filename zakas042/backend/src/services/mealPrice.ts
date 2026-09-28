@@ -19,17 +19,25 @@
 
 import { Prisma, type ReservationStatus } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
-import { CURRENCY, round2 } from "../lib/money.js";
+import { BASE_CURRENCY, CURRENCY, round2 } from "../lib/money.js";
 import { getMealPrice, setSetting, SETTING_KEYS } from "./settings.js";
 import { notifyReservation } from "../realtime/notify.js";
 
 /** Narx qayta hisoblanadigan statuslar — hali yakunlanmagan bronlar */
 const OPEN_STATUSES: ReservationStatus[] = ["PENDING_PAYMENT", "CONFIRMED", "CHECKED_IN"];
 
-/** Qaysi bronlar "faol bronlarga ham qo'llash" ostiga tushadi */
+/**
+ * Qaysi bronlar "faol bronlarga ham qo'llash" ostiga tushadi.
+ *
+ * Faqat PMS'da tug'ilgan so'm bronlari: Beds24'dan kelgan bronning
+ * narxi OTA'da kelishilgan (nonushta tarif ichida, mapping belgisi) —
+ * unga so'm nonushta qo'shilsa summa ikki marta oshardi.
+ */
 const activeMealWhere = {
   withMeal: true,
   status: { in: OPEN_STATUSES },
+  origin: "PMS",
+  currency: BASE_CURRENCY,
 } satisfies Prisma.ReservationWhereInput;
 
 export type MealPriceInfo = {

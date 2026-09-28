@@ -1,8 +1,7 @@
 /**
  * Xona va qavat yopish (ta'mir, xizmatdan chiqarish)
  *
- * Manba: TZ 6-band (availability sync), 13-band (`RoomDayStatus`),
- *        02-DATABASE-SXEMA.md — `RoomDayStatus` modeli
+ * Manba: TZ 6-band (availability sync), 13-band (`RoomDayStatus` modeli)
  *
  * NIMA UCHUN KERAK
  * ----------------
@@ -20,6 +19,10 @@
  *                                    availableCount kamayadi (sayt)
  *     -> notifyAvailability()     -> WebSocket: Shaxmatka va admin panel
  *                                    darhol ko'radi (TZ 15-band)
+ *     -> enqueueBlockSync()       -> beds24-availability-sync navbati ->
+ *                                    Beds24'da `black` bron -> OTA'da xona
+ *                                    yopiladi (Beds24 bo'sh joyni o'zi
+ *                                    kamaytiradi, channelBlocks.ts)
  *
  * Bron yaratish (`isRoomFree`) va sayt xona tanlashi (`pickRoom`)
  * yopiq kunni o'zi tekshiradi — kesh eskirsa ham yopiq xona sotilmaydi.
@@ -38,7 +41,7 @@ import { serializableTx } from "../lib/tx.js";
 import { onAvailabilityChanged } from "./availability.js";
 import { fromDateKey, isValidDateKey, toDateKey } from "../lib/serialize.js";
 import { audit } from "./auditLog.js";
-import { STOP_REASON_PREFIX } from "./salesStop.js";
+import { assertNoChannelBlocks, enqueueBlockSync } from "./channelBlocks.js";
 
 // ============================================================
 //  Turlar
@@ -256,6 +259,10 @@ export async function blockRooms(
   toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
   await onAvailabilityChanged(roomTypeIds, from, toExclusive, "room_blocked");
 
+  // Beds24'ga `black` bron — javobni kutmaymiz: yopish PMS'da saqlangan,
+  // navbat va catch-up yuboradi
+  await enqueueBlockSync(ids, "room_blocked");
+
   await audit({
     userId: opts.userId ?? null,
     action: "room.blocked",
@@ -282,24 +289,26 @@ export async function unblockRooms(
   const { from, to } = validateRange(input);
   const rooms = await findRooms(roomIds);
 
+  // Beds24 yopgan kunni PMS ochmaydi — Beds24 ustuvor (Q9): u Beds24
+  // panelida ochiladi va o'zgarish PMS'ga o'zi keladi
+  const toExclusive = new Date(to);
+  toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
+  await assertNoChannelBlocks(rooms.map((r) => r.id), from, toExclusive);
+
   const result = await prisma.roomDayStatus.updateMany({
     where: {
       roomId: { in: rooms.map((r) => r.id) },
       date: { gte: from, lte: to },
       isBlocked: true,
-      // STOP yopgan kunlar faqat "Stopdan chiqarish" bilan ochiladi
-      // (Sozlamalar -> Tizim nazorati) — aks holda catch-up qayta yopardi
-      // (NULL sababli kun ham ochilsin — `NOT` yolg'iz NULL'ni chiqarib yuborardi)
-      OR: [{ blockReason: null }, { NOT: { blockReason: { startsWith: STOP_REASON_PREFIX } } }],
     },
     data: { isBlocked: false, blockReason: null },
   });
 
   const roomTypeIds = [...new Set(rooms.map((r) => r.roomTypeId))];
-
-  const toExclusive = new Date(to);
-  toExclusive.setUTCDate(toExclusive.getUTCDate() + 1);
   await onAvailabilityChanged(roomTypeIds, from, toExclusive, "room_unblocked");
+
+  // Beds24'dagi `black` bron bekor qilinadi — xona OTA'da yana sotuvda
+  await enqueueBlockSync(rooms.map((r) => r.id), "room_unblocked");
 
   await audit({
     userId: opts.userId ?? null,

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-#  SSH tunnel — serverdagi Hotel PMS'ga ulanish
+#  SSH tunnel — serverdagi Hotel PMS'ga ulanish (2026-09-28)
 #
 #  Ishga tushirish:  bash tools/tunnel.sh
 #  To'xtatish:       Ctrl+C
@@ -10,23 +10,20 @@
 #    http://localhost:3100/shaxmatka    bandlik jadvali
 #    http://localhost:3100/admin-panel  boshqaruv paneli
 #
-#  Baza (DBeaver / psql uchun):
-#    postgresql://imron:imron@localhost:5433/imron_pms
-#
-#  DIQQAT: server portlari 127.0.0.1 ga bog'langan — internetdan
-#  kirib bo'lmaydi. Shu tunnel yagona yo'l.
+#  Baza va Redis tashqariga umuman chiqmaydi (Docker ichki tarmog'ida).
+#  Bazaga: ssh ... 'cd /srv/projects/hotel && docker compose exec postgres
+#  psql -U imron imron_pms' — SERVER.md. Bu JONLI baza: testlar faqat
+#  alohida test bazasida (README.md, "Testlar").
 # ============================================================
 
 source "$(dirname "${BASH_SOURCE[0]}")/_server.sh"
 KEY="$HOME/.ssh/hotel_vps"
 
-echo "Tunnel ochilmoqda: $SERVER"
-echo
-echo "  3100 -> backend (sayt, shaxmatka, admin panel)"
-echo "  5433 -> PostgreSQL"
-echo "  6380 -> Redis"
-echo
+PORT=$(ssh -i "$KEY" "$SERVER" "grep -E '^API_PORT=' /srv/projects/hotel/.env | cut -d= -f2")
+[ -n "$PORT" ] || { echo "Serverda API_PORT topilmadi"; exit 1; }
+
+echo "Tunnel ochilmoqda: localhost:3100 -> server $PORT (backend)"
 echo "To'xtatish uchun Ctrl+C"
 echo
 
-ssh -N -i "$KEY" -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -L 3100:localhost:3100 -L 5433:localhost:5433 -L 6380:localhost:6380 "$SERVER"
+ssh -N -i "$KEY" -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -L "3100:127.0.0.1:$PORT" "$SERVER"

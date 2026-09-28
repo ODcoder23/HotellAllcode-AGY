@@ -1,5 +1,5 @@
 /**
- * FAZA 13 — Website public API
+ * Website public API
  *
  * TZ 3-band:  Website -> PMS -> Database -> Shaxmatka.
  *             "OVERBOOKING BO'LMASLIGI SHART."
@@ -8,7 +8,7 @@
  *   darhol ko'rinadi -> xona band bo'ladi -> availability kamayadi."
  *
  * ISH CHEGARASI: Website kodiga kirish yo'q — API va uning kontrakti
- * topshiriladi, ulash scope'dan tashqarida (13-fayl §8).
+ * topshiriladi, ulash scope'dan tashqarida.
  *
  * Ishga tushirish:  npx vitest run src/public.test.ts
  * Shart: server, PostgreSQL (test bazasi), Redis
@@ -23,7 +23,7 @@ import {
 } from "./services/publicBooking.js";
 import { fromDateKey } from "./lib/serialize.js";
 import { TYPES, loadTypes, tariffFor } from "./testUtils.js";
-import { getMealPrice } from "./services/settings.js";
+import { getMealPrice, setSetting, SETTING_KEYS } from "./services/settings.js";
 
 const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
 
@@ -112,7 +112,7 @@ async function cleanupWebsiteBookings() {
   await prisma.reservation.deleteMany({ where: { id: { in: ids } } });
 }
 
-describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
+describe("Website public API (TZ 3, 20-band)", () => {
   beforeAll(async () => {
     // Tur ID'lari bazadan olinadi (testUtils.ts) — ilgari
     // "standard"/"double"/"deluxe" qattiq yozilgan edi
@@ -130,7 +130,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
     await cleanupWebsiteBookings();
   });
 
-  // --- Bron kodi (13-fayl §6) --------------------------------
+  // --- Bron kodi --------------------------------
   describe("bron kodi", () => {
     it("IMR-XXXXX shaklida", () => {
       expect(generateCode()).toMatch(/^IMR-[A-Z0-9]{5}$/);
@@ -149,7 +149,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
     });
   });
 
-  // --- Validatsiya (13-fayl §6) ------------------------------
+  // --- Validatsiya ------------------------------
   describe("sana validatsiyasi", () => {
     it("o'tmishdagi sana rad etiladi", () => {
       expect(() => validateRange(day(-5), day(-2))).toThrow(/o'tmish/i);
@@ -174,7 +174,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
     });
   });
 
-  // --- Qidiruv (13-fayl §2) ----------------------------------
+  // --- Qidiruv ----------------------------------
   describe("bo'sh xonalarni qidirish", () => {
     it("tokensiz ishlaydi — mijoz ro'yxatdan o'tmagan", async () => {
       await setPrices(day(30), day(32));
@@ -195,8 +195,8 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
        * `totalPrice` NONUSHTANI HAM O'Z ICHIGA OLADI (S10,
        * 2026-09-17). Ilgari `toBe(120)` — faqat xona narxi.
        *
-       * Saytdan kelgan bron har doim ovqat tarifi bilan
-       * (BOTLAR-REJA.md): mehmon darhol to'liq summani ko'radi,
+       * Saytdan kelgan bron har doim ovqat tarifi bilan:
+       * mehmon darhol to'liq summani ko'radi,
        * tasdiqlashda kutilmagan qo'shimcha chiqmasin.
        *
        * Nonushta narxi sozlamadan keladi, shuning uchun qattiq
@@ -228,7 +228,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
     });
 
     it("availableCount — butun oraliq bo'yicha MINIMAL qiymat", async () => {
-      // 13-fayl §2: 15-da 3 ta, 17-da 1 ta bo'sh bo'lsa, javob 1
+      // 15-da 3 ta, 17-da 1 ta bo'sh bo'lsa, javob 1
       await setPrices(day(50), day(55));
 
       // Oraliqning o'rtasiga bitta bron qo'yamiz
@@ -262,7 +262,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
     });
   });
 
-  // --- Xona tanlash (13-fayl §3) -----------------------------
+  // --- Xona tanlash -----------------------------
   describe("xona avtomatik tanlash", () => {
     it("bo'sh xona topiladi", async () => {
       const roomId = await pickRoom(TYPES.a, fromDateKey(day(60)), fromDateKey(day(62)));
@@ -343,8 +343,8 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
     });
   });
 
-  // --- FAZA 13 ASOSIY MEZONI ---------------------------------
-  describe("FAZA 13 mezoni — Website -> Shaxmatka", () => {
+  // --- Asosiy mezon ------------------------------------------
+  describe("Asosiy mezon — Website -> Shaxmatka", () => {
     it("bron yaratiladi, kod va xona qaytadi", async () => {
       await setPrices(day(80), day(83));
 
@@ -362,7 +362,10 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       expect(res.status).toBe(201);
       expect(res.body.reservationCode).toMatch(/^IMR-[A-Z0-9]{5}$/);
       expect(res.body.roomNumber).toBeTruthy();
-      // 13-fayl §5: darhol CONFIRMED emas — mijoz hali to'lamagan
+      // Kod bron bilan bitta yozuvda saqlanadi
+      const row = await prisma.reservation.findUnique({ where: { code: res.body.reservationCode } });
+      expect(row?.roomId).toBe(res.body.roomNumber);
+      // Darhol CONFIRMED emas — mijoz hali to'lamagan
       expect(res.body.status).toBe("pending_payment");
       // 90 x 3 + nonushta: sayt broni HAR DOIM ovqat bilan
       // (PROJECT_LOGIC 5-bo'lim) — kishi boshiga, har kecha
@@ -449,7 +452,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
     });
   });
 
-  // --- PENDING_PAYMENT (13-fayl §5) --------------------------
+  // --- PENDING_PAYMENT --------------------------
   describe("PENDING_PAYMENT oqimi", () => {
     it("to'lov qo'shilsa admin CONFIRMED ga o'tkazadi", async () => {
       await setPrices(day(100), day(102));
@@ -484,7 +487,33 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       expect(after?.paidAmount).toBe(80);
     });
 
-    it("muddati o'tgan to'lanmagan bron avtomatik bekor qilinadi", async () => {
+    it("standart: sayt mehmoni kelganda to'laydi — eski to'lanmagan bron ham bekor QILINMAYDI", async () => {
+      await setPrices(day(108), day(109));
+
+      const created = await publicApi("/api/public/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          roomTypeId: TYPES.b,
+          checkIn: day(108),
+          checkOut: day(109),
+          adults: 1,
+          guest: { fullName: "Kelganda Tolaydi", phone: "+998901110016" },
+        }),
+      });
+      expect(created.status).toBe(201);
+
+      await prisma.reservation.update({
+        where: { code: created.body.reservationCode },
+        data: { createdAt: new Date(Date.now() - 72 * 3600_000) },
+      });
+
+      const result = await expireUnpaidBookings();
+      expect(result.checked).toBe(0);
+      expect((await findByCode(created.body.reservationCode))?.status).toBe("pending_payment");
+    });
+
+    it("sozlamada muddat yoqilsa — muddati o'tgan to'lanmagan bron bekor qilinadi", async () => {
+      await setSetting(SETTING_KEYS.websiteUnpaidCancelHours, "24");
       await setPrices(day(105), day(107));
 
       const created = await publicApi("/api/public/reservations", {
@@ -509,13 +538,14 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       });
 
       const result = await expireUnpaidBookings();
+      await setSetting(SETTING_KEYS.websiteUnpaidCancelHours, "0");
       expect(result.cancelled).toBeGreaterThanOrEqual(1);
 
       const after = await findByCode(created.body.reservationCode);
       expect(after?.status).toBe("cancelled");
     });
 
-    it("yangi to'lanmagan bron bekor QILINMAYDI", async () => {
+    it("muddat yoqilgan bo'lsa ham yangi to'lanmagan bron bekor QILINMAYDI", async () => {
       await setPrices(day(110), day(112));
 
       const created = await publicApi("/api/public/reservations", {
@@ -529,14 +559,16 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
         }),
       });
 
+      await setSetting(SETTING_KEYS.websiteUnpaidCancelHours, "24");
       await expireUnpaidBookings();
+      await setSetting(SETTING_KEYS.websiteUnpaidCancelHours, "0");
 
       const after = await findByCode(created.body.reservationCode);
       expect(after?.status).toBe("pending_payment");
     });
   });
 
-  // --- Davriy vazifa (13-fayl §5) ---------------------------
+  // --- Davriy vazifa ---------------------------
   describe("davriy tozalash jadvali", () => {
     it("maintenance navbati ro'yxatdan o'tgan", async () => {
       const res = await api("/api/admin/queues");
@@ -554,7 +586,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       // `delayed` sonini tekshirish mo'rt bo'lardi.
       //
       // Muhimi: vazifaning O'ZI ishlaydi. Admin uni istalgan
-      // paytda qo'lda ishga tushira oladi (13-fayl §5).
+      // paytda qo'lda ishga tushira oladi.
       const res = await api("/api/admin/maintenance/expire-unpaid", { method: "POST" });
 
       expect(res.status).toBe(200);
@@ -563,7 +595,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
     }, 20000);
   });
 
-  // --- Bron kodi bilan tekshirish (13-fayl §2) ---------------
+  // --- Bron kodi bilan tekshirish ---------------
   describe("bronni kod bilan ko'rish", () => {
     it("mijoz o'z bronini ko'radi", async () => {
       await setPrices(day(115), day(118));
@@ -585,7 +617,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       expect(res.body.nights).toBe(3);
     });
 
-    it("javobda ICHKI ma'lumot yo'q (13-fayl §6)", async () => {
+    it("javobda ICHKI ma'lumot yo'q", async () => {
       await setPrices(day(120), day(122));
 
       const created = await publicApi("/api/public/reservations", {
@@ -621,7 +653,7 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
     });
   });
 
-  // --- Xavfsizlik (13-fayl §6) -------------------------------
+  // --- Xavfsizlik -------------------------------
   describe("xavfsizlik", () => {
     it("honeypot to'ldirilgan so'rov rad etiladi (bot)", async () => {
       const res = await publicApi("/api/public/reservations", {
@@ -641,6 +673,27 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
       // Bron yaratilmadi
       const exists = await prisma.reservation.findFirst({
         where: { guest: { fullName: "Bot Nomi" } },
+      });
+      expect(exists).toBeNull();
+    });
+
+    it("withMeal: false jimgina e'tiborsiz qolmaydi — rad etiladi (sayt broni har doim nonushta bilan)", async () => {
+      const res = await publicApi("/api/public/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          roomTypeId: TYPES.a,
+          checkIn: day(125),
+          checkOut: day(127),
+          adults: 1,
+          withMeal: false,
+          guest: { fullName: "Nonushtasiz Mehmon", phone: "+998901110011" },
+        }),
+      });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain("nonushta");
+
+      const exists = await prisma.reservation.findFirst({
+        where: { guest: { fullName: "Nonushtasiz Mehmon" } },
       });
       expect(exists).toBeNull();
     });
@@ -683,6 +736,47 @@ describe("FAZA 13 — Website public API (TZ 3, 20-band)", () => {
 
       // 4-urinishda to'xtaydi
       expect(lastStatus).toBe(400);
+
+      // Bronlar avtomatik bekor bo'lmaydi — eski (24 soatdan oldingi)
+      // to'lanmagan bronlar ham sanaladi, ertasi kuni yana 3 ta qo'yib bo'lmaydi
+      await prisma.reservation.updateMany({
+        where: { guest: { phone } },
+        data: { createdAt: new Date(Date.now() - 48 * 3600_000) },
+      });
+      const again = await publicApi("/api/public/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          roomTypeId: TYPES[roomType],
+          checkIn: day(140),
+          checkOut: day(141),
+          adults: 1,
+          guest: { fullName: "Spam ertasi", phone },
+        }),
+      });
+      expect(again.status).toBe(400);
+    }, 30000);
+
+    it("raqamni boshqacha yozish (bo'sh joy, chiziqcha, +998 siz) cheklovni chetlab o'tmaydi", async () => {
+      await setPrices(day(160), day(175));
+      const roomType = (Object.entries(TOTAL) as Array<["a" | "b" | "c", number]>)
+        .sort((x, y) => y[1] - x[1])[0][0];
+      const variants = ["+998 90 111-88-77", "+998901118877", "90 111 88 77", "(90) 111-88-77"];
+
+      const statuses: number[] = [];
+      for (const [i, phone] of variants.entries()) {
+        const res = await publicApi("/api/public/reservations", {
+          method: "POST",
+          body: JSON.stringify({
+            roomTypeId: TYPES[roomType],
+            checkIn: day(160 + i * 2),
+            checkOut: day(161 + i * 2),
+            adults: 1,
+            guest: { fullName: `Format ${i}`, phone },
+          }),
+        });
+        statuses.push(res.status);
+      }
+      expect(statuses).toEqual([201, 201, 201, 400]);
     }, 30000);
 
     it("qisqa ism rad etiladi", async () => {

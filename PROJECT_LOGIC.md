@@ -3,11 +3,13 @@
 **Bu hujjat loyihaning amaldagi logikasining yagona referensi.**
 
 Har bir fakt kod, `schema.prisma` yoki jonli tizimda tasdiqlangan
-(2026-09-26 auditi). Tasdiqlanmagan narsalar "noaniq" deb belgilangan.
+(oxirgi tekshiruv 2026-09-28). Tasdiqlanmagan narsalar "noaniq" deb
+belgilangan (17-bo'lim). Kod o'zgarsa bu hujjat shu commit'da yangilanadi.
 
-**Beds24 integratsiyasi 2026-09-26 da olib tashlandi** — tizimda
-tashqi channel manager yo'q. Qanday ishlagani va qanday olib
-tashlangani: [BEDS24.md](BEDS24.md) (arxiv).
+**Beds24 — ikki tomonlama integratsiya** (2026-09-27, egasi qarori
+Q19: 2026-09-26 da olib tashlangan integratsiya avvalgidek qaytdi, STOP
+olib tashlandi). Qoidalar, valyuta, ruxsatlar va ulash:
+[BEDS24.md](BEDS24.md).
 
 Qolgan ishlar: [ISH_REJASI.md](ISH_REJASI.md)
 
@@ -19,16 +21,17 @@ Mehmonxona boshqaruv tizimi (PMS). Bir vaqtda to'rtta ish:
 
 1. **Sayt** — mehmon xona qidiradi va bron qiladi
 2. **Shaxmatka** — xodim bandlik jadvalini ko'radi va boshqaradi
-3. **Admin panel** — bron, narx, mavjudlik, tozalik, moliya, hisobot, STOP
+3. **Admin panel** — bron, narx, mavjudlik, tozalik, moliya, hisobot, Channel manager (Beds24)
 4. **Telegram botlar** — egasi, tozalik guruhi, oshxona
 
 Asosiy talab: **overbooking bo'lmasligi shart**. Bir xonaga
 kesishuvchi ikki bron hech qanday yo'l bilan tushmasligi kerak.
 
-**PMS bazasi yagona haqiqat manbai.** Booking.com va boshqa OTA'lar
-tizimga ulanmagan: ulardan kelgan bronni qabulxona qo'lda kiritadi
-(manba "Booking.com" va h.k. — komissiya xarajatga avtomatik yoziladi),
-OTA'dagi sotuvni esa OTA kabinetida yopadi.
+**Beds24 ustuvor (Q9).** Booking.com va boshqa OTA'lar Beds24 orqali
+ulangan: OTA broni PMS'ga o'zi tushadi (sanasi, narxi, bekor qilinishi
+OTA'da), PMS bronlari, narxlari va yopiq kunlari Beds24'ga yuboriladi.
+PMS bazasi — mehmonxona ichki ishining (to'lov, kirish/chiqish, tozalik,
+moliya) haqiqat manbai. OTA komissiyasi xarajatga avtomatik yoziladi.
 
 ---
 
@@ -43,15 +46,16 @@ OTA'dagi sotuvni esa OTA kabinetida yopadi.
    Sayt · Shaxmatka · Admin panel   Telegram botlar (3 ta)
 ```
 
-Tashqi tizimga bog'liqlik yo'q: Redis o'chsa ham bron, check-in va
-to'lov ishlaydi (davriy vazifalar Redis qaytgach davom etadi).
+Beds24 — tashqi channel manager (webhook + polling kiradi, bron/narx/
+yopish chiqadi). Beds24 yoki Redis o'chsa ham bron, check-in va to'lov
+ishlaydi: yuborilmagan bron `PENDING` qoladi, catch-up keyin yuboradi.
 
 **Texnologiyalar:** Node.js 22+, Express, TypeScript, Prisma,
 PostgreSQL 16 (`btree_gist` kerak), Redis 7, BullMQ, grammy
 (Telegram), Zod (validatsiya), JWT.
 
-**Joylashuv:** butun infratuzilma Contabo VPS'da. Kompyuterda
-faqat kod. Ulanish SSH tunnel orqali.
+**Joylashuv:** VPS, Docker Compose (api + PostgreSQL + Redis), tashqaridan
+faqat nginx orqali HTTPS — [SERVER.md](SERVER.md). Kompyuterda faqat kod.
 
 ### Qatlamlar
 
@@ -87,7 +91,7 @@ yasaladi: `npm run build:css`.
 
 ## 3. Ma'lumot modeli
 
-17 model, 7 enum. Asosiylari:
+24 model, 12 enum. Asosiylari:
 
 ```
 Floor (F1,F2,F3) ──< Room (101..306) >── RoomType (9 tarif)
@@ -100,21 +104,28 @@ Floor (F1,F2,F3) ──< Room (101..306) >── RoomType (9 tarif)
                        │       ├──< Payment
                        │       └──< Charge
                        │
-                       ├──< RoomDayStatus (yopiq kunlar, STOP)
+                       ├──< RoomDayStatus (yopiq kunlar: ta'mir, Beds24 `black`)
                        └──< CleaningTask
                                Reservation ──< Expense (OTA komissiyasi, CASCADE)
 ```
 
-Beds24 jadvallari (`Channel*`, `SyncLog`, `WebhookEvent`,
-`SyncState`) va bron/to'lovdagi valyuta, kurs va kanal ustunlari
-`20260926200000_remove_beds24` migratsiyasi bilan o'chirilgan.
+Beds24 jadvallari: `Channel`, `ChannelConnection` (token shifrlangan),
+`ChannelMapping` (Beds24 tur/unit ↔ PMS tarif/xona), `ChannelBlock`
+(yopish ↔ `black` bron), `SyncLog`, `SyncState`, `WebhookEvent`. Bronda:
+`origin` (PMS / CHANNEL), `externalReservationId`, `externalReference`
+(OTA raqami), `currency` + `exchangeRate` (bron kelgan kun kursi),
+`syncStatus` (PENDING, SYNCING, SYNCED, FAILED, REJECTED, NOT_APPLICABLE)
+va `syncError`. To'lovda — asl summa va valyuta (`originalAmount`,
+`originalCurrency`, `exchangeRate`). `RatePlan` da `syncedAt`,
+`syncError`, `channelPrice` ($), `source` (pms / beds24).
 `pricePerNight` 4 xona kasr bilan saqlanadi (jami narx kechalarga
 bo'linganda sent yo'qolmasin). `User.passwordChangedAt` — parol
 almashgach eski token'lar bekor.
 
 ### Inventar (seed'da belgilangan)
 
-**18 xona, 3 qavat, 9 tarif.** Tizim valyutasi — **faqat so'm**.
+**18 xona, 3 qavat, 9 tarif.** Tizim valyutasi — **so'm**; Beds24'dan
+kelgan bron — USD (tagida so'm, bron kelgan kun kursi, Q15/Q19).
 "Bugun" — mehmonxona kuni, Toshkent (UTC+5): `lib/hotelTime.ts`
 (`hotelToday`), frontendda ham shu qoida.
 
@@ -195,10 +206,12 @@ Tasdiqlangan: 2 bo'sh xonaga 6 parallel so'rov → **2 bron o'tadi**,
 |---|---|---|---|
 | Sayt | `POST /api/public/reservations` | yo'q | **har doim bor** |
 | Qabulxona / admin | `POST /api/reservations` | JWT | xodim tanlaydi |
+| Beds24 (OTA) | webhook `/api/webhooks/beds24/<token>` + polling | URL token | Beds24 tur bog'lanishidagi belgi |
 
-OTA (Booking.com, Ostrovok, Airbnb...) broni ham qabulxona orqali
-kiritiladi — `source` tanlanadi, OTA komissiyasi (`OTA_COMMISSION_PERCENT`)
-xarajatlarga avtomatik yoziladi.
+OTA broni (Booking.com, Ostrovok...) Beds24 orqali o'zi keladi
+(`origin = CHANNEL`). Qabulxona qo'lda kiritsa ham dublikat bo'lmaydi —
+import uni OTA raqami yoki sanalar bo'yicha bog'laydi. OTA komissiyasi
+(`OTA_COMMISSION_PERCENT`) xarajatlarga avtomatik yoziladi.
 
 ### Bron summasi — yagona formula
 
@@ -214,7 +227,9 @@ bekor qilingan / kelmagan: jami = jarima
 qarz   = max(jami − to'langan, 0);  qaytarish = max(to'langan − jami, 0)
 ```
 
-Hammasi sentda qo'shiladi (float xatosiz). Sayt narxi — oraliqdagi har
+Hammasi sentda qo'shiladi (float xatosiz). Summalar bron valyutasida;
+so'mga `toBase` (bron kursi) bilan, to'lov — `paymentBase` (asl so'm
+bo'lsa o'sha) bilan o'giriladi. Sayt narxi — oraliqdagi har
 kecha o'z tarifi bilan (`stayPriceFromRates`); qabulxonadagi "tarifdan
 past" tekshiruvi ham butun oraliq jami bilan solishtiradi.
 
@@ -234,12 +249,19 @@ WebSocket → Shaxmatka darhol ko'radi
 Availability keshi qayta hisoblanadi → sayt yangi sonni ko'radi
 ```
 
-To'lanmagan sayt broni `PENDING_PAYMENT_TIMEOUT_HOURS` (24) dan keyin
-avtomatik bekor qilinadi (faqat `WEBSITE` manbali bron).
+**To'lov (Q20, 2026-09-28):** sayt mehmoni to'lovni **kelganda** qiladi —
+sayt ham shuni aytadi. Bron `PENDING_PAYMENT` bo'lib turadi, qabulxona
+mehmon bilan bog'lanib tasdiqlaydi yoki kelganda to'lov oladi. Avtomatik
+bekor qilish standart **o'chiq**: muddat biznes sozlamasi
+`WEBSITE_UNPAID_CANCEL_HOURS` (admin panel → Sozlamalar); 0 dan katta
+bo'lsa shuncha soatda tasdiqlanmagan sayt broni bekor bo'ladi (faqat
+`WEBSITE` manbali, mehmonga xabar bormaydi). Oldindan to'lov — Beds24
+(OTA) mehmonlari, uni OTA boshqaradi.
 
 **Qoida:** saytdan kelgan bron **har doim ovqat bilan**
 (`withMeal: true`). Qidiruv va bron bir xil summa qaytarishi
-shart — aks holda mehmon boshqa narx ko'radi.
+shart — aks holda mehmon boshqa narx ko'radi. API `withMeal: false`
+ni rad etadi (400), jimgina e'tiborsiz qoldirmaydi.
 
 ### Bron kodi
 
@@ -300,14 +322,15 @@ soat :01 da hamma xonani qayta hisoblaydi (kun almashganda).
 | Check-in | Faqat kirish kuni (kelajakdagi bron emas), oldingi mehmon chiqmaguncha yo'q, ta'mirdagi xonaga yo'q | `checkIn()` |
 | Kelmadi | Kirish kuni kelmaguncha belgilanmaydi | `markNoShow()` |
 | Parallel to'lov | Bron qatori `FOR UPDATE` bilan qulflanadi — ikki kassir qarzdan oshirib yozolmaydi | `addPayment()`, `reversePayment()` |
-| Bekor qilingan bron | Qo'shimcha xizmat qo'shib bo'lmaydi | `addCharge()` |
+| Bekor qilingan bron | Qo'shimcha xizmat qo'shib bo'lmaydi (bron qatori qulf ostida tekshiriladi) | `addCharge()` |
+| Xona / sana o'zgartirish | Audit jurnaliga eski va yangi qiymat bilan; o'zgarmagan sana rad etiladi | `changeRoom()`, `changeDates()` |
 | Mehmon ismi | Bir xil telefonda ism yangilanadi | `findOrCreateGuest()` |
 | Telefon majburiy | Telefonsiz bron har safar yangi mehmon yozuvi yaratardi | `phoneSchema` |
 | O'tmish bronlari | 30 kungacha ruxsat, undan oldin rad | `createReservation()` |
 | Iflos xona | Tozalanmaguncha check-in yo'q | `checkIn()` |
 | To'lov egasi | Kim qabul qilgani yoziladi (`Payment.userId`) | `addPayment()` |
 | Bir yildan uzoq bron | Rad etiladi | `validateRange()` |
-| Spam himoyasi | Bir telefonga 24 soatda 3 ta to'lanmagan bron | `checkSpam()` |
+| Spam himoyasi | Bir telefonga 3 ta faol (tugamagan) to'lanmagan sayt broni, vaqt oynasisiz; raqam raqamlari bo'yicha (oxirgi 9 ta) solishtiriladi. Bir IP'dan soatiga 5 ta bron | `checkSpam()`, `publicWriteLimiter` |
 
 ### Sozlanadigan qiymatlar (`BUSINESS_DEFAULTS`)
 
@@ -315,14 +338,19 @@ soat :01 da hamma xonani qayta hisoblaydi (kun almashganda).
 |---|---|
 | Nonushta narxi | 25 000 so'm / kishi / kecha — admin panel → Oshxona |
 | Bepul bekor qilish | 24 soat |
-| Bekor qilish jarimasi | 0 kecha (o'chiq) |
+| Bekor qilish jarimasi | 0 kecha (o'chiq, Q16) |
+| To'lanmagan sayt bronini bekor qilish | 0 soat (o'chiq, Q20) |
 | OTA komissiyasi | 15% |
 | Audit jurnali saqlash | 365 kun |
+| Chiqishda tozalash topshirig'i | yoqilgan |
 | Tozalash me'yori | 30 daqiqa |
 | Kechikish eslatmasi | 30 daqiqa |
 | Chiqish soati | 12:00 (Toshkent) |
 
-Bazadagi `Settings` jadvalidan o'zgartiriladi.
+Bazadagi `Settings` jadvalida; admin panel → **Sozlamalar** (egasi, admin;
+`GET/PUT /api/admin/business-settings`). Har o'zgarish audit jurnaliga
+eski va yangi qiymat bilan yoziladi. Nonushta narxi — Oshxona bo'limida
+(faol bronlar summasini ham qayta hisoblaydi).
 
 **Nonushta narxi** admin panel → Oshxona → "Nonushta narxi"
 (`PUT /api/admin/meal-price`, `settings.write`). Sayt va yangi bronlar
@@ -343,14 +371,20 @@ tekshiradi.
 | `report.read` (umumiy hisobot) | ✓ | | | |
 | `user.manage` | ✓ | | | |
 | `employee.read` / `employee.write` | ✓ | ✓ | | |
-| `settings.write` (sozlamalar, STOP, tozalash, navbat) | ✓ | ✓ | | |
+| `settings.write` (sozlamalar, tozalash, navbat) | ✓ | ✓ | | |
 | `reservation.write` / `.cancel` | ✓ | ✓ | ✓ | |
 | `rate.write` | ✓ | ✓ | ✓ | |
-| `room.block` (yopish, iflos xonani qo'lda ochish) | ✓ | ✓ | ✓ | |
-| `audit.read` (audit jurnali) | ✓ | ✓ | ✓ | |
+| `room.block` (xona va qavat yopish, iflos xonani qo'lda ochish) | ✓ | ✓ | ✓ | |
+| `audit.read` (Audit jurnali, Tizim holati) | ✓ | ✓ | ✓ | |
 | `checkin.write` | ✓ | ✓ | ✓ | ✓ |
-| `payment.write` | ✓ | ✓ | ✓ | ✓ |
+| `payment.write` (to'lov qabul qilish) | ✓ | ✓ | ✓ | ✓ |
+| `payment.refund` (qaytarish, manfiy to'lov) | ✓ | ✓ | ✓ | |
 | `reservation.read` | ✓ | ✓ | ✓ | ✓ |
+| `channel.write` (Beds24 ulash, bog'lash, qo'lda amallar, kurs, bronni qayta yuborish) | ✓ | ✓ | | |
+| `channel.read` (Channel manager: holat, jurnal, bronlar) | ✓ | ✓ | ✓ | |
+
+Dollar bron summasi (`$` va so'm) — bron ichida, `reservation.read`
+bilan hamma xodimga (Q19).
 
 **Muhim:** moliya va foydalanuvchi boshqaruvi faqat FOUNDER'da.
 ADMIN texnik ishlarni qiladi, biznes raqamlarini ko'rmaydi.
@@ -379,16 +413,34 @@ ishga tushirishni bloklaydi.
 
 ---
 
-## 9. Tashqi kanallar (OTA)
+## 9. Tashqi kanallar — Beds24
 
-Tashqi channel manager yo'q (Beds24 2026-09-26 da olib tashlangan —
-[BEDS24.md](BEDS24.md)). Booking.com va boshqa OTA bronlari:
+Batafsil: [BEDS24.md](BEDS24.md). Qisqasi:
 
-- qabulxona Shaxmatka/admin panelda bron yaratadi, manbani tanlaydi;
-- OTA komissiyasi (`OTA_COMMISSION_PERCENT`, standart 15%) davr bo'yicha
-  xarajatlarga avtomatik yoziladi (`recalcCommissions`, advisory lock);
-- OTA'dagi sotuvni (bo'sh joy, STOP) OTA kabinetida boshqarish kerak —
-  PMS'dagi STOP va xona yopish faqat sayt va qabulxonaga ta'sir qiladi.
+| Yo'nalish | Nima | Qanday |
+|---|---|---|
+| Beds24 → PMS | bronlar (OTA, Beds24 paneli) | webhook (darhol) + polling (`POLL_INTERVAL_MINUTES`, 5) |
+| Beds24 → PMS | `black` — xona yopilishi | PMS'da yopiladi, PMS ocholmaydi |
+| Beds24 → PMS | narx (tur darajasida bog'langan tarif) | soatlik; yuborilmagan PMS narxi ustiga yozilmaydi |
+| PMS → Beds24 | qabulxona/sayt broni, o'zgarishi, kirish/chiqish belgisi | `beds24-reservation-sync`, `checkAvailability` |
+| PMS → Beds24 | xona yopish/ochish | `black` bron (`beds24-availability-sync`) |
+| PMS → Beds24 | tarif narxi | so'm / bugungi kurs = $ (`beds24-rate-sync`) |
+
+- **OTA qulfi (Q9):** OTA bronining sanasi, narxi, mehmon soni, bekor
+  qilinishi, boshqa turga ko'chirilishi — `409 CHANNEL_OWNED`
+  (`lib/channelOwnership.ts`). Kirish/chiqish, to'lov, izoh, shu turdagi
+  xonaga ko'chirish — ruxsat.
+- **Rad etilgan bron** (Beds24'da joy yo'q) — `REJECTED`, avtomatik
+  qayta yuborilmaydi; egasiga Telegram. Bog'lanmagan xona —
+  `NOT_APPLICABLE` (xato emas).
+- **Bo'sh joy soni** PMS'dan yozilmaydi — Beds24 bronlar va `black` dan
+  hisoblaydi. Farq har kuni 04:00 da tekshiriladi va faqat qayd etiladi.
+- **Kurs:** Markaziy bank (3 soat) yoki qo'lda; Beds24 bronida kelgan
+  kundagi kurs qotadi, so'mdagi to'lov shu kurs bilan o'giriladi.
+- **Channel manager:** admin panel (egasi, admin — boshqaradi; menejer —
+  ko'radi), `/admin/connection.html`, `/admin/mapping.html`,
+  `/admin/sync-log.html`. Shaxmatka bron oynasida Beds24 holati va
+  "Qayta yuborish".
 
 ---
 
@@ -424,7 +476,9 @@ DONE → xona DIRTY bo'lsa AVAILABLE ga o'tadi
 | Bir xona = bir ochiq topshiriq | Takroriy xabar bo'lmasin |
 
 Kim bosgani Telegram ismi bilan yoziladi (`claimedByName`) —
-`Employee` yozuvi shart emas.
+`Employee` yozuvi shart emas. Xodimga Telegram ID bog'langan bo'lsa
+(admin panel → Ishchilar, farrosh botga `/id` yozib biladi) topshiriq
+xodim yozuviga ham yoziladi — hisobotda xodimning ismi chiqadi.
 
 ### Uch alohida bot
 
@@ -445,11 +499,20 @@ Bot ishga tushmasa (token bo'sh) jim o'chadi — backend ishlayveradi.
 `services/kitchen.ts` bugun va ertaga nechta porsiya kerakligini
 hisoblaydi.
 
-Kim hisoblanadi: `CHECKED_IN` (hozir xonada) + `CONFIRMED`
-(bugun keladigan), faqat `withMeal = true`.
+**Qoida (Q20):** nonushta tunashdan keyingi ertalab. D kuni nonushta —
+D dan oldingi kechani mehmonxonada o'tkazganlarga: `checkIn < D <= checkOut`.
+Kelgan kuni nonushta yo'q, ketadigan kuni bor. Nonushtalar soni kecha
+soniga teng — bron summasi (narx × kishi × kecha) bilan mos.
 
-Kattalar va bolalar alohida ko'rsatiladi. Admin panel → Oshxona
-bo'limida jonli ko'rinadi.
+Kim sanaladi (`withMeal = true`): xonada (`CHECKED_IN`); kirishi hali
+belgilanmagan (`CONFIRMED`, `PENDING_PAYMENT` — ertangi hisobotda bugun
+keladiganlar); shu kuni chiqib ketgan (`CHECKED_OUT`, chiqish vaqti D
+kuni). Muddatidan oldin ketgan mehmon keyingi kunlarga sanalmaydi.
+
+Holatlar: xonada, shu kuni ketadi, kirish belgilanmagan. Kattalar va
+bolalar alohida. Admin panel → Oshxona bo'limida jonli; oshxona botiga
+07:30 (bugun) va 20:00 (ertaga) o'zi ketadi, panelda qo'lda yuborish
+tugmasi ham bor.
 
 ---
 
@@ -459,7 +522,9 @@ bo'limida jonli ko'rinadi.
 kerak emas.
 
 Hodisalar: bron yaratildi/o'zgardi/bekor qilindi, xona holati,
-availability o'zgardi, tozalash topshirig'i.
+availability o'zgardi, tozalash topshirig'i. Beds24 ogohlantirishlari
+(`sync.failed`, `webhook.needs_attention`, `rate.sync.updated`) — admin
+panelning Channel manager bo'limiga.
 
 Redis Pub/Sub orqali — bir necha server nusxasi bo'lsa ham
 hamma mijozga yetadi.
@@ -468,17 +533,24 @@ hamma mijozga yetadi.
 
 ## 13. Navbatlar (BullMQ)
 
-Bitta navbat — `pms-maintenance` (davriy vazifalar, concurrency 1).
-Jadval Toshkent vaqtida (`tz: Asia/Tashkent`), `upsertJobScheduler` —
-restartda dublikat bo'lmaydi. Eski Beds24 jadvallari ishga tushishda
+Beds24 navbatlari (TZ 11-band): `beds24-reservation-sync`,
+`beds24-availability-sync`, `beds24-rate-sync`, `beds24-webhook`,
+`beds24-retry` (yiqilgan vazifalar) — [BEDS24.md](BEDS24.md) 5-bo'lim.
+Davriy vazifalar — `pms-maintenance` (concurrency 1). Jadval Toshkent
+vaqtida (`tz: Asia/Tashkent`), `upsertJobScheduler` — restartda dublikat
+bo'lmaydi. Olib tashlangan jadvallar (STOP, kuzatuv) ishga tushishda
 Redis'dan o'chiriladi (`OBSOLETE_SCHEDULERS`).
 
 ### Davriy vazifalar
 
 | Vazifa | Davr |
 |---|---|
-| To'lanmagan sayt bronlarini bekor qilish | har soat boshida |
-| STOP ufqini surish | 15 daqiqa |
+| To'lanmagan sayt bronlarini bekor qilish (Sozlamalar'da muddat 0 dan katta bo'lsa) | har soat boshida |
+| Beds24 polling | `POLL_INTERVAL_MINUTES` (5; 0 — Beds24 jadvallari o'chiq) |
+| Beds24 catch-up | `CATCH_UP_INTERVAL_MINUTES` (15) |
+| Beds24 narxini tortish | har soat |
+| Beds24 bo'sh joy farqi (faqat qayd) | 04:00 |
+| Dollar kursi (Markaziy bank) | 3 soat |
 | Tozalash tekshiruvi (yuborish, eslatma, chiqish kuni) | 10 daqiqa |
 | Xona holatini qayta hisoblash (`room_status`) | har soat :01 |
 | Audit jurnalini tozalash | yakshanba 03:30 |
@@ -498,7 +570,7 @@ Redis qaytgach davom etadi. `/health` "degraded" qaytaradi, "down" emas.
 | Parol almashishi | Eski token'lar bekor (`passwordChangedAt`) |
 | Admin endpoint'lari | Hammasi `requireAuth` + huquq |
 | HTTP sarlavhalar | `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: same-origin` |
-| Tarmoq | Backend `127.0.0.1:3100` (nginx orqali), Postgres va Redis loopback'da |
+| Tarmoq | API konteyneri faqat `127.0.0.1:<API_PORT>` da (nginx orqali), Postgres va Redis faqat Docker ichki tarmog'ida |
 | CORS | Faqat `CORS_ORIGINS` ro'yxatidagi domenlar |
 | Rate limit | IP bo'yicha (`express-rate-limit`) |
 | XSS | Admin panelda `esc()`, Shaxmatka React (JSX o'zi escape qiladi) |
@@ -506,6 +578,7 @@ Redis qaytgach davom etadi. `/health` "degraded" qaytaradi, "down" emas.
 | Bot spam | Honeypot maydoni saytdagi formada |
 | Loglar | `sanitizeForLog()` token/parol/karta raqamini `[REDACTED]` qiladi |
 | Audit | `AuditLog` — kim, nima, qachon, qaysi IP |
+| Tozalash rasmlari | `/uploads` login'siz ochilmaydi: API imzoli havola beradi (12 soat) yoki Bearer token (`lib/uploadAccess.ts`) |
 
 ### Production tekshiruvi
 
@@ -516,7 +589,7 @@ bilan serverni **ishga tushirmaydi**:
 - `NODE_ENV=production` da: `AUTH_REQUIRED=false`,
   `RATE_LIMIT_DISABLED=true`, `JWT_SECRET` 32 belgidan qisqa
 
-Serverda `NODE_ENV=production` (2026-09-26 dan, systemd drop-in).
+Serverda `NODE_ENV=production` — `docker-compose.yml` majburan qo'yadi.
 
 ---
 
@@ -531,7 +604,8 @@ Serverda `NODE_ENV=production` (2026-09-26 dan, systemd drop-in).
 | `/api/rooms/*` | JWT | Xonalar, turlar, bo'sh xonalar, mavjudlik jadvali, yopish |
 | `/api/reservations/*` | JWT | Bron CRUD, status, to'lov |
 | `/api/rate-plans` | JWT | Narxlar |
-| `/api/admin/*` | JWT + huquq | Sozlama, STOP, tozalik, oshxona, xodim, xarajat, hisobot, audit, bot ruxsatlari |
+| `/api/admin/*` | JWT + huquq | Sozlama, tozalik, oshxona, xodim, xarajat, hisobot, audit, bot ruxsatlari, Channel manager (ulanish, mapping, jurnal, kurs) |
+| `/api/webhooks/beds24/<token>` | URL token | Beds24 webhook (token noto'g'ri — 404) |
 
 ### Xato javoblari
 
@@ -550,46 +624,26 @@ Kodlar: `VALIDATION` (400), `UNAUTHORIZED` (401), `FORBIDDEN`
 
 ## 16. Muhit
 
-### Portlar
+**Server:** API `127.0.0.1:<API_PORT>` (serverdagi registrdan, `.env`),
+tashqaridan faqat nginx (HTTPS). PostgreSQL va Redis konteyner ichida,
+hostga ham chiqmaydi. Brauzerda to'g'ridan-to'g'ri: `bash tools/tunnel.sh`
+→ `http://localhost:3100`. Batafsil: [SERVER.md](SERVER.md).
 
-| Xizmat | Server | Tunnel orqali |
-|---|---|---|
-| Backend | 3100 | `localhost:3100` |
-| PostgreSQL | 5433 | `localhost:5433` |
-| Redis | 6380 | `localhost:6380` |
-
-Server portlari `127.0.0.1` ga bog'langan — internetdan kirib
-bo'lmaydi. SSH tunnel yagona yo'l: `bash tools/tunnel.sh`.
+**Lokal va testlar:** [README.md](README.md).
 
 ### Muhim tuzoqlar
 
-**`localhost` IPv6 ga hal bo'ladi.** Node 18+ da `localhost`
-avval `::1` ga hal bo'ladi, SSH tunnel esa IPv4'da tinglaydi.
-Test va skriptlarda **`127.0.0.1`** yozish shart.
+**`localhost` IPv6 ga hal bo'ladi.** Node 18+ da `localhost` avval `::1`
+ga hal bo'ladi. Test va skriptlarda **`127.0.0.1`** yozish shart.
 
-**Testlar bazani tozalaydi.** `vitest.setup.ts` har test
-faylidan oldin `prisma/seed.ts` chaqiradi — barcha bronlar va
-narxlar o'chadi. Himoya: baza nomida "test" bo'lmasa testlar ishga
-tushmaydi, seed esa bronli "test"siz bazani tozalamaydi. Testlar
-faqat alohida bazada (`zakas042/README.md`, "Testlar").
+**Testlar bazani tozalaydi.** `vitest.setup.ts` har test faylidan oldin
+`prisma/seed.ts` chaqiradi — barcha bronlar va narxlar o'chadi. Himoya:
+baza nomida "test" bo'lmasa testlar ishga tushmaydi, seed esa bronli
+"test"siz bazani tozalamaydi. Testlar faqat alohida bazada.
 
-**Bot bir vaqtda bitta joyda.** Mahalliy va server birga ishga
-tushsa Telegram `409 Conflict` beradi.
-
-**PostgreSQL 5433.** Mahalliy PostgreSQL 16 xizmati 5432 ni
-egallagan; Docker konteyneri 5433 ga chiqariladi.
-
-### Buyruqlar
-
-```bash
-npm run dev            # ishlab chiqish (tsx watch)
-npm run build          # TypeScript → dist/
-npm start              # dist/server.js
-npm test               # vitest
-npm run db:migrate     # migratsiya
-npm run db:seed        # baza to'ldirish (faqat test/bo'sh bazada)
-npm run build:css      # Shaxmatka Tailwind CSS
-```
+**Bot bir vaqtda bitta joyda.** Bir token bilan lokal va server birga
+ishga tushsa Telegram `409 Conflict` beradi — lokal `.env` da Telegram
+tokenlari bo'sh.
 
 ---
 
@@ -601,14 +655,15 @@ Kod bilan tasdiqlab bo'lmagan yoki qarama-qarshi ma'lumotlar:
 "sig'im va tarif darajasiga qarab qo'yilgan" deb belgilangan.
 Egasi 2026-09-25 da aytdi: narxni admin qo'yadi.
 
-**Valyuta — faqat so'm** (2026-09-26, Beds24 bilan birga dollar ham
-olib tashlandi).
+**Valyuta** — so'm; Beds24 bronlari USD, bron kelgan kun kursi bilan
+(Q15, Q19 — 2026-09-27 da qaytdi).
 
 **Sig'im.** Sayt qidiruvi va bron `maxAdults` bo'yicha tekshiradi;
 bolalar sig'imga qanday kirishi aniq belgilanmagan.
 
-**Minimal kecha (`minStay`).** `RatePlan.minStay` saqlanadi, lekin
-sayt va qabulxona bronida tekshirilmaydi.
+**Cheklovlar (`minStay`, `maxStay`, kirish/chiqish taqiqi).** `RatePlan`
+da saqlanadi va Beds24 orqali OTA'larga ketadi (TZ 10-band), lekin sayt
+va qabulxona bronida tekshirilmaydi.
 
 **Bolalar porsiyasi.** Nonushta narxi bola va kattalar uchun
 bir xil. Bola uchun arzonroq bo'lishi kerakmi — hal qilinmagan.

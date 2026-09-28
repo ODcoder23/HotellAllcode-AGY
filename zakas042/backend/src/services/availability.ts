@@ -1,11 +1,10 @@
 /**
  * Availability keshi — tur x kun bo'yicha bo'sh xonalar soni
  *
- * Manba: 07-AVAILABILITY-VA-RATES-SYNC.md §1–§2
  * TZ 6-band:  "Xona band qilinsa availability kamayadi, bekor qilinsa
  *              qayta oshadi."
  *
- * IKKI DARAJA (07-fayl §1):
+ * IKKI DARAJA:
  *   aniq xona (101, 102, ...) — haqiqat manbai: bronlar va yopiq kunlar
  *   tur bo'yicha SON         — shu keshda, sayt qidiruvi uchun
  * Ikkinchisi birinchisidan hisoblab chiqariladi, qo'lda yozilmaydi.
@@ -28,7 +27,7 @@ export type AvailabilityDay = {
 };
 
 // ============================================================
-//  1. Qayta hisoblash (07-fayl §2 agregatsiya formulasi)
+//  1. Qayta hisoblash
 // ============================================================
 
 /**
@@ -123,7 +122,7 @@ export async function recalcAvailability(
 /**
  * Oraliqdagi kunlarni qaytaradi (keshdan, qayta hisoblamaydi).
  *
- * `to` CHIQMAYDI: `'[)'` chegara qoidasi (02-fayl §4). Mehmon
+ * `to` CHIQMAYDI: `'[)'` chegara qoidasi. Mehmon
  * checkOut kuni xonada yo'q, ya'ni o'sha kun band emas.
  */
 export async function readRange(

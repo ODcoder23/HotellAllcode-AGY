@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Beds24 mapping</title>
+<link rel="stylesheet" href="_shared.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Xona bog'lash (mapping)</h1>
+  <div class="sub">Beds24 xona turi / unit ↔ PMS tarifi / xonasi. Bog'langan xonaning bronlari, yopiq kunlari va narxi Beds24 bilan sinxronlanadi; bog'lanmagani — yo'q. Bog'lash — egasi va admin.</div>
+
+  <nav>
+    <a href="/admin/connection.html">Ulanish</a>
+    <a href="/admin/mapping.html" class="on">Mapping</a>
+    <a href="/admin/sync-log.html">Sinxronizatsiya jurnali</a>
+    <a href="/admin-panel">← Admin panel</a>
+  </nav>
+
+  <div id="msg" class="msg"></div>
+
+  <div class="card">
+    <div class="row">
+      <h2 style="margin:0" id="health">Holat</h2>
+      <div><button id="autoBtn">Unit'larni avtomatik bog'lash</button> <button id="refreshBtn">Beds24'dan yangilash</button></div>
+    </div>
+    <div class="sub" id="healthNote" style="margin:8px 0 0"></div>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>Beds24</th><th>PMS</th><th>Nonushta</th><th></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="4" class="empty">Yuklanmoqda...</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="_shared.js"></script>
+<script>
+let rooms = [], types = [], mappings = [];
+
+function roomSelect(val) {
+  return '<select data-kind="room"><option value="">— bog\'lanmagan —</option>' +
+    rooms.map(r => '<option value="' + esc(r.id) + '"' + (r.id === val ? " selected" : "") + '>' + esc(r.number) + " (" + esc(r.type) + ")</option>").join("") + "</select>";
+}
+function typeSelect(val) {
+  return '<select data-kind="type"><option value="">— bog\'lanmagan —</option>' +
+    types.map(t => '<option value="' + esc(t.id) + '"' + (t.id === val ? " selected" : "") + '>' + esc(t.label) + "</option>").join("") + "</select>";
+}
+
+async function load(refresh) {
+  try {
+    const [m, r, t] = await Promise.all([api("/api/admin/mapping"), api("/api/rooms"), api("/api/rooms/types")]);
+    mappings = m.mappings; rooms = r; types = t;
+    const h = m.health;
+    document.getElementById("health").innerHTML = "PMS xonalari: " + h.roomsMapped + " / " + h.roomsTotal + " " +
+      (h.isComplete ? '<span class="badge b-ok">to\'liq</span>' : '<span class="badge b-warn">to\'liq emas</span>');
+    document.getElementById("healthNote").textContent = h.unmappedRooms.length ? "Bog'lanmagan: " + h.unmappedRooms.join(", ") : "";
+
+    let ext;
+    try { ext = (await api("/api/admin/mapping/external" + (refresh ? "?refresh=1" : ""))).property; }
+    catch (e) { document.getElementById("rows").innerHTML = '<tr><td colspan="4" class="empty">' + esc(e.message) + "</td></tr>"; return; }
+
+    let html = "";
+    ext.roomTypes.forEach(rt => {
+      const tm = mappings.find(x => x.level === "type" && x.externalRoomTypeId === rt.id);
+      html += '<tr data-rt="' + esc(rt.id) + '" data-name="' + esc(rt.name) + '"><td><b>' + esc(rt.name) + '</b> <span class="mono">#' + esc(rt.id) + "</span><br><span class=\"sub\">" + rt.qty + " ta, maks. " + (rt.maxPeople ?? "—") + " kishi</span></td>" +
+        "<td>" + typeSelect(tm && tm.roomTypeId) + "</td>" +
+        '<td><select data-kind="meal"><option value="no">yo\'q</option><option value="yes"' + (tm && tm.includesMeal ? " selected" : "") + ">bilan</option></select></td>" +
+        '<td><button data-save="type">Saqlash</button></td></tr>';
+      rt.units.forEach(u => {
+        const um = mappings.find(x => x.level === "unit" && x.externalRoomTypeId === rt.id && x.externalUnitId === u.id);
+        html += '<tr data-rt="' + esc(rt.id) + '" data-unit="' + esc(u.id) + '" data-name="' + esc(rt.name + " / " + u.name) + '"><td style="padding-left:24px">↳ unit ' + esc(u.name) + ' <span class="mono">#' + esc(u.id) + "</span></td>" +
+          "<td>" + roomSelect(um && um.roomId) + "</td><td></td>" +
+          '<td><button data-save="unit">Saqlash</button>' + (um ? ' <button data-del="' + esc(um.id) + '">×</button>' : "") + "</td></tr>";
+      });
+    });
+    document.getElementById("rows").innerHTML = html || '<tr><td colspan="4" class="empty">Beds24\'da xona turi yo\'q</td></tr>';
+  } catch (e) { msg(e.message, true); }
+}
+
+document.getElementById("rows").addEventListener("click", async (e) => {
+  const tr = e.target.closest("tr");
+  try {
+    if (e.target.dataset.del) {
+      const id = encodeURIComponent(e.target.dataset.del);
+      try {
+        await api("/api/admin/mapping/" + id, { method: "DELETE" });
+      } catch (err) {
+        // Faol Beds24 bronlari bor — ogohlantirib, xohlasa majburan
+        if (err.code !== "MAPPING_HAS_ACTIVE_RESERVATIONS" || !confirm(err.message)) throw err;
+        await api("/api/admin/mapping/" + id + "?force=1", { method: "DELETE" });
+      }
+      msg("Olib tashlandi"); return load();
+    }
+    if (!e.target.dataset.save) return;
+    const body = { externalRoomTypeId: tr.dataset.rt, externalName: tr.dataset.name };
+    if (e.target.dataset.save === "unit") {
+      body.externalUnitId = tr.dataset.unit;
+      body.roomId = tr.querySelector('[data-kind="room"]').value;
+      if (!body.roomId) return msg("Xonani tanlang", true);
+    } else {
+      body.roomTypeId = tr.querySelector('[data-kind="type"]').value;
+      body.includesMeal = tr.querySelector('[data-kind="meal"]').value === "yes";
+      if (!body.roomTypeId) return msg("Tarifni tanlang", true);
+    }
+    await api("/api/admin/mapping", { method: "PUT", body });
+    msg("Saqlandi. Beds24 bronlari fonda qayta o'qilmoqda — natija Sinxronizatsiya jurnalida."); load();
+  } catch (err) { msg(err.message, true); }
+});
+document.getElementById("autoBtn").onclick = async () => {
+  try {
+    const r = await api("/api/admin/mapping/auto-units", { method: "POST" });
+    msg(r.mapped.length + " ta unit bog'landi" + (r.skipped.length ? ", PMS'da topilmadi: " + r.skipped.map(x => x.unitName).join(", ") : "") +
+      (r.mapped.length ? ". Beds24 bronlari fonda import qilinmoqda." : ""));
+    load();
+  } catch (e) { msg(e.message, true); }
+};
+document.getElementById("refreshBtn").onclick = () => load(true);
+load();
+</script>
+</body>
+</html>

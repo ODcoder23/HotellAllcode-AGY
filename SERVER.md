@@ -1,201 +1,178 @@
 # Server (Contabo VPS)
 
-Butun infratuzilma serverda: `<SERVER_IP>`. Kompyuterda faqat kod.
+**Holat:** 2026-09-28 da qayta o'rnatildi (eski `/opt/hotel-pms-v2`
+2026-09-27 da egasining buyrug'i bilan butunlay o'chirilgan edi — eski
+ma'lumot yo'q). Endi serverdagi boshqa loyihalar kabi
+`/srv/projects/hotel/` da, Docker Compose bilan.
 
 > Haqiqiy IP va domen repoda saqlanmaydi. Skriptlar uchun `tools/.server`
-> fayliga `root@<SERVER_IP>` yozing (git'ga kirmaydi).
+> fayliga `root@<SERVER_IP>` yozing (git'ga kirmaydi). SSH kalit:
+> `~/.ssh/hotel_vps`.
 
-Loyiha logikasi: [PROJECT_LOGIC.md](PROJECT_LOGIC.md) ·
-Qolgan ishlar: [ISH_REJASI.md](ISH_REJASI.md)
+Loyiha logikasi: [PROJECT_LOGIC.md](PROJECT_LOGIC.md) · Beds24:
+[BEDS24.md](BEDS24.md) · Qolgan ishlar va ishga tushirish:
+[ISH_REJASI.md](ISH_REJASI.md)
 
 ---
 
-## Production manzillari (<DOMAIN>)
+## Manzillar (`<DOMAIN>`)
 
-Loyiha `<DOMAIN>` domeniga ulangan (nginx, SSL / HTTPS + WSS):
+Hozircha vaqtinchalik `hotel.<server-ip>.sslip.io` (DNS sozlamasiz
+ishlaydi, Let's Encrypt sertifikati bor). Haqiqiy domenga o'tish —
+pastda.
 
 | Manzil | Nima |
 |---|---|
-| `https://<DOMAIN>/` | Sayt — mehmonlar uchun xonalar va bron |
+| `https://<DOMAIN>/` | Sayt — xonalar va bron |
 | `https://<DOMAIN>/shaxmatka` | Bandlik jadvali |
-| `https://<DOMAIN>/admin-panel` | Xodimlar paneli |
-| `wss://<DOMAIN>/ws` | Real-time (Shaxmatka va admin panel jonli yangilanishi) |
+| `https://<DOMAIN>/admin-panel` | Xodimlar paneli (Channel manager shu yerda) |
+| `https://<DOMAIN>/admin/connection.html`, `mapping.html`, `sync-log.html` | Channel manager alohida sahifalari |
+| `https://<DOMAIN>/api/webhooks/beds24/<WEBHOOK_URL_TOKEN>` | Beds24 webhook (token noto'g'ri — 404) |
+| `wss://<DOMAIN>/ws` | Real-time |
 | `https://<DOMAIN>/health` | Holat: DB, Redis, realtime, xavfsizlik |
 
-`/admin/*.html` (Beds24 mapping, ulanish, sync jurnali) va
-`/api/webhooks/beds24/*` 2026-09-26 dan yo'q — 404 qaytaradi.
-
-Kirish ma'lumotlari repoda saqlanmaydi (repo ochiq). Seed paroli
-(`admin12345`) ochiq repoda — serverdagi har foydalanuvchi parolini
-admin panel → avatar → "Parolni o'zgartirish" orqali almashtiring.
+Kirish: bitta FOUNDER hisobi (`bootstrap` yaratgan, parol egasida).
+Qolgan xodimlarni egasi admin panel → Foydalanuvchilar'da qo'shadi.
+Seed paroli (`admin12345`) serverda **yo'q**.
 
 ---
 
-## Lokal dasturchi rejimi (SSH tunnel)
+## Tuzilma
 
-```bash
-bash tools/tunnel.sh        # terminal ochiq qoladi
+```
+KOMPYUTER                              SERVER
+─────────                              ──────
+zakas042/docker-compose.yml  ─deploy─> /srv/projects/hotel/docker-compose.yml
+zakas042/deploy/             ─deploy─> /srv/projects/hotel/deploy/  (install, backup, nginx)
+zakas042/backend/            ─deploy─> /srv/projects/hotel/backend/
+                                       /srv/projects/hotel/.env      (sirlar, chmod 600)
+                                       /srv/projects/hotel/backups/  (zaxira)
+
+Docker Compose (loyiha "hotel", tarmoq proj_hotel_net):
+  api       127.0.0.1:<API_PORT> -> 3000   (NODE_ENV=production)
+  postgres  faqat ichki tarmoqda           (baza imron_pms, user imron)
+  redis     faqat ichki tarmoqda           (appendonly — navbatlar saqlanadi)
+Volume'lar: pgdata, redisdata, uploads (tozalash rasmlari)
+nginx: /etc/nginx/sites-available/proj-hotel (443 -> 127.0.0.1:<API_PORT>)
 ```
 
-Tunnel ochilgach: `http://localhost:3100`, `/shaxmatka`, `/admin-panel`.
-Baza `localhost:5433`, Redis `localhost:6380` — bu JONLI server.
+`API_PORT` — serverdagi registrdan (`/srv/projects/_registry/ports.yml`),
+`.env` da yozilgan. Postgres va Redis internetga ham, hostga ham
+chiqmaydi.
 
 ---
 
 ## Kod yuborish
 
 ```bash
-bash tools/sync.sh            # yuborish (+ npm install, prisma generate)
-bash tools/sync.sh restart    # yuborish + build + qayta ishga tushirish
+bash tools/deploy.sh
 ```
 
-Yuboriladi va serverda **butunlay almashtiriladi**: `backend/src`,
-`scripts`, `prisma`, `public/app`, `tools`, `package*.json`, `tsconfig*`.
-Tegilmaydi: `.env`, `node_modules`, `public/uploads` (xona rasmlari,
-tozalash fotolari). Server kompilyatsiya qilingan `dist/` ni ishlatadi —
-`restart.sh` avval `npm run build` qiladi.
+Tartib: bazada ma'lumot bo'lsa **avval zaxira**
+(`backups/pre-deploy-*.dump`, bo'sh yoki o'qilmasa deploy to'xtaydi) →
+kod butunlay almashtiriladi → `docker compose up -d --build` →
+migratsiyalar konteyner ishga tushishida o'zi qo'llanadi → `/health`.
+Tegilmaydi: `.env`, `backups/`, volume'lar.
 
-**Yangi migratsiya bo'lsa** — pastdagi "Yangilash" tartibi (avval zaxira).
+Holat: `bash tools/status.sh`. Brauzerda serverga to'g'ridan-to'g'ri:
+`bash tools/tunnel.sh` → `http://localhost:3100`.
 
 ---
 
-## Nima qayerda
+## Birinchi o'rnatish (bo'sh serverga)
 
+```bash
+# 1. Papka va o'rnatish fayllari
+ssh root@<SERVER_IP> 'mkdir -p /srv/projects/hotel'
+scp -r zakas042/deploy root@<SERVER_IP>:/srv/projects/hotel/
+
+# 2. Port, .env (sirlar serverda yaratiladi), nginx, registr, cron
+ssh root@<SERVER_IP> 'bash /srv/projects/hotel/deploy/install.sh <DOMAIN>'
+
+# 3. Telegram tokenlari (bo'lsa) — /srv/projects/hotel/.env ga qo'lda
+
+# 4. SSL
+ssh root@<SERVER_IP> 'certbot --nginx -d <DOMAIN> --redirect --non-interactive'
+
+# 5. Kod, build, ishga tushirish
+bash tools/deploy.sh
+
+# 6. Boshlang'ich ma'lumot: 18 xona, 9 tarif, bitta FOUNDER (parol bir marta chiqadi)
+ssh root@<SERVER_IP> 'cd /srv/projects/hotel && docker compose exec api node dist/cli/bootstrap.js'
 ```
-KOMPYUTER                          SERVER (<SERVER_IP>)
-─────────                          ────────────────────
-zakas042/backend/    ──sync.sh──>  /opt/hotel-pms/backend/
-  src/ prisma/ public/app/           src/ prisma/ public/ dist/
-                                     .env (chmod 600)
 
-                                   Docker:
-                                     hotel-postgres  127.0.0.1:5433
-                                     hotel-redis     127.0.0.1:6380
-                                   systemd:
-                                     hotel-backend   127.0.0.1:3100  (NODE_ENV=production)
-                                   nginx: 443 -> 127.0.0.1:3100
-```
-
-`hotel-mock` (Beds24 imitatori, :4100) 2026-09-26 da o'chirildi va
-olib tashlandi.
-
----
-
-## Portlar
-
-| Port | Nima | Bog'lanish |
-|---|---|---|
-| 3100 | backend | `127.0.0.1` (`.env` `HOST=127.0.0.1`) — faqat nginx va tunnel |
-| 5433 | PostgreSQL | `127.0.0.1` |
-| 6380 | Redis | `127.0.0.1` |
-
-Qo'shimcha himoya: ufw (kiruvchi — standart rad).
+Bootstrap namuna bron, soxta xodim, narx YOZMAYDI (seed'dan farqi).
+Takror ishga tushirish xavfsiz.
 
 ---
 
 ## Xizmat
 
 ```bash
-systemctl status hotel-backend
-systemctl restart hotel-backend
-journalctl -u hotel-backend -n 50 --no-pager
+cd /srv/projects/hotel
+docker compose ps
+docker compose logs api --tail 50
+docker compose restart api
+docker compose exec postgres psql -U imron imron_pms     # baza (JONLI!)
 ```
 
-`Restart=always` — qulasa o'zi ko'tariladi. Production rejimi systemd
-drop-in bilan: `/etc/systemd/system/hotel-backend.service.d/10-production.conf`
-(`Environment=NODE_ENV=production`). Bu rejimda server xavfsiz bo'lmagan
+`restart: unless-stopped` — qulasa yoki server qayta yoqilsa o'zi
+ko'tariladi. `NODE_ENV=production` da server xavfsiz bo'lmagan
 sozlama bilan ISHGA TUSHMAYDI (`AUTH_REQUIRED=false`,
-`RATE_LIMIT_DISABLED=true` yoki 32 belgidan qisqa `JWT_SECRET`).
+`RATE_LIMIT_DISABLED=true`, 32 belgidan qisqa `JWT_SECRET`) —
+compose ularni majburan to'g'ri qo'yadi.
 
 Davriy vazifalar (BullMQ `pms-maintenance`, Toshkent vaqti):
-to'lanmagan bronlar (soatlik), STOP ufqi (15 daq), tozalash (10 daq),
-xona holati (har soat :01), audit tozalash (yakshanba 03:30),
-oshxona hisoboti (07:30, 20:00).
-
----
-
-## Yangilash (migratsiya bilan)
-
-```bash
-# 1. Zaxira (hajmi 0 emasligini va pg_restore -l ishlashini tekshiring)
-ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> '
-  F=/opt/hotel-pms/backups/pre-deploy-$(date +%F-%H%M).dump &&
-  docker exec hotel-postgres pg_dump -U imron -d imron_pms -Fc > $F &&
-  ls -lh $F && cat $F | docker exec -i hotel-postgres pg_restore -l | head -5'
-
-# 2. Kod
-bash tools/sync.sh
-
-# 3. Migratsiya + build + qayta ishga tushirish
-ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> \
-  'cd /opt/hotel-pms/backend && set -a && . ./.env && set +a && npx prisma migrate deploy'
-ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> 'bash /opt/hotel-pms/restart.sh'
-```
-
-Xavfli migratsiyadan oldin **mashq** qiling: zaxirani vaqtinchalik
-bazaga (`createdb imron_pms_rehearsal` + `pg_restore`) tiklab, migratsiyani
-o'sha bazada sinang, keyin o'chiring. 2026-09-26 dagi Beds24 olib
-tashlash shu tartibda qilingan ([BEDS24.md](BEDS24.md), 4-bo'lim).
-
-**Tekshiruv:** `/health` 200; sayt, Shaxmatka, admin panel ochiladi;
-`journalctl` da xato yo'q.
-
-`npm run data:reset` faqat TEST BRONLARINI o'chiradi (narx, maosh,
-sozlama qoladi) — ishga tushirish egasining alohida qarori.
-
-**Orqaga qaytarish** (faqat zarur bo'lsa):
-
-```bash
-ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> '
-  systemctl stop hotel-backend &&
-  cat /opt/hotel-pms/backups/<ZAXIRA>.dump |
-    docker exec -i hotel-postgres pg_restore -U imron -d imron_pms --clean --if-exists'
-```
-
-keyin oldingi kodni yuboring (`git checkout <eski-commit> && bash tools/sync.sh restart`)
-yoki `backups/code-*.tgz` dan tiklang.
+to'lanmagan sayt bronlari (soatlik; faqat Sozlamalar'da muddat
+yoqilgan bo'lsa), tozalash (10 daq), xona holati (har soat
+:01), audit tozalash (yakshanba 03:30), oshxona hisoboti (07:30, 20:00),
+dollar kursi (3 soat), Beds24 polling (5 daq) va catch-up (15), Beds24
+narxi (soatlik), bo'sh joy farqi (04:00). Beds24 navbatlari —
+[BEDS24.md](BEDS24.md) 5-bo'lim.
 
 ---
 
 ## Zaxira
 
-Kunlik, soat 03:00 da (cron): `0 3 * * * /opt/hotel-pms/backup.sh`.
-Zaxiralar `/opt/hotel-pms/backups/` da.
+Kunlik 03:00 (root cron): `deploy/backup.sh` →
+`backups/db-YYYY-MM-DD.dump` (`pg_dump -Fc`, 30 kun). Bo'sh yoki
+o'qilmaydigan nusxa saqlanmaydi. Jurnal: `backups/backup.log`.
+Deploy'dan oldingi nusxalar: `backups/pre-deploy-*.dump`.
 
-Beds24 olib tashlashdan oldingi to'liq nusxalar (2026-09-26):
-`pre-remove-beds24-2026-09-26-2049.dump` (+ `-final.dump` — backend
-to'xtatilgandan keyin), `env-pre-remove-beds24-*.bak`,
-`code-pre-remove-beds24-*.tgz` (eski kod + mock), `env-pre-prod-*.bak`,
-`hotel-mock.service.*.bak`.
+**Tiklash:**
+
+```bash
+cd /srv/projects/hotel
+docker compose stop api
+cat backups/<fayl>.dump | docker compose exec -T postgres \
+  pg_restore -U imron -d imron_pms --clean --if-exists
+docker compose start api
+```
+
+`ssh host 'bash -s' < skript` ichida `docker compose exec` (stdin bilan)
+skriptning qolgan qismini yutib yuboradi — `-T` va `cat fayl |`
+ishlating.
 
 ---
 
-## Muammo bo'lsa
+## Haqiqiy domenga o'tish
 
-```bash
-bash tools/status.sh          # umumiy holat
-
-ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> \
-  'journalctl -u hotel-backend -n 40 --no-pager'
-
-ssh -i ~/.ssh/hotel_vps root@<SERVER_IP> \
-  'systemctl restart hotel-backend'
-```
-
-**Bazaga to'g'ridan-to'g'ri ulanish** (tunnel ochiq bo'lsa):
-`postgresql://<user>:<parol>@localhost:5433/imron_pms` — login va parol
-serverdagi `backend/.env` da (repo ochiq, bu yerda yozilmaydi).
-
-> Lokal `.env` tunnel orqali SHU bazaga ulanadi. Testlarni faqat alohida
-> test bazasida ishga tushiring (`zakas042/README.md`, "Testlar").
-> Serverda test ishga tushirilmaydi (`tools/test.sh` 2026-09-26 da olib tashlandi).
+1. DNS: domen A yozuvi → server IP.
+2. `/etc/nginx/sites-available/proj-hotel` da `server_name` → yangi
+   domen; `nginx -t && systemctl reload nginx`.
+3. `certbot --nginx -d <yangi-domen> --redirect`.
+4. Registr (`/srv/projects/_registry/projects.yml`) — `domains`.
+5. Beds24 panelida webhook URL'ni yangi domenga almashtiring.
 
 ---
 
 ## Xavfsizlik eslatmasi
 
-- Server SSH paroli va seed parollari egasi tomonidan almashtirilishi kerak.
-- Repo ochiq: git tarixida (commit 2fa1330) server IP va domen bor;
-  `backend/public/uploads/cleaning/` dagi 2 ta foto hali repoda kuzatiladi
-  (endi `.gitignore` da, lekin indeksdan olib tashlash va tarixni
-  tozalash — egasining qarori).
+- Sirlar faqat serverdagi `.env` da (o'rnatishda serverning o'zida
+  yaratilgan). `ENCRYPTION_KEY` o'zgarsa Beds24'ni qayta ulash kerak.
+- nginx `/ws` so'rovlarini log qilmaydi — JWT URL'da (`?token=`) keladi.
+- `npm audit`: `prisma` CLI ichidagi `deepmerge-ts` (high) — faqat
+  prisma 8.1+ da tuzatilgan; CLI faqat o'zimizning sozlamani o'qiydi,
+  tashqi kirishi yo'q. Prisma 8 ga o'tish — alohida ish.
+- Git tarixida (commit 2fa1330) eski server IP va domen bor — eski
+  ochiq `origin` repo haqida qaror egasida ([ISH_REJASI.md](ISH_REJASI.md)).

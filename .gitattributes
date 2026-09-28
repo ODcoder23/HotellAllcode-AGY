@@ -1,0 +1,7 @@
+# Serverda (Linux) ishlaydigan fayllar doim LF — Windows checkout CRLF
+# qo'ysa bash va nginx qator oxiridagi CR belgisidan yiqiladi
+*.sh               text eol=lf
+*.conf             text eol=lf
+Dockerfile         text eol=lf
+.dockerignore      text eol=lf
+docker-compose.yml text eol=lf

@@ -1,5 +1,5 @@
 /**
- * 2-bot: TOZALIK (farroshlar guruhi) — BOTLAR-REJA.md
+ * 2-bot: TOZALIK (farroshlar guruhi)
  *
  * OQIM
  * ----
@@ -360,7 +360,7 @@ function createBot(): Bot | null {
      * Kim bosgani — Telegram'dan.
      *
      * `Employee` yozuvi kerak emas: guruhda faqat farroshlar
-     * bor va ism hisobot uchun yetarli (BOTLAR-REJA.md).
+     * bor va ism hisobot uchun yetarli.
      */
     const from = ctx.callbackQuery.from;
     const telegramId = String(from.id);
@@ -505,7 +505,12 @@ function createBot(): Bot | null {
 
     if (!taskId) return;
 
+    let localFilePath: string | null = null;
     try {
+      // Avval tekshiruv, keyin yuklash: begona yoki yopilgan topshiriq
+      // rasmi diskka umuman yozilmasin
+      await clean.assertCanComplete(taskId, fromId);
+
       const photos = ctx.message.photo;
       const largest = photos[photos.length - 1];
       const file = await b!.api.getFile(largest.file_id);
@@ -518,17 +523,18 @@ function createBot(): Bot | null {
       }
 
       const fileName = `${taskId}_${Date.now()}.jpg`;
-      const localFilePath = path.join(uploadsDir, fileName);
 
       const resp = await fetch(fileUrl);
       if (!resp.ok) throw new Error("Telegramdan rasmni yuklab bo'lmadi");
       const buffer = Buffer.from(await resp.arrayBuffer());
+      localFilePath = path.join(uploadsDir, fileName);
       fs.writeFileSync(localFilePath, buffer);
 
       const photoUrl = `/uploads/cleaning/${fileName}`;
       waitingPhotoTasks.delete(fromId);
 
       const task = await clean.completeTask(taskId, fromId, photoUrl);
+      localFilePath = null; // topshiriqqa biriktirildi — o'chirilmaydi
 
       await ctx.reply("📸 Rasm muvaffaqiyatli qabul qilindi! Admin tasdiqlashi kutilmoqda.", {
         reply_to_message_id: ctx.message.message_id,
@@ -536,6 +542,14 @@ function createBot(): Bot | null {
 
       await refreshTaskMessage(task as unknown as TaskRow);
     } catch (err) {
+      // Saqlangan, lekin topshiriqqa biriktirilmagan rasm diskda qolmasin
+      if (localFilePath) fs.rm(localFilePath, { force: true }, () => {});
+
+      if (err instanceof AppError) {
+        waitingPhotoTasks.delete(fromId);
+        await ctx.reply(`⚠️ ${err.message}`).catch(() => {});
+        return;
+      }
       console.error("[tozalik-bot] rasm saqlashda xatolik:", err);
       await ctx.reply("⚠️ Rasmni yuklab olishda xatolik yuz berdi. Qaytadan yuboring.").catch(() => {});
     }
@@ -618,9 +632,4 @@ export async function stopCleaningBot(): Promise<void> {
     await bot.stop();
     bot = null;
   }
-}
-
-/** Bot ishlayaptimi — admin panel holatni ko'rsatishi uchun */
-export function isCleaningBotRunning(): boolean {
-  return bot !== null;
 }

@@ -49,7 +49,7 @@ export function realRooms(): Promise<RoomInfo[]> {
  * Xona turi bo'yicha tarif narxi.
  *
  * NEGA MUHIM: bron yaratishda narx tarifdan past bo'lsa, backend
- * chegirma sababini talab qiladi (SAVOLLAR.md S4). Test tarif
+ * chegirma sababini talab qiladi. Test tarif
  * narxini ishlatsa, bu tekshiruvga urilmaydi.
  */
 export function tariffPrices(): Promise<Map<string, number>> {

@@ -1,5 +1,5 @@
 /**
- * FAZA 8 — Real-time (WebSocket) testlari
+ * Real-time (WebSocket) testlari
  *
  * TZ 4-band:  "Admin sahifani refresh qilmasdan ham yangi bronni
  *              ko'rishi uchun WebSocket/real-time update ishlatilsin."
@@ -19,7 +19,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from "vitest";
 import WebSocket from "ws";
 import { prisma } from "./lib/prisma.js";
-import { PMS_EVENTS, SYSTEM_EVENTS } from "./realtime/events.js";
+import { PMS_EVENTS, CHANNEL_EVENTS } from "./realtime/events.js";
 import { hashPassword } from "./services/auth.js";
 
 const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
@@ -36,7 +36,7 @@ const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
 const WS_URL = PMS.replace(/^http/, "ws") + "/ws";
 
 /**
- * WebSocket uchun JWT token (TZ 18-band, 09-fayl §4).
+ * WebSocket uchun JWT token (TZ 18-band).
  *
  * `AUTH_REQUIRED=true` bo'lganda ulanish token talab qiladi.
  * Dev'da (`false`) bo'sh qoladi va ulanish ochiq bo'ladi —
@@ -91,11 +91,19 @@ class TestClient {
 
   static async connect(): Promise<TestClient> {
     const ws = new WebSocket(wsUrl());
+    /**
+     * Tinglovchi `open` dan OLDIN qo'yiladi. Foydalanuvchi keshda bo'lsa
+     * server `connected` ni darhol yuboradi va u upgrade javobi bilan
+     * bitta TCP paketda keladi: `ws` avval `open`, keyin shu zahoti
+     * `message` chiqaradi — `await` dan keyin qo'yilgan tinglovchi uni
+     * yo'qotardi (CI'da "Event kelmadi ... hech narsa").
+     */
+    const client = new TestClient(ws);
     await new Promise<void>((resolve, reject) => {
       ws.once("open", () => resolve());
       ws.once("error", reject);
     });
-    return new TestClient(ws);
+    return client;
   }
 
   /** Shartga mos event kutadi. Allaqachon kelgan bo'lsa darhol qaytaradi. */
@@ -156,7 +164,7 @@ async function createBooking(checkIn: string, checkOut: string, guestName: strin
 
 let client: TestClient;
 
-describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
+describe("Real-time WebSocket (TZ 4, 15-band)", () => {
   beforeAll(async () => {
     const res = await fetch(`${PMS}/health`);
     if (!res.ok) throw new Error("Server ishlamayapti");
@@ -189,9 +197,10 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
       ]);
     });
 
-    it("tizim event'i (STOP) alohida — Beds24 sinxron event'lari yo'q", () => {
-      expect(SYSTEM_EVENTS).toEqual(["system.sales_stop"]);
-      for (const e of SYSTEM_EVENTS) expect(PMS_EVENTS).not.toContain(e as never);
+    it("Beds24 ogohlantirishlari alohida — STOP event'i yo'q", () => {
+      expect(CHANNEL_EVENTS).toEqual(["sync.failed", "webhook.needs_attention", "rate.sync.updated"]);
+      for (const e of CHANNEL_EVENTS) expect(PMS_EVENTS).not.toContain(e as never);
+      expect([...PMS_EVENTS, ...CHANNEL_EVENTS] as string[]).not.toContain("system.sales_stop");
     });
   });
 
@@ -234,7 +243,7 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
     });
   });
 
-  // --- Autentifikatsiya (TZ 18-band, 09-fayl §4) --------------
+  // --- Autentifikatsiya (TZ 18-band) --------------
   describe("ulanish autentifikatsiyasi", () => {
     /** Ulanish natijasini aniqlaydi: qabul qilindimi yoki yopildimi */
     const probe = (url: string): Promise<{ accepted: boolean; code?: number }> =>
@@ -325,10 +334,10 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
       expect(r.status).toBe("confirmed");
       expect(r.source).toBe("direct");
       expect(r.totalPrice).toBe(300_000);
-      // Beds24 olib tashlangan — kanal maydonlari yo'q
-      expect(r.channelOwned).toBeUndefined();
-      expect(r.syncStatus).toBeUndefined();
-      expect(r.currency).toBeUndefined();
+      // Beds24 maydonlari (2026-09-27): so'm bron, PMS'da boshqariladi
+      expect(r.channelOwned).toBe(false);
+      expect(r.currency).toBe("UZS");
+      expect(r.origin).toBe("pms");
     });
 
     it("event bilan birga xona holati ham keladi", async () => {
@@ -450,7 +459,7 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
     });
   });
 
-  // --- Ishonchlilik (09-fayl §5) --------------------------------
+  // --- Ishonchlilik --------------------------------
   describe("ishonchlilik", () => {
     it("WebSocket yo'q bo'lsa ham bron yaratiladi", async () => {
       client.close();     // brauzer yopildi

@@ -10,7 +10,7 @@
 import { prisma } from "../lib/prisma.js";
 
 export const SETTING_KEYS = {
-  // --- Biznes qoidalari (2026-09-17, SAVOLLAR.md) ------------
+  // --- Biznes qoidalari (2026-09-17) ------------
 
   /** Nonushta — kishi boshiga, so'm (S10) */
   mealPrice: "MEAL_PRICE_PER_PERSON",
@@ -22,8 +22,13 @@ export const SETTING_KEYS = {
   otaCommissionPercent: "OTA_COMMISSION_PERCENT",
   /** Audit jurnali saqlash muddati, kun (S16) */
   auditRetentionDays: "AUDIT_RETENTION_DAYS",
+  /**
+   * To'lanmagan SAYT bronini necha soatdan keyin avtomatik bekor qilish.
+   * 0 = o'chiq (standart, 2026-09-28): sayt mehmoni kelganda to'laydi
+   */
+  websiteUnpaidCancelHours: "WEBSITE_UNPAID_CANCEL_HOURS",
 
-  // --- Tozalash (TOZALIK-BOT.md) -----------------------------
+  // --- Tozalash -----------------------------
 
   /** Mehmon chiqqanda avtomatik topshiriq yaratilsinmi */
   cleaningAuto: "CLEANING_AUTO",
@@ -38,7 +43,7 @@ export const SETTING_KEYS = {
 /**
  * Biznes sozlamalarining boshlang'ich qiymatlari.
  *
- * Bular 2026-09-17 da egasi bilan kelishilgan (SAVOLLAR.md).
+ * Bular 2026-09-17 da egasi bilan kelishilgan.
  * Admin panelda o'zgartiriladi, bu yerda faqat birinchi qiymat.
  */
 export const BUSINESS_DEFAULTS = {
@@ -60,6 +65,14 @@ export const BUSINESS_DEFAULTS = {
   otaCommissionPercent: 15,
   /** Audit jurnali 1 yil saqlanadi */
   auditRetentionDays: 365,
+  /**
+   * O'chiq (egasi, 2026-09-28): sayt mehmoni to'lovni kelganda qiladi,
+   * sayt ham shuni aytadi. Oldindan to'lov — Beds24 (OTA) mehmonlarida,
+   * uni OTA boshqaradi. Ilgari 24 soat edi (`.env`
+   * PENDING_PAYMENT_TIMEOUT_HOURS) va qabulxona ulgurmasa bron jimgina
+   * bekor bo'lardi
+   */
+  websiteUnpaidCancelHours: 0,
 
   // --- Tozalash (2026-09-17 kelishuvi) -----------------------
   /** Mehmon chiqqanda topshiriq o'zi yaratiladi */
@@ -141,6 +154,14 @@ export function getOtaCommissionPercent(): Promise<number> {
   );
 }
 
+/** To'lanmagan sayt bronini bekor qilish, soat (0 = o'chiq) */
+export function getWebsiteUnpaidCancelHours(): Promise<number> {
+  return getNumber(
+    SETTING_KEYS.websiteUnpaidCancelHours,
+    BUSINESS_DEFAULTS.websiteUnpaidCancelHours
+  );
+}
+
 /** Audit jurnali saqlash muddati, kun (S16) */
 export function getAuditRetentionDays(): Promise<number> {
   return getNumber(
@@ -150,7 +171,7 @@ export function getAuditRetentionDays(): Promise<number> {
 }
 
 // ============================================================
-//  Tozalash sozlamalari (TOZALIK-BOT.md)
+//  Tozalash sozlamalari
 // ============================================================
 
 /** Mantiqiy sozlamani o'qiydi */

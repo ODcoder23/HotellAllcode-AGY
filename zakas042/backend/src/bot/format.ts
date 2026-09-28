@@ -6,7 +6,7 @@
  * ishonchli.
  */
 
-import { formatMoney } from "../lib/money.js";
+import { formatMoney, isBaseCurrency } from "../lib/money.js";
 
 /** Telegram HTML uchun xavfsiz matn */
 export function esc(v: unknown): string {
@@ -23,6 +23,16 @@ export function esc(v: unknown): string {
  */
 export function money(n: number): string {
   return formatMoney(n);
+}
+
+/**
+ * Bron summasi: so'm bron — "1 250 000 so'm"; Beds24 dollar broni —
+ * "$120.00 (1 419 704 so'm)" (Q15: dollar va tagida so'm).
+ */
+export function moneyOf(n: number, currency: string, base?: number | null): string {
+  if (isBaseCurrency(currency)) return money(n);
+  const own = formatMoney(n, currency);
+  return base != null ? `${own} (${money(base)})` : own;
 }
 
 /** 16 400 000 -> "16.4 mln so'm" (dashboard satri uchun qisqa), kichik summa — to'liq */

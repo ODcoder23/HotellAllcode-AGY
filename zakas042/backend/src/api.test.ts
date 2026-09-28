@@ -1,7 +1,7 @@
 /**
- * FAZA 2A — API integratsiya testlari
+ * API integratsiya testlari
  *
- * Mezon (11-BOSQICHLAR-ROADMAP.md):
+ * Mezon:
  *   "barcha amallar API orqali ishlaydi, javob formati frontend
  *    kutgan shaklda"
  *
@@ -31,7 +31,7 @@ const api = async (path: string, init?: RequestInit) => {
   return { status: res.status, body };
 };
 
-describe("FAZA 2A — ichki REST API", () => {
+describe("Ichki REST API", () => {
   beforeAll(async () => {
     const { status } = await api("/health");
     if (status !== 200) throw new Error("Server ishlamayapti — `npm run dev` ishga tushiring");
@@ -40,7 +40,7 @@ describe("FAZA 2A — ichki REST API", () => {
     await Promise.all(R.map((id) => tariffFor(id)));
   });
 
-  // --- Format (02-fayl §3) ----------------------------------
+  // --- Format ----------------------------------
   describe("javob formati — Shaxmatka moslik jadvali", () => {
     it("rooms: id = xona raqami, type kichik harf", async () => {
       const { body } = await api("/api/rooms");
@@ -170,7 +170,6 @@ describe("FAZA 2A — ichki REST API", () => {
 
     it("2. bronni o'zgartirish (mehmon soni, narx)", async () => {
       // Tarifdan YUQORI narx — chegirma sababi talab qilinmaydi
-      // (SAVOLLAR.md S4)
       // Tarifdan yuqori, narx chegarasidan (50 mln so'm) past
       const newPrice = (await tariffFor(R[5])) + 50;
 
@@ -204,7 +203,7 @@ describe("FAZA 2A — ichki REST API", () => {
 
     it("5. to'lov qo'shish", async () => {
       // Qarzning bir qismini to'laymiz: to'liq summa qarzdan
-      // oshib ketsa backend rad etadi (SAVOLLAR.md S1)
+      // oshib ketsa backend rad etadi
       const { body: before } = await api(`/api/reservations/${id}`);
       const amount = Math.round(before.remainingAmount / 2);
 
@@ -257,7 +256,7 @@ describe("FAZA 2A — ichki REST API", () => {
 
     it("chiqib ketgan bronni bekor qilib bo'lmaydi", async () => {
       // Yuqoridagi 8-test check-out qildi. CHECKED_OUT — yakuniy
-      // holat, undan chiqib bo'lmaydi (SAVOLLAR.md S3).
+      // holat, undan chiqib bo'lmaydi.
       //
       // Ilgari bu test bekor qilishni kutardi va o'tardi, chunki
       // status mashinasi yo'q edi: chiqib ketgan mehmonning broni
@@ -488,9 +487,9 @@ describe("FAZA 2A — ichki REST API", () => {
       const { body } = await api(`/api/rate-plans?from=${day(0)}&to=${day(2)}`);
       expect(body.length).toBeGreaterThan(0);
       expect(typeof body[0].price).toBe("number");
-      // Beds24 olib tashlangan — sinxron maydonlari javobda yo'q
-      expect(body[0].source).toBeUndefined();
-      expect(body[0].syncStatus).toBeUndefined();
+      // Beds24 (2026-09-27 qaytdi): qayerdan kelgani va yuborilganmi
+      expect(body[0].source).toBe("pms");
+      expect(["pending", "synced", "error"]).toContain(body[0].syncStatus);
     });
 
     it("narx belgilanadi va o'qiladi", async () => {

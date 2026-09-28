@@ -155,12 +155,16 @@ describe("Chidamlilik va yuklama", () => {
   });
 
   describe("davriy vazifalar", () => {
-    it("pms-maintenance navbati ro'yxatdan o'tgan, beds24 navbatlari yo'q", async () => {
+    it("pms-maintenance va Beds24 navbatlari ro'yxatdan o'tgan (TZ 11-band)", async () => {
       const res = await api("/api/admin/queues");
       expect(res.status).toBe(200);
       const names = Object.keys(res.body.queues ?? {});
-      expect(names).toContain("pms-maintenance");
-      expect(names.some((n) => n.startsWith("beds24"))).toBe(false);
+      for (const q of [
+        "pms-maintenance", "beds24-reservation-sync", "beds24-availability-sync",
+        "beds24-rate-sync", "beds24-webhook", "beds24-retry",
+      ]) {
+        expect(names, q).toContain(q);
+      }
     });
 
     it("admin to'lanmagan bronlarni qo'lda tozalay oladi", async () => {

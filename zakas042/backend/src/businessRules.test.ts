@@ -178,6 +178,49 @@ describe("Biznes qoidalari (2026-09-26 audit regressiyalari)", () => {
       });
       expect(charge.status).toBe(400);
     });
+
+    it("xona, sana va xizmat audit jurnaliga yoziladi (eski/yangi qiymat bilan)", async () => {
+      const room = await freeRoom();
+      const other = await freeRoom([room.id]);
+      const r = await book(room.id, 50, 52);
+      expect(r.status).toBe(201);
+
+      // Sanalar o'zgarmagan — bo'sh amal rad etiladi, jurnalga tushmaydi
+      const same = await api(`/api/reservations/${r.body.id}/change-dates`, {
+        method: "POST", body: JSON.stringify({ checkIn: day(50), checkOut: day(52) }),
+      });
+      expect(same.status).toBe(400);
+      expect(String(same.body.error)).toContain("o'zgarmagan");
+
+      const dates = await api(`/api/reservations/${r.body.id}/change-dates`, {
+        method: "POST", body: JSON.stringify({ checkIn: day(51), checkOut: day(54) }),
+      });
+      expect(dates.status).toBe(200);
+      const move = await api(`/api/reservations/${r.body.id}/change-room`, {
+        method: "POST", body: JSON.stringify({ roomId: other.id }),
+      });
+      expect(move.status).toBe(200);
+      const charge = await api(`/api/reservations/${r.body.id}/charges`, {
+        method: "POST", body: JSON.stringify({ label: "Transfer", amount: 50_000 }),
+      });
+      expect(charge.status).toBe(201);
+
+      const logs = await prisma.auditLog.findMany({
+        where: { entityType: "Reservation", entityId: r.body.id },
+        orderBy: { createdAt: "asc" },
+      });
+      const datesLog = logs.filter((l) => l.action === "reservation.dates_changed");
+      expect(datesLog).toHaveLength(1);
+      expect(datesLog[0].before).toEqual({ checkIn: day(50), checkOut: day(52) });
+      expect(datesLog[0].after).toEqual({ checkIn: day(51), checkOut: day(54) });
+
+      const roomLog = logs.find((l) => l.action === "reservation.room_changed");
+      expect(roomLog?.before).toEqual({ roomId: room.id });
+      expect(roomLog?.after).toEqual({ roomId: other.id });
+
+      const chargeLog = logs.find((l) => l.action === "charge.added");
+      expect(chargeLog?.after).toEqual({ label: "Transfer", amount: 50_000 });
+    });
   });
 
   describe("xona holati: chiqish, tozalash, yangi mehmon — real oqim", () => {
@@ -359,7 +402,8 @@ describe("Biznes qoidalari (2026-09-26 audit regressiyalari)", () => {
       expect(report.status).toBe(200);
       // Faol bron bitta (3 kecha) — o'rtacha 3, 2 emas (ilgari 4/2 = 2 edi)
       expect(report.body.bookings.avgNights).toBe(3);
-      expect(report.body.channel).toBeUndefined();
+      // Beds24 bo'limi bor; ulanmagan — bo'sh
+      expect(report.body.channel).toMatchObject({ connected: false, bookings: 0, revenue: 0 });
     });
   });
 });

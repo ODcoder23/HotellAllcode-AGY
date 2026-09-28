@@ -1,22 +1,39 @@
 /**
- * Oshxona — ovqat hisobi (BOTLAR-REJA.md)
+ * Oshxona — nonushta hisobi
  *
  * MAQSAD: oshpazlar ertalab qancha porsiya tayyorlashni bilsin.
  *
- * KIM HISOBLANADI (2026-09-17 qarori):
- *   1. Hozir xonada turganlar (`CHECKED_IN`)
- *   2. Bugun keladiganlar (`CONFIRMED`, checkIn = bugun)
+ * QOIDA (2026-09-28, egasi tasdiqladi): nonushta tunashdan keyingi
+ * ertalab beriladi. D kuni nonushta — D dan oldingi kechani mehmonxonada
+ * o'tkazganlarga: `checkIn < D <= checkOut`.
+ *   - kelgan kuni nonushta YO'Q (mehmon kunduzi keladi)
+ *   - ketadigan kuni nonushta BOR (oxirgi kecha uchun)
+ * Nonushtalar soni kecha soniga teng — bron summasi (`lib/money.ts`,
+ * narx × kishi × kecha) shu bilan mos.
  *
- * Ikkinchisi kerak: mehmon kechqurun kelsa ham ertangi
- * nonushtaga hisoblanadi. Faqat `CHECKED_IN` bo'lsa, kech
- * kelgan mehmon uchun ovqat tayyorlanmay qolardi.
+ * Ilgari teskari edi: kelgan kuni sanalar, ketadigan kuni sanalmasdi.
  *
- * BOLALAR: alohida sanaladi, lekin porsiya bir xil. Narx ham
- * bir xil (25 000) — 2026-09-17 qarori.
+ * KIM SANALADI (`withMeal = true`):
+ *   - xonada (`CHECKED_IN`)
+ *   - hali kirish belgilanmagan (`CONFIRMED`, `PENDING_PAYMENT`):
+ *     ertangi hisobotda — bugun keladiganlar
+ *   - shu kuni chiqib ketgan (`CHECKED_OUT`, chiqish vaqti D kuni):
+ *     ertalab nonushta qilgan. Muddatidan oldin ketgan mehmon keyingi
+ *     kunlarga sanalmaydi
+ *
+ * BOLALAR: alohida sanaladi, porsiya va narx bir xil.
  */
 
 import { prisma } from "../lib/prisma.js";
-import { addDays, hotelToday } from "../lib/hotelTime.js";
+import { addDays, hotelToday, HOTEL_UTC_OFFSET_HOURS } from "../lib/hotelTime.js";
+
+/**
+ * Xona holati nonushta kuni:
+ *   staying   — xonada, keyingi kun ham qoladi
+ *   departing — shu kuni ketadi (oxirgi nonushta)
+ *   arriving  — kirish hali belgilanmagan (kutilmoqda)
+ */
+export type MealState = "staying" | "departing" | "arriving";
 
 export type RoomMeals = {
   roomId: string;
@@ -26,7 +43,8 @@ export type RoomMeals = {
   guestName: string;
   /** "Sayt", "Qabulxona", "Booking.com" */
   source: string;
-  /** Hozir xonadami yoki bugun keladimi */
+  state: MealState;
+  /** `state === "arriving"` — eski mijozlar uchun */
   arriving: boolean;
 };
 
@@ -35,9 +53,11 @@ export type KitchenReport = {
   totalGuests: number;
   totalAdults: number;
   totalChildren: number;
-  /** Hozir xonada turganlar */
+  /** Xonada, qoladi */
   staying: number;
-  /** Bugun keladiganlar */
+  /** Shu kuni ketadi */
+  departing: number;
+  /** Kirish hali belgilanmagan */
   arriving: number;
   rooms: RoomMeals[];
 };
@@ -55,44 +75,25 @@ const SOURCE_LABEL: Record<string, string> = {
   OTHER: "Boshqa",
 };
 
-/** Toshkent bo'yicha kun (`@db.Date` bilan mos) — lib/hotelTime.ts */
-function dayStart(offset = 0): Date {
-  return addDays(hotelToday(), offset);
-}
-
 /**
- * Berilgan kun uchun ovqat hisoboti.
+ * Berilgan kun uchun nonushta hisoboti.
  *
  * `offset = 0` bugun, `1` ertaga.
  */
 export async function kitchenReport(offset = 0): Promise<KitchenReport> {
-  const start = dayStart(offset);
-  const end = dayStart(offset + 1);
+  // `@db.Date` bilan solishtirish uchun (Toshkent kuni, UTC 00:00)
+  const day = addDays(hotelToday(), offset);
+  // Shu kun Toshkentda boshlangan lahza — `checkedOutAt` uchun
+  const dayStartInstant = new Date(day.getTime() - HOTEL_UTC_OFFSET_HOURS * 3_600_000);
 
-  /**
-   * IKKI GURUH, bir so'rovda.
-   *
-   * `CHECKED_IN` — hozir xonada (kecha kelgan ham kiradi)
-   * `CONFIRMED` + checkIn bugun — bugun keladi
-   *
-   * `withMeal = true` shart: ovqat tarifi bo'lmagan mehmon
-   * hisoblanmaydi.
-   */
   const rows = await prisma.reservation.findMany({
     where: {
       withMeal: true,
+      checkIn: { lt: day },
+      checkOut: { gte: day },
       OR: [
-        // Xonada turganlar: kirish o'tgan, chiqish hali emas
-        {
-          status: "CHECKED_IN",
-          checkIn: { lt: end },
-          checkOut: { gt: start },
-        },
-        // Bugun keladiganlar
-        {
-          status: { in: ["CONFIRMED", "PENDING_PAYMENT"] },
-          checkIn: { gte: start, lt: end },
-        },
+        { status: { in: ["CHECKED_IN", "CONFIRMED", "PENDING_PAYMENT"] } },
+        { status: "CHECKED_OUT", checkedOutAt: { gte: dayStartInstant } },
       ],
     },
     select: {
@@ -101,32 +102,42 @@ export async function kitchenReport(offset = 0): Promise<KitchenReport> {
       children: true,
       status: true,
       source: true,
+      checkOut: true,
       guest: { select: { fullName: true } },
       room: { select: { roomType: { select: { label: true } } } },
     },
     orderBy: { roomId: "asc" },
   });
 
-  const rooms: RoomMeals[] = rows.map((r) => ({
-    roomId: r.roomId,
-    roomLabel: r.room.roomType?.label ?? "",
-    adults: r.adults,
-    children: r.children,
-    guestName: r.guest.fullName,
-    source: SOURCE_LABEL[r.source] ?? r.source,
-    arriving: r.status !== "CHECKED_IN",
-  }));
+  const rooms: RoomMeals[] = rows.map((r) => {
+    const state: MealState =
+      r.status === "CONFIRMED" || r.status === "PENDING_PAYMENT" ? "arriving"
+        : r.status === "CHECKED_OUT" || r.checkOut.getTime() === day.getTime() ? "departing"
+          : "staying";
+    return {
+      roomId: r.roomId,
+      roomLabel: r.room.roomType?.label ?? "",
+      adults: r.adults,
+      children: r.children,
+      guestName: r.guest.fullName,
+      source: SOURCE_LABEL[r.source] ?? r.source,
+      state,
+      arriving: state === "arriving",
+    };
+  });
 
   const totalAdults = rooms.reduce((s, r) => s + r.adults, 0);
   const totalChildren = rooms.reduce((s, r) => s + r.children, 0);
+  const count = (s: MealState) => rooms.filter((r) => r.state === s).length;
 
   return {
-    date: start.toISOString().slice(0, 10),
+    date: day.toISOString().slice(0, 10),
     totalGuests: totalAdults + totalChildren,
     totalAdults,
     totalChildren,
-    staying: rooms.filter((r) => !r.arriving).length,
-    arriving: rooms.filter((r) => r.arriving).length,
+    staying: count("staying"),
+    departing: count("departing"),
+    arriving: count("arriving"),
     rooms,
   };
 }

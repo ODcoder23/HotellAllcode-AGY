@@ -1,8 +1,6 @@
 /**
  * Audit log — TZ 18-band (8-talab)
  *
- * Manba: 10-SECURITY-VA-SYNCLOG.md §4
- *
  * `before`/`after` `sanitizeForLog()` dan o'tadi: qiymat ichida
  * parol yoki token bo'lib qolsa ham jurnalga tushmasin.
  */
@@ -12,7 +10,7 @@ import { getAuditRetentionDays } from "./settings.js";
 import { sanitizeForLog } from "../lib/sanitize.js";
 
 /**
- * Qayd qilinadigan amallar (10-fayl §4).
+ * Qayd qilinadigan amallar.
  *
  * Ro'yxat yopiq: yangi amal qo'shish uchun shu yerga yozish kerak,
  * shunda "qaysi amallar kuzatiladi" savoliga bitta javob bo'ladi.
@@ -21,19 +19,21 @@ export const AUDIT_ACTIONS = [
   "settings.changed",
   // Nonushta narxi — faol bronlar summasini ham o'zgartirishi mumkin
   "meal_price.changed",
-  // Tizim nazorati: sotuvni vaqtincha to'xtatish (STOP) va qayta ochish
-  "system.sales_stop",
-  "system.sales_resume",
   "reservation.cancelled",
   "reservation.no_show",
-  // Pul harakati — naqd yo'qolsa javobgar ko'rinsin (SAVOLLAR.md S13)
+  // Mehmon boshqa xonaga yoki sanaga ko'chdi — eski/yangi qiymat bilan
+  "reservation.room_changed",
+  "reservation.dates_changed",
+  // Pul harakati — naqd yo'qolsa javobgar ko'rinsin
   "payment.received",
   "payment.refunded",
   "payment.reversed",
-  // Xarajatlar (SAVOLLAR.md S14) — foyda hisobiga ta'sir qiladi
+  // Qo'shimcha xizmat (minibar, transfer) — mehmon qarzini oshiradi
+  "charge.added",
+  // Xarajatlar — foyda hisobiga ta'sir qiladi
   "expense.created",
   "expense.deleted",
-  // Bot ruxsatlari (TOZALIK-BOT.md §7) — kim moliyani ko'ra oladi
+  // Bot ruxsatlari — kim moliyani ko'ra oladi
   "bot.access_granted",
   "bot.access_changed",
   "bot.access_revoked",
@@ -48,6 +48,17 @@ export const AUDIT_ACTIONS = [
   "user.role_changed",
   "user.password_changed",
   "user.login",
+  // Channel manager (Beds24) — ulanish, bog'lash, qo'lda amallar
+  "channel.connected",
+  "channel.disconnected",
+  "channel.maintenance",
+  "mapping.created",
+  "mapping.updated",
+  "mapping.deleted",
+  "webhook.reprocessed",
+  "reservation.sync_retry",
+  "reservation.channel_refresh",
+  "fx.changed",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -96,16 +107,23 @@ export async function audit(input: AuditInput): Promise<void> {
   }
 }
 
-/** Admin panel uchun — oxirgi yozuvlar */
+/**
+ * Admin panel uchun — yangidan eskiga. `before` — oldingi sahifaning
+ * oxirgi yozuvi vaqti ("Ko'proq yuklash")
+ */
 export async function listAudit(opts: {
   limit?: number;
   action?: string;
   entityType?: string;
+  entityId?: string;
+  before?: Date;
 } = {}) {
   const rows = await prisma.auditLog.findMany({
     where: {
       ...(opts.action ? { action: opts.action } : {}),
       ...(opts.entityType ? { entityType: opts.entityType } : {}),
+      ...(opts.entityId ? { entityId: opts.entityId } : {}),
+      ...(opts.before ? { createdAt: { lt: opts.before } } : {}),
     },
     orderBy: { createdAt: "desc" },
     take: Math.min(opts.limit ?? 50, 200),
@@ -127,7 +145,7 @@ export async function listAudit(opts: {
 }
 
 // ============================================================
-//  Tozalash — SAVOLLAR.md S16
+//  Tozalash
 // ============================================================
 
 /**
