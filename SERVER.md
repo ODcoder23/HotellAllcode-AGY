@@ -10,8 +10,7 @@ ma'lumot yo'q). Endi serverdagi boshqa loyihalar kabi
 > `~/.ssh/hotel_vps`.
 
 Loyiha logikasi: [PROJECT_LOGIC.md](PROJECT_LOGIC.md) · Beds24:
-[BEDS24.md](BEDS24.md) · Ishga tushirish ro'yxati:
-[ISHGA_TUSHIRISH.md](ISHGA_TUSHIRISH.md) · Qolgan ishlar:
+[BEDS24.md](BEDS24.md) · Qolgan ishlar va ishga tushirish:
 [ISH_REJASI.md](ISH_REJASI.md)
 
 ---
@@ -124,7 +123,8 @@ sozlama bilan ISHGA TUSHMAYDI (`AUTH_REQUIRED=false`,
 compose ularni majburan to'g'ri qo'yadi.
 
 Davriy vazifalar (BullMQ `pms-maintenance`, Toshkent vaqti):
-to'lanmagan bronlar (soatlik), tozalash (10 daq), xona holati (har soat
+to'lanmagan sayt bronlari (soatlik; faqat Sozlamalar'da muddat
+yoqilgan bo'lsa), tozalash (10 daq), xona holati (har soat
 :01), audit tozalash (yakshanba 03:30), oshxona hisoboti (07:30, 20:00),
 dollar kursi (3 soat), Beds24 polling (5 daq) va catch-up (15), Beds24
 narxi (soatlik), bo'sh joy farqi (04:00). Beds24 navbatlari —

@@ -6,7 +6,7 @@ narxlari va yopiq kunlari Beds24'ga yuboriladi. 2026-09-26 dagi olib
 tashlash (Q18) va 2026-09-27 ertalabki "faqat kuzatuv" rejimi bekor.
 STOP (Q17) butunlay olib tashlandi — sotuvni to'xtatish Beds24 panelida.
 
-Qarorlar: [zakas042/TZ-ASL.md](zakas042/TZ-ASL.md) (Q9, Q15, Q19).
+Qarorlar: [TZ-ASL.md](TZ-ASL.md) (Q9, Q15, Q19, Q20).
 
 ---
 
@@ -99,10 +99,57 @@ boshqarish oynasi.
 
 **Real hisobga ulash (2026-09-28):** server bo'sh bazadan qayta
 o'rnatilgan — PMS'da bron va yopiq kun yo'q, shuning uchun import
-Beds24'dagi bronlarni to'g'ridan-to'g'ri tushiradi. Tartib —
-[ISHGA_TUSHIRISH.md](ISHGA_TUSHIRISH.md) D bo'limi.
+Beds24'dagi bronlarni to'g'ridan-to'g'ri tushiradi. Qolgan qadamlar —
+[ISH_REJASI.md](ISH_REJASI.md), 1-bo'lim.
 
 ## 5. Oqimlar va navbatlar (TZ 11-band)
+
+**Beds24 → PMS:**
+
+```
+OTA → Beds24 → POST /api/webhooks/beds24/<WEBHOOK_URL_TOKEN>
+  → token tekshiruvi (noto'g'ri — 404, bazaga yozilmaydi)
+  → WebhookEvent saqlanadi, SHA-256 hash bilan takror aniqlanadi → darhol 200
+  → navbat → applyReservation()
+       1. channelId + externalReservationId bo'yicha mavjud bron
+       2. yo'q — qo'lda kiritilgan shu OTA broni (OTA raqami / sanalar) → bog'lanadi
+       3. yo'q — mapping → bo'sh xona → yangi bron
+       4. bor — yangilanadi (sana, xona, mehmon soni, narx, status, mehmon)
+  → availability keshi → WebSocket (Shaxmatka) → Telegram
+```
+
+Polling ham shu `applyReservation` dan o'tadi. Mapping yoki bo'sh xona
+yo'q — `NEEDS_MANUAL_ACTION`: admin tuzatib "Qayta ishlash" bosadi.
+`black` — PMS'da kunlar yopiladi (`ChannelBlock`), `inquiry` — e'tiborsiz.
+
+**PMS → Beds24:**
+
+```
+Shaxmatka amali (yaratish, sana, xona, check-in/out, bekor, kelmadi)
+  → syncStatus = PENDING → navbat (2 s oyna) → pushReservation()
+       - Beds24 ulanmagan              → PENDING qoladi
+       - tugagan/bekor, Beds24'da yo'q → NOT_APPLICABLE
+       - qo'lda kiritilgan OTA broni   → yuborilmaydi (import bog'laydi)
+       - mapping yo'q                  → NOT_APPLICABLE
+       - yangi bron                    → checkAvailability, referer "PMS"
+       - OTA broni                     → faqat xona/unit va check-in/out belgisi (flagText)
+  → SYNCED | FAILED (qayta uriniladi) | REJECTED (qayta yuborilmaydi)
+```
+
+Echo himoyasi: Beds24 API orqali yozilgan bron uchun webhook yubormaydi;
+kelgan ma'lumot PMS holati bilan bir xil bo'lsa hech narsa yozilmaydi.
+Narx va cheklovlar — 3 s debounce, bitta `POST /inventory/rooms/calendar`,
+faqat yuborilmagan (`syncedAt = null`) kunlar.
+
+Kod: [routes/webhooks.ts](zakas042/backend/src/routes/webhooks.ts),
+[webhook.ts](zakas042/backend/src/services/webhook.ts),
+[webhookProcessor.ts](zakas042/backend/src/services/webhookProcessor.ts),
+[reconciliation.ts](zakas042/backend/src/services/reconciliation.ts),
+[reservationSync.ts](zakas042/backend/src/services/reservationSync.ts),
+[rates.ts](zakas042/backend/src/services/rates.ts),
+[channelBlocks.ts](zakas042/backend/src/services/channelBlocks.ts),
+[beds24/](zakas042/backend/src/services/beds24/),
+[channel/](zakas042/backend/src/services/channel/) (`ChannelAdapter` interfeysi).
 
 | Navbat | Nima |
 |---|---|
@@ -204,3 +251,37 @@ o'zgarishi uchun webhook yo'q (soatlik tortiladi).
   tekshiriladi, qo'lda kiritilgan OTA broni dublikat bo'lmaydi, navbat
   oynasida o'zgarish yo'qolmaydi, bog'lashdan keyin kutayotgan bronlar
   darhol yuboriladi.
+
+## 8. TZ ↔ kod
+
+Mijozning Channel Manager TZ'si (2026-09-18, asl matn — [TZ-ASL.md](TZ-ASL.md)
+ilovasi) bandma-band:
+
+| # | Talab | Holat | Izoh |
+|---|---|---|---|
+| 1 | OTA'lar faqat Channel Manager orqali | ✅ | OTA bilan to'g'ridan-to'g'ri kod yo'q |
+| 2 | READ + WRITE | ✅ | bronlar, narx, cheklov, yopiq kunlar ikki tomonga |
+| 3 | Mehmon, xona, sana, narx, valyuta, status, kanal qabul qilish | ✅ | `adapter.ts` `toExternalReservation` |
+| 4 | Webhook | ✅ | `POST /api/webhooks/beds24/:token`, darhol 200, navbat |
+| 5 | Yangi bron admin panelda real-time | ✅ | WebSocket + Telegram |
+| 6 | Bekor qilish → CANCELLED | ✅ | |
+| 7 | O'zgartirish, dublikatsiz | ✅ | sana, xona, mehmon soni, status, narx, mehmon ma'lumoti |
+| 8 | Availability yuborish | ✅* | bron va `black` orqali — pastdagi izoh |
+| 9 | Narx yuborish | ✅ | so'm → $ kurs bilan; teskari tortish ham bor |
+| 10 | Min/Max stay, Closed, CTA, CTD | ✅ / qaror | minStay, maxStay, CTA, CTD — ha; Closed/Open — Beds24 panelida (STOP olib tashlangan, Q19) |
+| 11 | Room mapping bazada | ✅ | tur va unit darajasi, `externalPropertyId` bilan |
+| 12 | Settings → Channel Manager, Connected ✓, xavfsiz saqlash | ✅ | provider, invite code / refresh token, obyekt tanlash |
+| 13 | Faqat Beds24'ga bog'lanmaslik | ⚠️ | interfeys + registry bor; biznes kodida `"beds24"` qolgan — ikkinchi provider rejada bo'lsa (ISH_REJASI) |
+| 14 | ChannelManagerService metodlari | ✅ | 5-bo'limdagi jadval |
+| 15 | Webhook asosiy, polling zaxira | ✅ | polling 5 daqiqa, catch-up 15 |
+| 16 | Sync log, admin panelda xato | ✅ | Provider, amal, xona, sana, qiymat, holat, xato |
+| 17 | `provider + external_booking_id` unique | ✅ | `@@unique([channelId, externalReservationId])` + webhook hash |
+| 18, 19 | Data flow, "bridge" | ✅ | |
+
+**\* 8-band.** Beds24'da bo'sh joy soni kanalning o'zida bronlardan
+hisoblanadi. PMS "Availability = 4" ni alohida yubormaydi: bron (yoki xona
+yopilishi) Beds24'ga yetishi bilan son o'zi kamayadi va OTA'larga
+tarqaladi — TZ'dagi natija aynan shu. Sonni ham yozish bitta bronni ikki
+marta ayirardi. Farq har kuni 04:00 da tekshiriladi (faqat qayd). Bo'sh
+joyni o'zi hisoblamaydigan boshqa channel manager uchun
+`pushAvailability()` interfeysda tayyor.

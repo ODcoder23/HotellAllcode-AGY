@@ -3,7 +3,8 @@
 **Bu hujjat loyihaning amaldagi logikasining yagona referensi.**
 
 Har bir fakt kod, `schema.prisma` yoki jonli tizimda tasdiqlangan
-(2026-09-26 auditi). Tasdiqlanmagan narsalar "noaniq" deb belgilangan.
+(oxirgi tekshiruv 2026-09-28). Tasdiqlanmagan narsalar "noaniq" deb
+belgilangan (17-bo'lim). Kod o'zgarsa bu hujjat shu commit'da yangilanadi.
 
 **Beds24 — ikki tomonlama integratsiya** (2026-09-27, egasi qarori
 Q19: 2026-09-26 da olib tashlangan integratsiya avvalgidek qaytdi, STOP
@@ -53,8 +54,8 @@ ishlaydi: yuborilmagan bron `PENDING` qoladi, catch-up keyin yuboradi.
 PostgreSQL 16 (`btree_gist` kerak), Redis 7, BullMQ, grammy
 (Telegram), Zod (validatsiya), JWT.
 
-**Joylashuv:** butun infratuzilma Contabo VPS'da. Kompyuterda
-faqat kod. Ulanish SSH tunnel orqali.
+**Joylashuv:** VPS, Docker Compose (api + PostgreSQL + Redis), tashqaridan
+faqat nginx orqali HTTPS — [SERVER.md](SERVER.md). Kompyuterda faqat kod.
 
 ### Qatlamlar
 
@@ -90,7 +91,7 @@ yasaladi: `npm run build:css`.
 
 ## 3. Ma'lumot modeli
 
-17 model, 7 enum. Asosiylari:
+24 model, 12 enum. Asosiylari:
 
 ```
 Floor (F1,F2,F3) ──< Room (101..306) >── RoomType (9 tarif)
@@ -248,8 +249,14 @@ WebSocket → Shaxmatka darhol ko'radi
 Availability keshi qayta hisoblanadi → sayt yangi sonni ko'radi
 ```
 
-To'lanmagan sayt broni `PENDING_PAYMENT_TIMEOUT_HOURS` (24) dan keyin
-avtomatik bekor qilinadi (faqat `WEBSITE` manbali bron).
+**To'lov (Q20, 2026-09-28):** sayt mehmoni to'lovni **kelganda** qiladi —
+sayt ham shuni aytadi. Bron `PENDING_PAYMENT` bo'lib turadi, qabulxona
+mehmon bilan bog'lanib tasdiqlaydi yoki kelganda to'lov oladi. Avtomatik
+bekor qilish standart **o'chiq**: muddat biznes sozlamasi
+`WEBSITE_UNPAID_CANCEL_HOURS` (admin panel → Sozlamalar); 0 dan katta
+bo'lsa shuncha soatda tasdiqlanmagan sayt broni bekor bo'ladi (faqat
+`WEBSITE` manbali, mehmonga xabar bormaydi). Oldindan to'lov — Beds24
+(OTA) mehmonlari, uni OTA boshqaradi.
 
 **Qoida:** saytdan kelgan bron **har doim ovqat bilan**
 (`withMeal: true`). Qidiruv va bron bir xil summa qaytarishi
@@ -323,7 +330,7 @@ soat :01 da hamma xonani qayta hisoblaydi (kun almashganda).
 | Iflos xona | Tozalanmaguncha check-in yo'q | `checkIn()` |
 | To'lov egasi | Kim qabul qilgani yoziladi (`Payment.userId`) | `addPayment()` |
 | Bir yildan uzoq bron | Rad etiladi | `validateRange()` |
-| Spam himoyasi | Bir telefonga 24 soatda 3 ta to'lanmagan bron; raqam raqamlari bo'yicha (oxirgi 9 ta) solishtiriladi | `checkSpam()` |
+| Spam himoyasi | Bir telefonga 3 ta faol (tugamagan) to'lanmagan sayt broni, vaqt oynasisiz; raqam raqamlari bo'yicha (oxirgi 9 ta) solishtiriladi. Bir IP'dan soatiga 5 ta bron | `checkSpam()`, `publicWriteLimiter` |
 
 ### Sozlanadigan qiymatlar (`BUSINESS_DEFAULTS`)
 
@@ -331,14 +338,19 @@ soat :01 da hamma xonani qayta hisoblaydi (kun almashganda).
 |---|---|
 | Nonushta narxi | 25 000 so'm / kishi / kecha — admin panel → Oshxona |
 | Bepul bekor qilish | 24 soat |
-| Bekor qilish jarimasi | 0 kecha (o'chiq) |
+| Bekor qilish jarimasi | 0 kecha (o'chiq, Q16) |
+| To'lanmagan sayt bronini bekor qilish | 0 soat (o'chiq, Q20) |
 | OTA komissiyasi | 15% |
 | Audit jurnali saqlash | 365 kun |
+| Chiqishda tozalash topshirig'i | yoqilgan |
 | Tozalash me'yori | 30 daqiqa |
 | Kechikish eslatmasi | 30 daqiqa |
 | Chiqish soati | 12:00 (Toshkent) |
 
-Bazadagi `Settings` jadvalidan o'zgartiriladi.
+Bazadagi `Settings` jadvalida; admin panel → **Sozlamalar** (egasi, admin;
+`GET/PUT /api/admin/business-settings`). Har o'zgarish audit jurnaliga
+eski va yangi qiymat bilan yoziladi. Nonushta narxi — Oshxona bo'limida
+(faol bronlar summasini ham qayta hisoblaydi).
 
 **Nonushta narxi** admin panel → Oshxona → "Nonushta narxi"
 (`PUT /api/admin/meal-price`, `settings.write`). Sayt va yangi bronlar
@@ -362,8 +374,8 @@ tekshiradi.
 | `settings.write` (sozlamalar, tozalash, navbat) | ✓ | ✓ | | |
 | `reservation.write` / `.cancel` | ✓ | ✓ | ✓ | |
 | `rate.write` | ✓ | ✓ | ✓ | |
-| `room.block` (yopish, iflos xonani qo'lda ochish) | ✓ | ✓ | ✓ | |
-| `audit.read` (audit jurnali) | ✓ | ✓ | ✓ | |
+| `room.block` (xona va qavat yopish, iflos xonani qo'lda ochish) | ✓ | ✓ | ✓ | |
+| `audit.read` (Audit jurnali, Tizim holati) | ✓ | ✓ | ✓ | |
 | `checkin.write` | ✓ | ✓ | ✓ | ✓ |
 | `payment.write` (to'lov qabul qilish) | ✓ | ✓ | ✓ | ✓ |
 | `payment.refund` (qaytarish, manfiy to'lov) | ✓ | ✓ | ✓ | |
@@ -464,7 +476,9 @@ DONE → xona DIRTY bo'lsa AVAILABLE ga o'tadi
 | Bir xona = bir ochiq topshiriq | Takroriy xabar bo'lmasin |
 
 Kim bosgani Telegram ismi bilan yoziladi (`claimedByName`) —
-`Employee` yozuvi shart emas.
+`Employee` yozuvi shart emas. Xodimga Telegram ID bog'langan bo'lsa
+(admin panel → Ishchilar, farrosh botga `/id` yozib biladi) topshiriq
+xodim yozuviga ham yoziladi — hisobotda xodimning ismi chiqadi.
 
 ### Uch alohida bot
 
@@ -485,11 +499,20 @@ Bot ishga tushmasa (token bo'sh) jim o'chadi — backend ishlayveradi.
 `services/kitchen.ts` bugun va ertaga nechta porsiya kerakligini
 hisoblaydi.
 
-Kim hisoblanadi: `CHECKED_IN` (hozir xonada) + `CONFIRMED`
-(bugun keladigan), faqat `withMeal = true`.
+**Qoida (Q20):** nonushta tunashdan keyingi ertalab. D kuni nonushta —
+D dan oldingi kechani mehmonxonada o'tkazganlarga: `checkIn < D <= checkOut`.
+Kelgan kuni nonushta yo'q, ketadigan kuni bor. Nonushtalar soni kecha
+soniga teng — bron summasi (narx × kishi × kecha) bilan mos.
 
-Kattalar va bolalar alohida ko'rsatiladi. Admin panel → Oshxona
-bo'limida jonli ko'rinadi.
+Kim sanaladi (`withMeal = true`): xonada (`CHECKED_IN`); kirishi hali
+belgilanmagan (`CONFIRMED`, `PENDING_PAYMENT` — ertangi hisobotda bugun
+keladiganlar); shu kuni chiqib ketgan (`CHECKED_OUT`, chiqish vaqti D
+kuni). Muddatidan oldin ketgan mehmon keyingi kunlarga sanalmaydi.
+
+Holatlar: xonada, shu kuni ketadi, kirish belgilanmagan. Kattalar va
+bolalar alohida. Admin panel → Oshxona bo'limida jonli; oshxona botiga
+07:30 (bugun) va 20:00 (ertaga) o'zi ketadi, panelda qo'lda yuborish
+tugmasi ham bor.
 
 ---
 
@@ -522,7 +545,7 @@ Redis'dan o'chiriladi (`OBSOLETE_SCHEDULERS`).
 
 | Vazifa | Davr |
 |---|---|
-| To'lanmagan sayt bronlarini bekor qilish | har soat boshida |
+| To'lanmagan sayt bronlarini bekor qilish (Sozlamalar'da muddat 0 dan katta bo'lsa) | har soat boshida |
 | Beds24 polling | `POLL_INTERVAL_MINUTES` (5; 0 — Beds24 jadvallari o'chiq) |
 | Beds24 catch-up | `CATCH_UP_INTERVAL_MINUTES` (15) |
 | Beds24 narxini tortish | har soat |
@@ -547,7 +570,7 @@ Redis qaytgach davom etadi. `/health` "degraded" qaytaradi, "down" emas.
 | Parol almashishi | Eski token'lar bekor (`passwordChangedAt`) |
 | Admin endpoint'lari | Hammasi `requireAuth` + huquq |
 | HTTP sarlavhalar | `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: same-origin` |
-| Tarmoq | Backend `127.0.0.1:3100` (nginx orqali), Postgres va Redis loopback'da |
+| Tarmoq | API konteyneri faqat `127.0.0.1:<API_PORT>` da (nginx orqali), Postgres va Redis faqat Docker ichki tarmog'ida |
 | CORS | Faqat `CORS_ORIGINS` ro'yxatidagi domenlar |
 | Rate limit | IP bo'yicha (`express-rate-limit`) |
 | XSS | Admin panelda `esc()`, Shaxmatka React (JSX o'zi escape qiladi) |
@@ -566,7 +589,7 @@ bilan serverni **ishga tushirmaydi**:
 - `NODE_ENV=production` da: `AUTH_REQUIRED=false`,
   `RATE_LIMIT_DISABLED=true`, `JWT_SECRET` 32 belgidan qisqa
 
-Serverda `NODE_ENV=production` (2026-09-26 dan, systemd drop-in).
+Serverda `NODE_ENV=production` — `docker-compose.yml` majburan qo'yadi.
 
 ---
 
@@ -601,46 +624,26 @@ Kodlar: `VALIDATION` (400), `UNAUTHORIZED` (401), `FORBIDDEN`
 
 ## 16. Muhit
 
-### Portlar
+**Server:** API `127.0.0.1:<API_PORT>` (serverdagi registrdan, `.env`),
+tashqaridan faqat nginx (HTTPS). PostgreSQL va Redis konteyner ichida,
+hostga ham chiqmaydi. Brauzerda to'g'ridan-to'g'ri: `bash tools/tunnel.sh`
+→ `http://localhost:3100`. Batafsil: [SERVER.md](SERVER.md).
 
-| Xizmat | Server | Tunnel orqali |
-|---|---|---|
-| Backend | 3100 | `localhost:3100` |
-| PostgreSQL | 5433 | `localhost:5433` |
-| Redis | 6380 | `localhost:6380` |
-
-Server portlari `127.0.0.1` ga bog'langan — internetdan kirib
-bo'lmaydi. SSH tunnel yagona yo'l: `bash tools/tunnel.sh`.
+**Lokal va testlar:** [README.md](README.md).
 
 ### Muhim tuzoqlar
 
-**`localhost` IPv6 ga hal bo'ladi.** Node 18+ da `localhost`
-avval `::1` ga hal bo'ladi, SSH tunnel esa IPv4'da tinglaydi.
-Test va skriptlarda **`127.0.0.1`** yozish shart.
+**`localhost` IPv6 ga hal bo'ladi.** Node 18+ da `localhost` avval `::1`
+ga hal bo'ladi. Test va skriptlarda **`127.0.0.1`** yozish shart.
 
-**Testlar bazani tozalaydi.** `vitest.setup.ts` har test
-faylidan oldin `prisma/seed.ts` chaqiradi — barcha bronlar va
-narxlar o'chadi. Himoya: baza nomida "test" bo'lmasa testlar ishga
-tushmaydi, seed esa bronli "test"siz bazani tozalamaydi. Testlar
-faqat alohida bazada (`zakas042/README.md`, "Testlar").
+**Testlar bazani tozalaydi.** `vitest.setup.ts` har test faylidan oldin
+`prisma/seed.ts` chaqiradi — barcha bronlar va narxlar o'chadi. Himoya:
+baza nomida "test" bo'lmasa testlar ishga tushmaydi, seed esa bronli
+"test"siz bazani tozalamaydi. Testlar faqat alohida bazada.
 
-**Bot bir vaqtda bitta joyda.** Mahalliy va server birga ishga
-tushsa Telegram `409 Conflict` beradi.
-
-**PostgreSQL 5433.** Mahalliy PostgreSQL 16 xizmati 5432 ni
-egallagan; Docker konteyneri 5433 ga chiqariladi.
-
-### Buyruqlar
-
-```bash
-npm run dev            # ishlab chiqish (tsx watch)
-npm run build          # TypeScript → dist/
-npm start              # dist/server.js
-npm test               # vitest
-npm run db:migrate     # migratsiya
-npm run db:seed        # baza to'ldirish (faqat test/bo'sh bazada)
-npm run build:css      # Shaxmatka Tailwind CSS
-```
+**Bot bir vaqtda bitta joyda.** Bir token bilan lokal va server birga
+ishga tushsa Telegram `409 Conflict` beradi — lokal `.env` da Telegram
+tokenlari bo'sh.
 
 ---
 
