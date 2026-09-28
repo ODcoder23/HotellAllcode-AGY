@@ -1,7 +1,5 @@
 # Imron Hotel PMS — backend
 #
-# Manba: 01-ARXITEKTURA-VA-QOIDALAR.md §5, 11-BOSQICHLAR-ROADMAP.md FAZA 0
-#
 # IKKI BOSQICHLI QURILISH: build bosqichida devDependencies va
 # TypeScript kerak, ishga tushirishda esa faqat kompilyatsiya
 # natijasi. Natijada tasvir kichik bo'ladi va ishlab chiqarishda

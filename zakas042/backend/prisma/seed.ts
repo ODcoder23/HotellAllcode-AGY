@@ -1,7 +1,6 @@
 /**
  * Seed — boshlang'ich ma'lumotlar
  *
- * Manba: 02-DATABASE-SXEMA.md §4
  * Xona ro'yxati mijozdan olingan (2026-09-16):
  * 18 xona (3 qavat x 6), 9 tarif. Narxlar so'mda.
  *
@@ -127,7 +126,7 @@ async function main() {
   // dasturchi topshirishda har rolni sinab ko'ra oladi.
   //
   // DEV PAROLLARI. Topshirishda birinchi qadam — ularni
-  // o'zgartirish (FAZA 15 ro'yxatida).
+  // o'zgartirish.
   const devPassword = await bcrypt.hash("admin12345", 10);
 
   await prisma.user.createMany({
@@ -251,7 +250,7 @@ async function main() {
   }
   await recalcAllRoomStatuses();
 
-  // --- Availability (07-fayl §2 agregatsiyasi) --------------
+  // --- Availability ------------------------------------------
   const rooms = await prisma.room.findMany({ where: { isActive: true } });
   const avail: Prisma.AvailabilityCreateManyInput[] = [];
 

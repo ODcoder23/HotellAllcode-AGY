@@ -1,12 +1,12 @@
 /**
- * Room type ro'yxati keshi — 03-fayl §8 (7-chora), 06-fayl §3
+ * Room type ro'yxati keshi
  *
  * MUAMMO: `GET /properties` har chaqiruvda ~5 kredit sarflaydi, kredit
- * esa 5 daqiqada 100 ta (03-fayl §3). Ro'yxat uch joydan chaqiriladi:
+ * esa 5 daqiqada 100 ta. Ro'yxat uch joydan chaqiriladi:
  * mapping sahifasi, admin ulanish holati, drift tekshiruvi. Kesh
  * bo'lmasa ular kreditni bekorga yeydi.
  *
- * 06-fayl §3: "Bu YAGONA JOY — boshqa hech qayerda `/properties`
+ * "Bu YAGONA JOY — boshqa hech qayerda `/properties`
  * chaqirilmaydi, natija cache qilinadi (kamdan-kam o'zgaradi)."
  *
  * TTL 10 daqiqa: Beds24'da yangi room type qo'shilsa admin
@@ -21,7 +21,7 @@ import { getChannel } from "./registry.js";
  * Kesh muddati — `PROPERTY_CACHE_TTL_MS` bilan sozlanadi.
  *
  * Standart 10 daqiqa: ro'yxat kamdan-kam o'zgaradi va har chaqiruv
- * ~5 kredit sarflaydi (03-fayl §3).
+ * ~5 kredit sarflaydi.
  *
  * NOLGA QO'YISH testlarda kerak: ular mock holatini qayta-qayta
  * tozalaydi (`/control/reset`) va kesh eski javobni qaytarib
@@ -60,10 +60,4 @@ export async function getRoomTypesCached(
 export function invalidateRoomTypes(channelCode?: string): void {
   if (channelCode) cache.delete(channelCode);
   else cache.clear();
-}
-
-/** Monitoring — kesh yangimi */
-export function roomTypesCacheAge(channelCode?: string): number | null {
-  const hit = cache.get(channelCode ?? "default");
-  return hit ? Date.now() - hit.at : null;
 }

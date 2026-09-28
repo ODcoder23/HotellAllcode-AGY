@@ -64,8 +64,6 @@ export async function listMappings() {
   }));
 }
 
-export type MappingRow = Awaited<ReturnType<typeof listMappings>>[number];
-
 /**
  * PMS tarifi uchun tur darajasidagi mapping. Sync operatsiyalari shu
  * funksiyani chaqiradi — `null` qaytsa sync bajarilmaydi.

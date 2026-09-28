@@ -1,5 +1,5 @@
 /**
- * Xarajatlar — SAVOLLAR.md S14
+ * Xarajatlar
  *
  * MUAMMO: hisobotda faqat maosh xarajat sifatida hisoblanardi.
  * Kommunal, soliq va ayniqsa OTA komissiyasi (Booking.com 15-18%)

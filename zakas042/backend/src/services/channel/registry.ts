@@ -1,8 +1,6 @@
 /**
  * Kanal registri — TZ 12-band
  *
- * Manba: 01-ARXITEKTURA-VA-QOIDALAR.md §4
- *
  * TZ: "Arxitektura faqat Beds24 bilan cheklanmasin. Keyinchalik
  * Bronevik, MyBooking kabi kanallarni qo'shish mumkin bo'ladigan
  * qilib yozilsin."
@@ -63,11 +61,6 @@ export function getChannel(code: string = DEFAULT_CHANNEL): ChannelAdapter {
     );
   }
   return adapter;
-}
-
-/** Ro'yxatdan o'tgan kanal kodlari — admin panel uchun */
-export function listChannels(): string[] {
-  return [...adapters.keys()];
 }
 
 /** Provider tanlash ro'yxati (TZ 12-band, ulanish sahifasi) */

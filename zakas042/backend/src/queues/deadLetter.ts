@@ -1,7 +1,7 @@
 /**
  * `beds24-retry` navbati — TZ 11-band
  *
- * Manba: 05-SYNC-QUEUE-BULLMQ.md §3, TZ 11-band navbatlar ro'yxati
+ * Manba: TZ 11-band navbatlar ro'yxati
  *
  * TZ beshta navbatni sanaydi, shundan to'rttasi — ish navbatlari
  * (webhook, reservation, availability, rate). Beshinchisi —

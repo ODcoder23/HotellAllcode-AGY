@@ -1,9 +1,7 @@
 /**
  * Event yuborish yordamchilari — TZ 15-band
  *
- * Manba: 09-REALTIME-WEBSOCKET.md §1, §3
- *
- * TARTIB MUHIM (09-fayl §1): event faqat DB transaction
+ * TARTIB MUHIM: event faqat DB transaction
  * muvaffaqiyatli tugagandan KEYIN yuboriladi. Aks holda frontend
  * DB'da yo'q ma'lumotni ko'rsatib qo'yishi mumkin.
  *
@@ -21,7 +19,7 @@ import { now } from "./events.js";
 
 /**
  * Bron event'i. Xona holati ham qo'shiladi — frontend ikkalasini
- * bir vaqtda yangilashi uchun (09-fayl §3).
+ * bir vaqtda yangilashi uchun.
  */
 export async function notifyReservation(
   type: "reservation.created" | "reservation.updated" | "reservation.cancelled",

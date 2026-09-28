@@ -1,12 +1,12 @@
 /**
- * FAZA 12 — Xavfsizlik va audit
+ * Xavfsizlik va audit
  *
  * TZ 18-band: to'qqiz xavfsizlik talabi.
  *
- * Mezon (11-BOSQICHLAR-ROADMAP.md, FAZA 12):
- *   "10-fayl §1 jadvalidagi 9 ta talab ham 'bajarildi'."
+ * Mezon:
+ *   "xavfsizlik jadvalidagi 9 ta talab ham 'bajarildi'."
  *
- * Cheklist (10-fayl §9) shu test bilan avtomatlashtiriladi —
+ * Cheklist shu test bilan avtomatlashtiriladi —
  * qo'lda tekshirish o'rniga har yurishda qayta sinaladi.
  *
  * Ishga tushirish:  npx vitest run src/security.test.ts
@@ -72,7 +72,7 @@ async function loadAdminToken(): Promise<void> {
   }
 }
 
-describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
+describe("Xavfsizlik va audit (TZ 16, 18-band)", () => {
   beforeAll(async () => {
     const health = await fetch(`${PMS}/health`).then((r) => r.json() as any);
     if (!health.security) throw new Error("/health'da security yo'q — server yangilanmagan");
@@ -298,7 +298,7 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
   });
 
   // --- 4. RBAC (TZ 18-band, 4-talab) -------------------------
-  describe("4. RBAC — to'rt rol (10-fayl §3)", () => {
+  describe("4. RBAC — to'rt rol", () => {
     it("FOUNDER hamma huquqqa ega", () => {
       // Egasi — yagona rol, unda hech narsa yopiq emas
       for (const p of Object.keys(PERMISSIONS)) {
@@ -406,7 +406,7 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
   });
 
   // --- 8. Audit log (TZ 18-band, 8-talab) --------------------
-  describe("8. Audit log — kim nima qildi (10-fayl §4)", () => {
+  describe("8. Audit log — kim nima qildi", () => {
     it("yozuv yaratiladi va o'qiladi", async () => {
       await audit({
         action: "settings.changed",
@@ -478,7 +478,7 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
       });
 
       // Narx tarifdan olinadi — pastroq narx chegirma sababini
-      // talab qiladi (SAVOLLAR.md S4)
+      // talab qiladi
       const plan = await prisma.ratePlan.findFirst({
         where: { roomTypeId: room.roomTypeId },
         orderBy: { price: "desc" },
@@ -518,7 +518,7 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
     });
 
     it("amallar ro'yxati yopiq — yangi amal qo'shish ongli qaror", () => {
-      // 10-fayl §4 dagi hamma amal ro'yxatda bo'lishi kerak
+      // Kuzatiladigan hamma amal ro'yxatda bo'lishi kerak
       for (const a of [
         "settings.changed", "reservation.cancelled", "reservation.no_show",
         "payment.received", "rate.changed", "room.status_changed",
@@ -1028,8 +1028,8 @@ describe("FAZA 12 — xavfsizlik va audit (TZ 16, 18-band)", () => {
     });
   });
 
-  // --- Cheklist (10-fayl §9) ---------------------------------
-  describe("xavfsizlik cheklisti — FAZA 12 mezoni", () => {
+  // --- Cheklist ---------------------------------
+  describe("xavfsizlik cheklisti", () => {
     it("/health xavfsizlik holatini ko'rsatadi", async () => {
       const res = await api("/health");
       expect(res.body.security).toBeTruthy();

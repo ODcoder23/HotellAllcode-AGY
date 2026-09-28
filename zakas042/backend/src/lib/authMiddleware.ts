@@ -1,8 +1,6 @@
 /**
  * JWT va RBAC middleware — TZ 18-band
  *
- * Manba: 10-SECURITY-VA-SYNCLOG.md §1 (3, 4-talab), §3
- *
  * IKKI BOSQICH:
  *   `requireAuth`         — token bormi va haqiqiymi
  *   `requirePermission()` — bu rol shu amalni qila oladimi
@@ -95,7 +93,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 }
 
 /**
- * Huquq tekshiruvi (10-fayl §3).
+ * Huquq tekshiruvi.
  *
  * `requireAuth` dan KEYIN ishlatiladi — o'zi token tekshirmaydi.
  */

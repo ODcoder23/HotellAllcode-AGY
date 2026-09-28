@@ -13,7 +13,7 @@
 #  Baza va Redis tashqariga umuman chiqmaydi (Docker ichki tarmog'ida).
 #  Bazaga: ssh ... 'cd /srv/projects/hotel && docker compose exec postgres
 #  psql -U imron imron_pms' — SERVER.md. Bu JONLI baza: testlar faqat
-#  alohida test bazasida (zakas042/README.md).
+#  alohida test bazasida (README.md, "Testlar").
 # ============================================================
 
 source "$(dirname "${BASH_SOURCE[0]}")/_server.sh"

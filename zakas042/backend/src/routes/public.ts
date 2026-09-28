@@ -1,12 +1,10 @@
 /**
- * Website public API — TZ 3, 20-band (FAZA 13)
- *
- * Manba: 13-WEBSITE-INTEGRATSIYA.md §2, §6
+ * Website public API — TZ 3, 20-band
  *
  * ISH CHEGARASI: Customer Website kodiga kirish yo'q. Bu API to'liq
  * yoziladi va test qilinadi, Website'ni ulash scope'dan tashqarida.
  *
- * XAVFSIZLIK (13-fayl §6) — ommaviy endpoint asosiy hujum yuzasi:
+ * XAVFSIZLIK — ommaviy endpoint asosiy hujum yuzasi:
  *   - JWT TALAB QILINMAYDI (mijoz ro'yxatdan o'tmagan)
  *   - Rate limiting: qidiruv 30/daqiqa, bron 5/soat
  *   - Honeypot maydon — bot himoyasi
@@ -60,7 +58,7 @@ const bookingSchema = z.object({
   children: z.number().int().min(0).max(20).optional(),
   /**
    * Nonushta — saytdan kelgan bron HAR DOIM nonushta bilan
-   * (BOTLAR-REJA.md, 2026-09-17), tanlov yo'q.
+   * (2026-09-17), tanlov yo'q.
    *
    * `true` yoki yo'q — qabul qilinadi (eski sayt versiyasi `true`
    * yuboradi). `false` — rad etiladi: ilgari u jimgina e'tiborsiz
@@ -77,7 +75,7 @@ const bookingSchema = z.object({
   notes: z.string().max(500).optional(),
 
   /**
-   * Honeypot (13-fayl §6).
+   * Honeypot.
    *
    * Formada ko'rinmas maydon: odam uni to'ldirmaydi, bot esa
    * barcha maydonlarni to'ldiradi. To'ldirilgan bo'lsa — bot.

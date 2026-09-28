@@ -1,18 +1,16 @@
 /**
  * WebSocket server — TZ 4, 15-band
  *
- * Manba: 09-REALTIME-WEBSOCKET.md §1, §4, §5
- *
  * TZ 4-band: "Admin sahifani refresh qilmasdan ham yangi bronni
  * ko'rishi uchun WebSocket/real-time update ishlatilsin."
  *
- * KO'P INSTANSIYA (09-fayl §1): Docker Compose bir nechta API
+ * KO'P INSTANSIYA: Docker Compose bir nechta API
  * konteyneri ko'targanda, klient A 1-konteynerga, klient B
  * 2-konteynerga ulangan bo'lishi mumkin. Redis pub/sub event'ni
  * barcha instansiyalarga tarqatadi. Redis allaqachon BullMQ uchun
  * bor — qo'shimcha infratuzilma kerak emas.
  *
- * MUHIM PRINTSIP (09-fayl §5): WebSocket faqat "delta" yetkazish
+ * MUHIM PRINTSIP: WebSocket faqat "delta" yetkazish
  * vositasi, HAQIQAT MANBAI EMAS. Uzilish paytida o'tkazib yuborilgan
  * event'lar REST orqali qoplanadi.
  */
@@ -97,7 +95,7 @@ export function startRealtimeServer(httpServer: Server): void {
     const ip = req.socket.remoteAddress;
 
     /**
-     * TZ 18-band, 09-fayl §4: ulanish mavjud JWT bilan tasdiqlanadi.
+     * TZ 18-band: ulanish mavjud JWT bilan tasdiqlanadi.
      *
      * Token ikki joydan olinadi:
      *   1. `?token=...` — brauzer `WebSocket` API'si maxsus
@@ -137,7 +135,7 @@ export function startRealtimeServer(httpServer: Server): void {
       console.log(`[ws] ulandi ${info.email} (${info.role}, ${ip}), jami ${clients.size}`);
     }
 
-    // Klient uzilishdan keyin farqni bilishi uchun (09-fayl §5)
+    // Klient uzilishdan keyin farqni bilishi uchun
     ws.send(JSON.stringify({
       type: "connected",
       timestamp: now(),
@@ -157,7 +155,7 @@ export function startRealtimeServer(httpServer: Server): void {
     ws.on("error", () => clients.delete(ws));
   });
 
-  // --- Redis pub/sub (09-fayl §1) ---
+  // --- Redis pub/sub ---
   try {
     publisher = new IORedis(config.redisUrl, { maxRetriesPerRequest: null, lazyConnect: false });
     subscriber = new IORedis(config.redisUrl, { maxRetriesPerRequest: null, lazyConnect: false });

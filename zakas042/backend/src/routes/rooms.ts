@@ -1,6 +1,6 @@
 /**
  * Xona endpoint'lari — Shaxmatka uchun
- * Frontend `rooms` massivi shakliga mos (02-fayl §3).
+ * Frontend `rooms` massivi shakliga mos.
  */
 
 import { Router } from "express";

@@ -275,7 +275,7 @@ section{position:relative; z-index:1; padding:100px 5vw;}
 }
 .field input:focus, .field select:focus, .field textarea:focus{outline:none; border-color:var(--gold); background:rgba(246,239,224,.08);}
 
-/* Nonushta tanlovi (SAVOLLAR.md S10) — mavjud maydon stiliga mos */
+/* Nonushta tanlovi — mavjud maydon stiliga mos */
 .bkf-meal-row{
   display:flex; align-items:center; justify-content:space-between; gap:18px;
   padding:14px 16px; margin-bottom:18px;
@@ -836,7 +836,6 @@ uz: {
   hero_title:"Sharq mehmondo'stligi, <em>zamonaviy</em> qulaylik bilan",
   hero_lead:"Registon ko'chalaridan bir necha qadam narida — an'anaviy naqshlar, issiq mehmonnavozlik va har bir tafsilotda o'ylangan qulaylik sizni kutmoqda.",
   hero_btn1:"Xonalarni ko'rish", hero_btn2:"Batafsil",
-  hero_quote:"\"Har bir burchagida o'zbek naqqoshligi nafasi bor. Xodimlarning mehribonligi esa alohida ta'sir qoldiradi.\"",
   hero_stat1_val:"9", hero_stat1_label:"Xona turlari",
   hero_stat2_val:"20+", hero_stat2_label:"Qulay xonalar",
   hero_stat3_val:"24/7", hero_stat3_label:"Xizmat ko'rsatish",
@@ -855,19 +854,9 @@ uz: {
   booking_side_eyebrow:"Nega bizni tanlaysiz", booking_side_title:"Oson va tezkor bron",
   booking_side_text:"Formani to'ldiring — biz tez orada siz bilan bog'lanib, bron tafsilotlarini tasdiqlaymiz. To'lov faqat kelganingizda amalga oshiriladi.",
   booking_li1:"Bekor qilish — bepul, 24 soat oldin", booking_li2:"Xonani tanlashda yordam beramiz", booking_li3:"Aeroportdan bepul transfer (so'rov asosida)",
-  form_fullname:"Ism va familiya", form_fullname_ph:"Ism Familiya",
-  form_phone:"Telefon raqam", form_phone_ph:"+998 90 123 45 67",
-  form_checkin:"Kelish sanasi", form_checkout:"Ketish sanasi",
-  form_roomtype:"Xona turi", form_guests:"Mehmonlar soni",
-  form_note:"Qo'shimcha izoh", form_note_ph:"Masalan: yuqori qavat, erta check-in va h.k.",
-  form_submit:"Bronni yuborish",
-  booking_msg_sending:"Yuborilmoqda...", booking_msg_success:"Bron qabul qilindi! Tez orada bog'lanamiz.", booking_msg_error:"Xatolik yuz berdi, qayta urinib ko'ring.",
-  toast_booking_success:"Bron muvaffaqiyatli yuborildi ✦",
   footer_blurb:"Registon ko'chasi bo'yida joylashgan, milliy ruh va zamonaviy qulaylikni birlashtirgan mehmonxona.",
   footer_contact_title:"Aloqa", footer_address_label:"Manzil:", footer_phone_label:"Tel:", footer_email_label:"Email:",
-  footer_taxi_label:"Yandex Taxi uchun manzil", footer_taxi_map_link:"Xaritada ko'rish →",
   footer_sections_title:"Bo'limlar", footer_copy:"© 2026 Imron Hotel. Barcha huquqlar himoyalangan.",
-  admin_link_text:"Admin panel",
   address_full:"Umar Hayyom ko'chasi, 32-uy, Samarqand",
   location_eyebrow:"Joylashuv", location_title:"Eski shaharda, uning yonida emas",
   location_desc:"Imron mehmonxonasi tarixiy kvartalda, Registon, Bibi-Xonim masjidi va Siyob bozorining yopiq qatorlari yaqinida joylashgan.",
@@ -877,25 +866,7 @@ uz: {
   location_near3_name:"Siyob bozori", location_near3_time:"9 daqiqa piyoda",
   location_near4_name:"Samarqand temir yo'l stansiyasi", location_near4_time:"Mashinada 15 daqiqa",
   location_cta:"Yo'nalishlarni oling",
-  adminlogin_title:"Admin kirish", adminlogin_sub:"Faqat mehmonxona ma'muriyati uchun.",
-  adminlogin_password_label:"Parol", adminlogin_password_ph:"Parolni kiriting", adminlogin_btn:"Kirish",
-  adminlogin_demo_note:"Demo paroli: <b style='color:var(--gold-light)'>admin2026</b>",
-  adminlogin_wrong_pass:"Parol noto'g'ri",
-  adminpanel_title:"Ma'muriyat paneli", adminpanel_sub:"Xonalarni qo'shing, narxlarni va rasmlarni yangilang.",
-  tab_rooms:"Xonalar", tab_add:"Yangi xona", tab_bookings:"Bronlar",
-  admin_edit_price_btn:"Narxni tahrirlash", admin_delete_btn:"O'chirish",
-  admin_price_prompt:"Yangi narxni kiriting (so'm):", admin_price_updated_toast:"Narx yangilandi", admin_room_deleted_toast:"Xona o'chirildi",
-  add_room_name_label:"Xona nomi", add_room_name_ph:"Masalan: Buxoro Suite",
-  add_room_price_label:"Narx (so'm/kecha)", add_room_price_ph:"850000",
-  add_room_capacity_label:"Sig'imi (mehmon)", add_room_capacity_ph:"2",
-  add_room_desc_label:"Tavsif", add_room_desc_ph:"Xona haqida qisqacha ma'lumot",
-  add_room_image_label:"Rasm yuklash", add_room_submit:"Xonani qo'shish",
-  add_room_error:"Iltimos, xona nomi va narxini kiriting.", add_room_success:"Xona muvaffaqiyatli qo'shildi ✦", add_room_toast:"Yangi xona qo'shildi",
-  bookings_empty_text:"Hozircha bronlar mavjud emas.",
-  dashboard_title:"Boshqaruv paneli", sidebar_overview:"Umumiy ko'rinish", sidebar_rooms:"Xonalar", sidebar_bookings:"Bronlar",
-  back_to_site:"← Saytga qaytish", logout_btn:"Chiqish",
-  stat_total_rooms:"Jami xonalar", stat_total_bookings:"Jami bronlar", stat_today_bookings:"Bugungi bronlar", stat_est_revenue:"Taxminiy daromad",
-  currency_suffix:"so'm", locale:"uz-UZ", default_room_desc:"Qulay va zamonaviy jihozlangan xona."
+  currency_suffix:"so'm", locale:"uz-UZ"
 },
 ru: {
   brand:"Отель Имрон",
@@ -904,7 +875,6 @@ ru: {
   hero_title:"Восточное гостеприимство с <em>современным</em> комфортом",
   hero_lead:"В нескольких шагах от улиц Регистана вас ждут традиционные узоры, тёплое гостеприимство и продуманный комфорт в каждой детали.",
   hero_btn1:"Смотреть номера", hero_btn2:"Подробнее",
-  hero_quote:"«В каждом уголке чувствуется дыхание узбекского орнамента. А забота персонала оставляет особое впечатление.»",
   hero_stat1_val:"9", hero_stat1_label:"Типов номеров",
   hero_stat2_val:"20+", hero_stat2_label:"Удобств",
   hero_stat3_val:"24/7", hero_stat3_label:"Обслуживание",
@@ -923,19 +893,9 @@ ru: {
   booking_side_eyebrow:"Почему мы", booking_side_title:"Просто и быстро",
   booking_side_text:"Заполните форму — мы свяжемся с вами в ближайшее время и подтвердим детали брони. Оплата производится только по прибытии.",
   booking_li1:"Бесплатная отмена за 24 часа", booking_li2:"Поможем выбрать номер", booking_li3:"Бесплатный трансфер из аэропорта (по запросу)",
-  form_fullname:"Имя и фамилия", form_fullname_ph:"Имя Фамилия",
-  form_phone:"Номер телефона", form_phone_ph:"+998 90 123 45 67",
-  form_checkin:"Дата заезда", form_checkout:"Дата выезда",
-  form_roomtype:"Тип номера", form_guests:"Количество гостей",
-  form_note:"Дополнительный комментарий", form_note_ph:"Например: высокий этаж, ранний заезд и т.д.",
-  form_submit:"Отправить бронь",
-  booking_msg_sending:"Отправка...", booking_msg_success:"Бронь принята! Мы скоро свяжемся с вами.", booking_msg_error:"Произошла ошибка, попробуйте снова.",
-  toast_booking_success:"Бронь успешно отправлена ✦",
   footer_blurb:"Отель у улицы Регистан, сочетающий национальный дух и современный комфорт.",
   footer_contact_title:"Контакты", footer_address_label:"Адрес:", footer_phone_label:"Тел:", footer_email_label:"Email:",
-  footer_taxi_label:"Адрес для Яндекс Такси", footer_taxi_map_link:"Смотреть на карте →",
   footer_sections_title:"Разделы", footer_copy:"© 2026 Отель Имрон. Все права защищены.",
-  admin_link_text:"Панель администратора",
   address_full:"ул. Омара Хайяма, 32, Самарканд",
   location_eyebrow:"Расположение", location_title:"В старом городе, а не рядом с ним",
   location_desc:"Отель Imron расположен в историческом квартале, рядом с Регистаном, мечетью Биби-Ханым и крытыми рядами базара Сиаб.",
@@ -945,25 +905,7 @@ ru: {
   location_near3_name:"Базар Сиаб", location_near3_time:"9 минут пешком",
   location_near4_name:"Ж/д вокзал Самарканда", location_near4_time:"15 минут на машине",
   location_cta:"Проложить маршрут",
-  adminlogin_title:"Вход для администратора", adminlogin_sub:"Только для персонала отеля.",
-  adminlogin_password_label:"Пароль", adminlogin_password_ph:"Введите пароль", adminlogin_btn:"Войти",
-  adminlogin_demo_note:"Демо-пароль: <b style='color:var(--gold-light)'>admin2026</b>",
-  adminlogin_wrong_pass:"Неверный пароль",
-  adminpanel_title:"Панель администратора", adminpanel_sub:"Добавляйте номера, обновляйте цены и фото.",
-  tab_rooms:"Номера", tab_add:"Новый номер", tab_bookings:"Брони",
-  admin_edit_price_btn:"Изменить цену", admin_delete_btn:"Удалить",
-  admin_price_prompt:"Введите новую цену (сум):", admin_price_updated_toast:"Цена обновлена", admin_room_deleted_toast:"Номер удалён",
-  add_room_name_label:"Название номера", add_room_name_ph:"Например: Bukhara Suite",
-  add_room_price_label:"Цена (сум/ночь)", add_room_price_ph:"850000",
-  add_room_capacity_label:"Вместимость (гостей)", add_room_capacity_ph:"2",
-  add_room_desc_label:"Описание", add_room_desc_ph:"Краткое описание номера",
-  add_room_image_label:"Загрузить фото", add_room_submit:"Добавить номер",
-  add_room_error:"Пожалуйста, укажите название и цену номера.", add_room_success:"Номер успешно добавлен ✦", add_room_toast:"Добавлен новый номер",
-  bookings_empty_text:"Пока нет броней.",
-  dashboard_title:"Панель управления", sidebar_overview:"Обзор", sidebar_rooms:"Номера", sidebar_bookings:"Брони",
-  back_to_site:"← Вернуться на сайт", logout_btn:"Выйти",
-  stat_total_rooms:"Всего номеров", stat_total_bookings:"Всего броней", stat_today_bookings:"Брони за сегодня", stat_est_revenue:"Примерный доход",
-  currency_suffix:"сум", locale:"ru-RU", default_room_desc:"Уютный и современно обустроенный номер."
+  currency_suffix:"сум", locale:"ru-RU"
 },
 en: {
   brand:"Imron Hotel",
@@ -972,7 +914,6 @@ en: {
   hero_title:"Eastern hospitality with <em>modern</em> comfort",
   hero_lead:"A few steps from the streets of Registan — traditional ornament, warm hospitality and thoughtful comfort in every detail await you.",
   hero_btn1:"View rooms", hero_btn2:"Learn more",
-  hero_quote:"\"Every corner carries the breath of Uzbek craftsmanship. The staff's warmth leaves a lasting impression.\"",
   hero_stat1_val:"9", hero_stat1_label:"Room types",
   hero_stat2_val:"20+", hero_stat2_label:"Amenities",
   hero_stat3_val:"24/7", hero_stat3_label:"Service",
@@ -991,19 +932,9 @@ en: {
   booking_side_eyebrow:"Why choose us", booking_side_title:"Simple and fast booking",
   booking_side_text:"Fill in the form — we will contact you shortly to confirm your booking details. Payment is made only on arrival.",
   booking_li1:"Free cancellation, 24 hours ahead", booking_li2:"We help you choose the right room", booking_li3:"Free airport transfer (on request)",
-  form_fullname:"Full name", form_fullname_ph:"First Last",
-  form_phone:"Phone number", form_phone_ph:"+998 90 123 45 67",
-  form_checkin:"Check-in date", form_checkout:"Check-out date",
-  form_roomtype:"Room type", form_guests:"Number of guests",
-  form_note:"Additional note", form_note_ph:"E.g. high floor, early check-in, etc.",
-  form_submit:"Send booking",
-  booking_msg_sending:"Sending...", booking_msg_success:"Booking received! We will contact you soon.", booking_msg_error:"Something went wrong, please try again.",
-  toast_booking_success:"Booking sent successfully ✦",
   footer_blurb:"A hotel by Registan Street, blending national spirit with modern comfort.",
   footer_contact_title:"Contact", footer_address_label:"Address:", footer_phone_label:"Phone:", footer_email_label:"Email:",
-  footer_taxi_label:"Address for Yandex Taxi", footer_taxi_map_link:"View on map →",
   footer_sections_title:"Sections", footer_copy:"© 2026 Imron Hotel. All rights reserved.",
-  admin_link_text:"Admin panel",
   address_full:"32 Umar Khayyam Street, Samarkand",
   location_eyebrow:"Location", location_title:"In the old city, not just near it",
   location_desc:"Imron Hotel sits in the historic quarter, close to Registan, the Bibi-Khanym Mosque and the covered rows of Siyob Bazaar.",
@@ -1013,25 +944,7 @@ en: {
   location_near3_name:"Siyob Bazaar", location_near3_time:"9 min walk",
   location_near4_name:"Samarkand railway station", location_near4_time:"15 min by car",
   location_cta:"Get directions",
-  adminlogin_title:"Admin login", adminlogin_sub:"Hotel staff only.",
-  adminlogin_password_label:"Password", adminlogin_password_ph:"Enter password", adminlogin_btn:"Log in",
-  adminlogin_demo_note:"Demo password: <b style='color:var(--gold-light)'>admin2026</b>",
-  adminlogin_wrong_pass:"Incorrect password",
-  adminpanel_title:"Admin panel", adminpanel_sub:"Add rooms, update prices and photos.",
-  tab_rooms:"Rooms", tab_add:"New room", tab_bookings:"Bookings",
-  admin_edit_price_btn:"Edit price", admin_delete_btn:"Delete",
-  admin_price_prompt:"Enter new price (UZS):", admin_price_updated_toast:"Price updated", admin_room_deleted_toast:"Room deleted",
-  add_room_name_label:"Room name", add_room_name_ph:"E.g. Bukhara Suite",
-  add_room_price_label:"Price (UZS/night)", add_room_price_ph:"850000",
-  add_room_capacity_label:"Capacity (guests)", add_room_capacity_ph:"2",
-  add_room_desc_label:"Description", add_room_desc_ph:"Short description of the room",
-  add_room_image_label:"Upload photo", add_room_submit:"Add room",
-  add_room_error:"Please enter a room name and price.", add_room_success:"Room added successfully ✦", add_room_toast:"New room added",
-  bookings_empty_text:"No bookings yet.",
-  dashboard_title:"Dashboard", sidebar_overview:"Overview", sidebar_rooms:"Rooms", sidebar_bookings:"Bookings",
-  back_to_site:"← Back to site", logout_btn:"Log out",
-  stat_total_rooms:"Total rooms", stat_total_bookings:"Total bookings", stat_today_bookings:"Today's bookings", stat_est_revenue:"Estimated revenue",
-  currency_suffix:"UZS", locale:"en-US", default_room_desc:"A comfortable, modernly furnished room."
+  currency_suffix:"UZS", locale:"en-US"
 },
 tr: {
   brand:"Imron Otel",
@@ -1040,7 +953,6 @@ tr: {
   hero_title:"Doğu misafirperverliği, <em>modern</em> konforla",
   hero_lead:"Registan sokaklarına birkaç adım mesafede — geleneksel desenler, sıcak misafirperverlik ve her ayrıntıda düşünülmüş konfor sizi bekliyor.",
   hero_btn1:"Odaları gör", hero_btn2:"Daha fazla",
-  hero_quote:"\"Her köşesinde Özbek nakışçılığının nefesi var. Personelin sıcaklığı ise ayrı bir etki bırakıyor.\"",
   hero_stat1_val:"9", hero_stat1_label:"Oda türü",
   hero_stat2_val:"20+", hero_stat2_label:"Olanak",
   hero_stat3_val:"24/7", hero_stat3_label:"Hizmet",
@@ -1059,19 +971,9 @@ tr: {
   booking_side_eyebrow:"Neden bizi seçmelisiniz", booking_side_title:"Kolay ve hızlı rezervasyon",
   booking_side_text:"Formu doldurun — kısa süre içinde sizinle iletişime geçip rezervasyon detaylarını onaylayacağız. Ödeme yalnızca girişte yapılır.",
   booking_li1:"24 saat öncesine kadar ücretsiz iptal", booking_li2:"Oda seçiminde yardımcı oluyoruz", booking_li3:"Havalimanından ücretsiz transfer (talep üzerine)",
-  form_fullname:"Ad Soyad", form_fullname_ph:"Ad Soyad",
-  form_phone:"Telefon numarası", form_phone_ph:"+998 90 123 45 67",
-  form_checkin:"Giriş tarihi", form_checkout:"Çıkış tarihi",
-  form_roomtype:"Oda tipi", form_guests:"Misafir sayısı",
-  form_note:"Ek not", form_note_ph:"Örn: üst kat, erken giriş vb.",
-  form_submit:"Rezervasyonu gönder",
-  booking_msg_sending:"Gönderiliyor...", booking_msg_success:"Rezervasyon alındı! Yakında sizinle iletişime geçeceğiz.", booking_msg_error:"Bir hata oluştu, lütfen tekrar deneyin.",
-  toast_booking_success:"Rezervasyon başarıyla gönderildi ✦",
   footer_blurb:"Registan Caddesi yakınında, milli ruhu modern konforla birleştiren bir otel.",
   footer_contact_title:"İletişim", footer_address_label:"Adres:", footer_phone_label:"Tel:", footer_email_label:"E-posta:",
-  footer_taxi_label:"Yandex Taxi için adres", footer_taxi_map_link:"Haritada gör →",
   footer_sections_title:"Bölümler", footer_copy:"© 2026 Imron Otel. Tüm hakları saklıdır.",
-  admin_link_text:"Yönetici paneli",
   address_full:"Ömer Hayyam Caddesi No: 32, Semerkant",
   location_eyebrow:"Konum", location_title:"Eski şehrin içinde, yanında değil",
   location_desc:"Imron Otel, Registan, Bibi-Hanım Camii ve Siyob Pazarı'nın kapalı sıralarına yakın tarihi mahallede yer almaktadır.",
@@ -1081,25 +983,7 @@ tr: {
   location_near3_name:"Siyob Pazarı", location_near3_time:"9 dakika yürüyüş",
   location_near4_name:"Semerkant tren istasyonu", location_near4_time:"Arabayla 15 dakika",
   location_cta:"Yol tarifi alın",
-  adminlogin_title:"Yönetici girişi", adminlogin_sub:"Yalnızca otel personeli için.",
-  adminlogin_password_label:"Şifre", adminlogin_password_ph:"Şifreyi girin", adminlogin_btn:"Giriş yap",
-  adminlogin_demo_note:"Demo şifre: <b style='color:var(--gold-light)'>admin2026</b>",
-  adminlogin_wrong_pass:"Şifre yanlış",
-  adminpanel_title:"Yönetici paneli", adminpanel_sub:"Oda ekleyin, fiyat ve fotoğrafları güncelleyin.",
-  tab_rooms:"Odalar", tab_add:"Yeni oda", tab_bookings:"Rezervasyonlar",
-  admin_edit_price_btn:"Fiyatı düzenle", admin_delete_btn:"Sil",
-  admin_price_prompt:"Yeni fiyatı girin (so'm):", admin_price_updated_toast:"Fiyat güncellendi", admin_room_deleted_toast:"Oda silindi",
-  add_room_name_label:"Oda adı", add_room_name_ph:"Örn: Buhara Suite",
-  add_room_price_label:"Fiyat (so'm/gece)", add_room_price_ph:"850000",
-  add_room_capacity_label:"Kapasite (misafir)", add_room_capacity_ph:"2",
-  add_room_desc_label:"Açıklama", add_room_desc_ph:"Oda hakkında kısa açıklama",
-  add_room_image_label:"Fotoğraf yükle", add_room_submit:"Odayı ekle",
-  add_room_error:"Lütfen oda adı ve fiyatını girin.", add_room_success:"Oda başarıyla eklendi ✦", add_room_toast:"Yeni oda eklendi",
-  bookings_empty_text:"Henüz rezervasyon yok.",
-  dashboard_title:"Kontrol paneli", sidebar_overview:"Genel bakış", sidebar_rooms:"Odalar", sidebar_bookings:"Rezervasyonlar",
-  back_to_site:"← Siteye dön", logout_btn:"Çıkış yap",
-  stat_total_rooms:"Toplam oda", stat_total_bookings:"Toplam rezervasyon", stat_today_bookings:"Bugünkü rezervasyonlar", stat_est_revenue:"Tahmini gelir",
-  currency_suffix:"som", locale:"tr-TR", default_room_desc:"Konforlu ve modern döşenmiş bir oda."
+  currency_suffix:"som", locale:"tr-TR"
 },
 tg: {
   brand:"Меҳмонхонаи Имрон",
@@ -1108,7 +992,6 @@ tg: {
   hero_title:"Меҳмоннавозии Шарқ бо <em>қулайии</em> замонавӣ",
   hero_lead:"Дар чанд қадамии кӯчаҳои Регистон — нақшҳои анъанавӣ, меҳмоннавозии гарм ва қулайии андешидашуда дар ҳар як тафсилот шуморо интизор аст.",
   hero_btn1:"Дидани утоқҳо", hero_btn2:"Бештар донед",
-  hero_quote:"\"Дар ҳар кунҷаш нафаси нақшунигори ӯзбекӣ ҳис мешавад. Меҳрубонии кормандон бошад, таъсири алоҳида мегузорад.\"",
   hero_stat1_val:"9", hero_stat1_label:"Намуди утоқ",
   hero_stat2_val:"20+", hero_stat2_label:"Шароит",
   hero_stat3_val:"24/7", hero_stat3_label:"Хизматрасонӣ",
@@ -1127,19 +1010,9 @@ tg: {
   booking_side_eyebrow:"Чаро моро интихоб кунед", booking_side_title:"Брони осон ва тез",
   booking_side_text:"Формаро пур кунед — мо ба зудӣ бо шумо тамос гирифта, тафсилоти бронро тасдиқ мекунем. Пардохт танҳо ҳангоми омадан анҷом дода мешавад.",
   booking_li1:"Бекоркунии ройгон, 24 соат пеш", booking_li2:"Дар интихоби утоқ кӯмак мекунем", booking_li3:"Интиқоли ройгон аз фурудгоҳ (бо дархост)",
-  form_fullname:"Ном ва насаб", form_fullname_ph:"Ном Насаб",
-  form_phone:"Рақами телефон", form_phone_ph:"+998 90 123 45 67",
-  form_checkin:"Санаи омадан", form_checkout:"Санаи рафтан",
-  form_roomtype:"Навъи утоқ", form_guests:"Шумораи меҳмонон",
-  form_note:"Изоҳи иловагӣ", form_note_ph:"Масалан: ошёнаи болоӣ, вуруди барвақт ва ғ.",
-  form_submit:"Фиристодани брон",
-  booking_msg_sending:"Фиристода истодааст...", booking_msg_success:"Брон қабул шуд! Ба зудӣ бо шумо тамос мегирем.", booking_msg_error:"Хатогӣ рух дод, аз нав кӯшиш кунед.",
-  toast_booking_success:"Брон бомуваффақият фиристода шуд ✦",
   footer_blurb:"Меҳмонхона дар назди кӯчаи Регистон, ки рӯҳи миллиро бо қулайии замонавӣ муттаҳид мекунад.",
   footer_contact_title:"Тамос", footer_address_label:"Суроға:", footer_phone_label:"Тел:", footer_email_label:"Email:",
-  footer_taxi_label:"Суроға барои Яндекс Такси", footer_taxi_map_link:"Дар харита дидан →",
   footer_sections_title:"Бахшҳо", footer_copy:"© 2026 Меҳмонхонаи Имрон. Ҳамаи ҳуқуқҳо ҳифз шудаанд.",
-  admin_link_text:"Панели маъмур",
   address_full:"кӯчаи Умар Хайём, хонаи 32, Самарқанд",
   location_eyebrow:"Ҷойгиршавӣ", location_title:"Дар шаҳри кӯҳна, на дар назди он",
   location_desc:"Меҳмонхонаи Imron дар маҳаллаи таърихӣ, наздики Регистон, масҷиди Биби-Хонум ва қаторҳои сарпӯшидаи бозори Сиёб ҷойгир аст.",
@@ -1149,25 +1022,7 @@ tg: {
   location_near3_name:"Бозори Сиёб", location_near3_time:"9 дақиқа пиёда",
   location_near4_name:"Истгоҳи роҳи оҳани Самарқанд", location_near4_time:"Бо мошин 15 дақиқа",
   location_cta:"Роҳро нишон диҳед",
-  adminlogin_title:"Воридшавии маъмур", adminlogin_sub:"Танҳо барои кормандони меҳмонхона.",
-  adminlogin_password_label:"Парол", adminlogin_password_ph:"Паролро ворид кунед", adminlogin_btn:"Ворид шудан",
-  adminlogin_demo_note:"Парол намунавӣ: <b style='color:var(--gold-light)'>admin2026</b>",
-  adminlogin_wrong_pass:"Парол нодуруст аст",
-  adminpanel_title:"Панели маъмур", adminpanel_sub:"Утоқ илова кунед, нарх ва суратҳоро навсозӣ кунед.",
-  tab_rooms:"Утоқҳо", tab_add:"Утоқи нав", tab_bookings:"Бронҳо",
-  admin_edit_price_btn:"Таҳрири нарх", admin_delete_btn:"Нест кардан",
-  admin_price_prompt:"Нархи навро ворид кунед (сум):", admin_price_updated_toast:"Нарх навсозӣ шуд", admin_room_deleted_toast:"Утоқ нест карда шуд",
-  add_room_name_label:"Номи утоқ", add_room_name_ph:"Масалан: Бухоро Suite",
-  add_room_price_label:"Нарх (сум/шаб)", add_room_price_ph:"850000",
-  add_room_capacity_label:"Гунҷоиш (меҳмон)", add_room_capacity_ph:"2",
-  add_room_desc_label:"Тавсиф", add_room_desc_ph:"Тавсифи мухтасари утоқ",
-  add_room_image_label:"Боркунии сурат", add_room_submit:"Илова кардани утоқ",
-  add_room_error:"Лутфан номи утоқ ва нархро ворид кунед.", add_room_success:"Утоқ бомуваффақият илова шуд ✦", add_room_toast:"Утоқи нав илова шуд",
-  bookings_empty_text:"То ҳол брон вуҷуд надорад.",
-  dashboard_title:"Панели идоракунӣ", sidebar_overview:"Дидани умумӣ", sidebar_rooms:"Утоқҳо", sidebar_bookings:"Бронҳо",
-  back_to_site:"← Бозгашт ба сайт", logout_btn:"Баромадан",
-  stat_total_rooms:"Ҳамагӣ утоқҳо", stat_total_bookings:"Ҳамагӣ бронҳо", stat_today_bookings:"Бронҳои имрӯза", stat_est_revenue:"Даромади тахминӣ",
-  currency_suffix:"сум", locale:"tg-TJ", default_room_desc:"Утоқи қулай ва бо тарзи замонавӣ ороста."
+  currency_suffix:"сум", locale:"tg-TJ"
 },
 zh: {
   brand:"伊姆龙酒店",
@@ -1176,7 +1031,6 @@ zh: {
   hero_title:"东方待客之道，<em>现代</em>舒适体验",
   hero_lead:"距雷吉斯坦街区仅几步之遥——传统图案、热情好客与每一处用心打造的舒适正等待着您。",
   hero_btn1:"查看客房", hero_btn2:"了解更多",
-  hero_quote:"“每个角落都能感受到乌兹别克传统工艺的气息，员工的热情更是令人印象深刻。”",
   hero_stat1_val:"9", hero_stat1_label:"客房类型",
   hero_stat2_val:"20+", hero_stat2_label:"设施",
   hero_stat3_val:"24/7", hero_stat3_label:"服务",
@@ -1195,19 +1049,9 @@ zh: {
   booking_side_eyebrow:"为何选择我们", booking_side_title:"简单快捷的预订",
   booking_side_text:"请填写表单——我们将尽快与您联系并确认预订详情。费用仅在入住时支付。",
   booking_li1:"提前24小时可免费取消", booking_li2:"协助您选择合适的客房", booking_li3:"提供机场免费接送（需提前申请）",
-  form_fullname:"姓名", form_fullname_ph:"名 姓",
-  form_phone:"电话号码", form_phone_ph:"+998 90 123 45 67",
-  form_checkin:"入住日期", form_checkout:"退房日期",
-  form_roomtype:"客房类型", form_guests:"入住人数",
-  form_note:"备注", form_note_ph:"例如：高楼层、提前入住等",
-  form_submit:"提交预订",
-  booking_msg_sending:"正在发送...", booking_msg_success:"预订已收到！我们将尽快与您联系。", booking_msg_error:"发生错误，请重试。",
-  toast_booking_success:"预订发送成功 ✦",
   footer_blurb:"位于雷吉斯坦街附近，融合民族风情与现代舒适的酒店。",
   footer_contact_title:"联系方式", footer_address_label:"地址：", footer_phone_label:"电话：", footer_email_label:"邮箱：",
-  footer_taxi_label:"Yandex 打车地址", footer_taxi_map_link:"在地图上查看 →",
   footer_sections_title:"栏目", footer_copy:"© 2026 伊姆龙酒店。保留所有权利。",
-  admin_link_text:"管理后台",
   address_full:"撒马尔罕市欧玛尔·海亚姆街32号",
   location_eyebrow:"位置", location_title:"身处古城之中，而非仅仅在其附近",
   location_desc:"Imron酒店坐落于历史街区，靠近雷吉斯坦广场、比比哈努姆清真寺和锡约布市场的有顶长廊。",
@@ -1217,40 +1061,18 @@ zh: {
   location_near3_name:"锡约布市场", location_near3_time:"步行9分钟",
   location_near4_name:"撒马尔罕火车站", location_near4_time:"驾车15分钟",
   location_cta:"获取路线",
-  adminlogin_title:"管理员登录", adminlogin_sub:"仅限酒店员工使用。",
-  adminlogin_password_label:"密码", adminlogin_password_ph:"请输入密码", adminlogin_btn:"登录",
-  adminlogin_demo_note:"演示密码：<b style='color:var(--gold-light)'>admin2026</b>",
-  adminlogin_wrong_pass:"密码错误",
-  adminpanel_title:"管理后台", adminpanel_sub:"添加客房、更新价格与照片。",
-  tab_rooms:"客房", tab_add:"新增客房", tab_bookings:"预订记录",
-  admin_edit_price_btn:"修改价格", admin_delete_btn:"删除",
-  admin_price_prompt:"请输入新价格（苏姆）：", admin_price_updated_toast:"价格已更新", admin_room_deleted_toast:"客房已删除",
-  add_room_name_label:"客房名称", add_room_name_ph:"例如：布哈拉套房",
-  add_room_price_label:"价格（苏姆/晚）", add_room_price_ph:"850000",
-  add_room_capacity_label:"可住人数", add_room_capacity_ph:"2",
-  add_room_desc_label:"描述", add_room_desc_ph:"客房简要描述",
-  add_room_image_label:"上传照片", add_room_submit:"添加客房",
-  add_room_error:"请输入客房名称与价格。", add_room_success:"客房添加成功 ✦", add_room_toast:"已添加新客房",
-  bookings_empty_text:"暂无预订记录。",
-  dashboard_title:"管理后台", sidebar_overview:"概览", sidebar_rooms:"客房管理", sidebar_bookings:"预订管理",
-  back_to_site:"← 返回网站", logout_btn:"退出登录",
-  stat_total_rooms:"客房总数", stat_total_bookings:"预订总数", stat_today_bookings:"今日预订", stat_est_revenue:"预估收入",
-  currency_suffix:"苏姆", locale:"zh-CN", default_room_desc:"舒适且装修现代的客房。"
+  currency_suffix:"苏姆", locale:"zh-CN"
 }
 };
-
 let currentLang = 'uz';
-
 /* ---------------- storage helpers ----------------
    Birlashtirishdan keyin (2026-09-16): eski JSON-fayl backendi
    (`/api/storage/...`) o'chirildi, uning o'rnida PostgreSQL + Prisma
    backendi ishlaydi. Xonalar endi `/api/public/availability` dan
    keladi, bronlar esa `/api/public/reservations` ga yuboriladi.
-
    Saytga qolgan yagona saqlanadigan narsa - tanlangan til, u
    foydalanuvchining o'z brauzerida qolishi kerak (serverga chiqishi
    shart emas). Shuning uchun localStorage yetarli.
-
    Funksiya nomlari va imzosi o'zgarmadi - chaqiruv joylari tegilmaydi. */
 async function storageGet(key, shared){
   try{
@@ -1268,7 +1090,6 @@ async function storageSet(key, value, shared){
     return null;
   }
 }
-
 /**
  * HTML uchun xavfsiz matn.
  *
@@ -1289,14 +1110,12 @@ function esc(v){
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
-
 function showToast(msg){
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), 3200);
 }
-
 /* ---------------- apply language to static DOM ---------------- */
 function applyLanguage(lang){
   currentLang = translations[lang] ? lang : 'uz';
@@ -1304,7 +1123,6 @@ function applyLanguage(lang){
   document.documentElement.lang = currentLang;
   document.getElementById('pageTitle').textContent = dict.brand;
   document.getElementById('langSelect').value = currentLang;
-
   document.querySelectorAll('[data-i18n]').forEach(el=>{
     const key = el.getAttribute('data-i18n');
     if(dict[key] !== undefined) el.textContent = dict[key];
@@ -1317,18 +1135,14 @@ function applyLanguage(lang){
     const key = el.getAttribute('data-i18n-placeholder');
     if(dict[key] !== undefined) el.setAttribute('placeholder', dict[key]);
   });
-
   renderRooms();
   storageSet('hotel:lang', currentLang, false);
   if(window.HotelBookingFlow){ window.HotelBookingFlow.onLanguageChange(); }
 }
-
 document.getElementById('langSelect').addEventListener('change', (e)=>{
   applyLanguage(e.target.value);
 });
-
 /* ---------------- zaxira xonalar ro'yxati ---------------- */
-
 // Backend javob bermasa ko'rsatiladigan zaxira ro'yxat.
 // Haqiqiy manba — `GET /api/public/room-types` (pastdagi loadRooms).
 // Bu yerda faqat tarif darajasi: sayt mehmonga aniq xona emas,
@@ -1346,7 +1160,6 @@ const DEFAULT_ROOMS = [
   { id:'famlux201', name:'Oilaviy lyuks balkonli 201', price:0, capacity:4, desc:"Balkonli oilaviy lyuks.", img:null },
   { id:'famlux301', name:'Oilaviy lyuks balkonli 301', price:0, capacity:3, desc:"Balkonli oilaviy lyuks.", img:null },
 ];
-
 function placeholderImg(seedIndex){
   const palettes = [
     ['%231E7F84','%230B2333'], ['%23A8432D','%230E2A3D'], ['%23C9A227','%230B1E2E'], ['%233CA8A6','%23123244']
@@ -1355,9 +1168,7 @@ function placeholderImg(seedIndex){
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='300'><rect width='400' height='300' fill='${p[1]}'/><g fill='none' stroke='${p[0]}' stroke-width='2' opacity='0.7'><path d='M200 20 L330 90 L330 210 L200 280 L70 210 L70 90 Z'/><path d='M200 60 L290 105 L290 195 L200 240 L110 195 L110 105 Z'/></g></svg>`;
   return 'data:image/svg+xml,' + encodeURIComponent(svg);
 }
-
 let rooms = [];
-
 /**
  * Xona turlarini backenddan oladi.
  *
@@ -1374,7 +1185,6 @@ async function loadRooms(){
     if(!res.ok) throw new Error('bad_status:' + res.status);
     const data = await res.json();
     if(!Array.isArray(data) || data.length === 0) throw new Error('empty');
-
     rooms = data.map(t => ({
       id: t.id,
       name: t.label,
@@ -1390,7 +1200,6 @@ async function loadRooms(){
   }
   renderRooms();
 }
-
 /* Narx — so'mda (egasi qarori Q15, 2026-09-25): tizimning yagona
    valyutasi. Til bo'yicha ko'rinish:
    "450 000 so'm", "450 000 сум", "450,000 UZS". Butun so'mga yaxlitlanadi. */
@@ -1402,7 +1211,6 @@ function formatPrice(n){
   catch(e){ numStr = v.toLocaleString(); }
   return numStr + ' ' + dict.currency_suffix;
 }
-
 function renderRooms(){
   const dict = translations[currentLang];
   const grid = document.getElementById('roomsGrid');
@@ -1426,7 +1234,6 @@ function renderRooms(){
       </div>`;
     grid.appendChild(card);
   });
-
   document.querySelectorAll('.link-btn[data-room]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       // Hand the chosen room to the booking module (it still starts at Step 1 —
@@ -1437,10 +1244,8 @@ function renderRooms(){
       }
     });
   });
-
   observeReveals();
 }
-
 /* ---------------- scroll reveal (public site) ---------------- */
 function observeReveals(){
   const els = document.querySelectorAll('.reveal:not(.visible)');
@@ -1454,7 +1259,6 @@ function observeReveals(){
   }, {threshold:.15});
   els.forEach(el=>io.observe(el));
 }
-
 /* ---------------- init ----------------
    Birlashtirishdan keyin (2026-09-16): admin va founder panellari shu
    fayldan olib tashlandi - ular endi /admin-panel manzilida, alohida
@@ -1473,7 +1277,6 @@ function observeReveals(){
   if(window.HotelBookingFlow){ window.HotelBookingFlow.init(); }
 })();
 </script>
-
 <script>
 /* =====================================================================
    HotelBookingFlow — independent, self-contained 4-step booking wizard.
@@ -1483,19 +1286,17 @@ function observeReveals(){
    Steps: 1 Dates -> 2 Room -> 3 Guest details -> 4 Summary/Confirm.
    ===================================================================== */
 (function(){
-
   const BOOKING_I18N = {
     uz: {
       step1:'Sanalar', step2:'Xona', step3:"Mehmon ma'lumoti", step4:'Xulosa',
       step1_title:'Qachon kelasiz?',
       step1_sub:"Kirish va chiqish sanalarini, shuningdek mehmonlar sonini tanlang.",
-      meal_label:'Nonushta', meal_sub:'Kishi boshiga, har kecha uchun',
+      meal_label:'Nonushta',
       meal_yes:'Narxga kiritilgan', meal_included:'Har kuni, har bir mehmon uchun',
       adults:'Kattalar', adults_sub:'12 yosh va undan katta',
       children:'Bolalar', children_sub:'0–11 yosh',
-      roomsCount:'Xonalar', roomsCount_sub:'Kerakli xonalar soni',
       checkin_label:'Kirish', checkout_label:'Chiqish',
-      nights_word:'kecha', guests_word:'mehmon', total_word:'Jami',
+      nights_word:'kecha', total_word:'Jami',
       continue_btn:'Davom etish', back_btn:'Orqaga',
       pick_dates_hint:'Davom etish uchun kirish va chiqish sanalarini tanlang.',
       step2_title:'Xonangizni tanlang',
@@ -1524,19 +1325,17 @@ function observeReveals(){
       success_home:'Sayt bosh sahifasiga',
       err_generic:"Xatolik yuz berdi. Iltimos, qayta urinib ko'ring.",
       err_unavailable:'Afsuski, bu xona endi mavjud emas. Boshqa xona tanlang.',
-      err_missing:"Iltimos, barcha shart bo'lgan maydonlarni to'ldiring."
     },
     ru: {
       step1:'Даты', step2:'Номер', step3:'Данные гостя', step4:'Итог',
       step1_title:'Когда вы приезжаете?',
       step1_sub:'Выберите даты заезда и выезда, а также количество гостей.',
-      meal_label:'Завтрак', meal_sub:'На человека, за каждую ночь',
+      meal_label:'Завтрак',
       meal_yes:'Включён в стоимость', meal_included:'Ежедневно, для каждого гостя',
       adults:'Взрослые', adults_sub:'от 12 лет',
       children:'Дети', children_sub:'0–11 лет',
-      roomsCount:'Номера', roomsCount_sub:'Количество номеров',
       checkin_label:'Заезд', checkout_label:'Выезд',
-      nights_word:'ночей', guests_word:'гостей', total_word:'Итого',
+      nights_word:'ночей', total_word:'Итого',
       continue_btn:'Продолжить', back_btn:'Назад',
       pick_dates_hint:'Выберите даты заезда и выезда, чтобы продолжить.',
       step2_title:'Выберите номер',
@@ -1565,19 +1364,17 @@ function observeReveals(){
       success_home:'На главную страницу',
       err_generic:'Произошла ошибка. Попробуйте ещё раз.',
       err_unavailable:'К сожалению, этот номер больше недоступен. Выберите другой.',
-      err_missing:'Пожалуйста, заполните все обязательные поля.'
     },
     en: {
       step1:'Dates', step2:'Room', step3:'Guest Details', step4:'Summary',
       step1_title:'When are you arriving?',
       step1_sub:'Choose your check-in and check-out dates, and the number of guests.',
-      meal_label:'Breakfast', meal_sub:'Per person, per night',
+      meal_label:'Breakfast',
       meal_yes:'Included in price', meal_included:'Daily, for every guest',
       adults:'Adults', adults_sub:'Age 12+',
       children:'Children', children_sub:'Age 0–11',
-      roomsCount:'Rooms', roomsCount_sub:'Number of rooms needed',
       checkin_label:'Check-in', checkout_label:'Check-out',
-      nights_word:'nights', guests_word:'guests', total_word:'Total',
+      nights_word:'nights', total_word:'Total',
       continue_btn:'Continue', back_btn:'Back',
       pick_dates_hint:'Select check-in and check-out dates to continue.',
       step2_title:'Choose your room',
@@ -1606,19 +1403,17 @@ function observeReveals(){
       success_home:'Back to homepage',
       err_generic:'Something went wrong. Please try again.',
       err_unavailable:'Sorry, this room is no longer available. Please choose another.',
-      err_missing:'Please fill in all required fields.'
     },
     zh: {
       step1:'日期', step2:'房间', step3:'客人信息', step4:'确认',
       step1_title:'您何时入住？',
       step1_sub:'请选择入住和退房日期，以及客人人数。',
-      meal_label:'早餐', meal_sub:'每人每晚',
+      meal_label:'早餐',
       meal_yes:'已含在价格中', meal_included:'每天，每位客人',
       adults:'成人', adults_sub:'12岁以上',
       children:'儿童', children_sub:'0–11岁',
-      roomsCount:'房间数', roomsCount_sub:'所需房间数量',
       checkin_label:'入住', checkout_label:'退房',
-      nights_word:'晚', guests_word:'位客人', total_word:'总计',
+      nights_word:'晚', total_word:'总计',
       continue_btn:'继续', back_btn:'返回',
       pick_dates_hint:'请选择入住和退房日期以继续。',
       step2_title:'选择您的房间',
@@ -1647,19 +1442,17 @@ function observeReveals(){
       success_home:'返回首页',
       err_generic:'出现错误，请重试。',
       err_unavailable:'很抱歉，该房间已不可预订，请选择其他房间。',
-      err_missing:'请填写所有必填项。'
     },
     tr: {
       step1:'Tarihler', step2:'Oda', step3:'Misafir Bilgileri', step4:'Özet',
       step1_title:'Ne zaman geliyorsunuz?',
       step1_sub:'Giriş ve çıkış tarihlerinizi ve misafir sayısını seçin.',
-      meal_label:'Kahvaltı', meal_sub:'Kişi başı, her gece için',
+      meal_label:'Kahvaltı',
       meal_yes:'Fiyata dahil', meal_included:'Her gün, her misafir için',
       adults:'Yetişkin', adults_sub:'12 yaş ve üzeri',
       children:'Çocuk', children_sub:'0–11 yaş',
-      roomsCount:'Oda sayısı', roomsCount_sub:'Gereken oda sayısı',
       checkin_label:'Giriş', checkout_label:'Çıkış',
-      nights_word:'gece', guests_word:'misafir', total_word:'Toplam',
+      nights_word:'gece', total_word:'Toplam',
       continue_btn:'Devam et', back_btn:'Geri',
       pick_dates_hint:'Devam etmek için giriş ve çıkış tarihlerini seçin.',
       step2_title:'Odanızı seçin',
@@ -1688,19 +1481,17 @@ function observeReveals(){
       success_home:'Ana sayfaya dön',
       err_generic:'Bir hata oluştu. Lütfen tekrar deneyin.',
       err_unavailable:'Üzgünüz, bu oda artık müsait değil. Başka bir oda seçin.',
-      err_missing:'Lütfen tüm zorunlu alanları doldurun.'
     },
     tg: {
       step1:'Санаҳо', step2:'Утоқ', step3:'Маълумоти меҳмон', step4:'Хулоса',
       step1_title:'Кай меоед?',
       step1_sub:'Санаҳои омадан ва рафтан, инчунин шумораи меҳмонҳоро интихоб кунед.',
-      meal_label:'Наҳорӣ', meal_sub:'Барои як нафар, ҳар шаб',
+      meal_label:'Наҳорӣ',
       meal_yes:'Ба нарх дохил аст', meal_included:'Ҳар рӯз, барои ҳар меҳмон',
       adults:'Калонсолон', adults_sub:'12 сола ва болотар',
       children:'Кӯдакон', children_sub:'0–11 сола',
-      roomsCount:'Утоқҳо', roomsCount_sub:'Шумораи утоқҳои лозима',
       checkin_label:'Омадан', checkout_label:'Рафтан',
-      nights_word:'шаб', guests_word:'меҳмон', total_word:'Ҳамагӣ',
+      nights_word:'шаб', total_word:'Ҳамагӣ',
       continue_btn:'Идома додан', back_btn:'Бозгашт',
       pick_dates_hint:'Барои идома санаҳои омадан ва рафтанро интихоб кунед.',
       step2_title:'Утоқи худро интихоб кунед',
@@ -1729,7 +1520,6 @@ function observeReveals(){
       success_home:'Ба саҳифаи асосӣ',
       err_generic:'Хатогӣ рух дод. Лутфан такрор кунед.',
       err_unavailable:'Мутаассифона, ин утоқ дигар дастрас нест. Утоқи дигарро интихоб кунед.',
-      err_missing:'Лутфан ҳамаи майдонҳои ҳатмиро пур кунед.'
     }
   };
 
@@ -1864,7 +1654,7 @@ function observeReveals(){
     checkout: null,
     adults: 2,
     children: 0,
-    // Nonushta HAR DOIM kiradi (BOTLAR-REJA.md, 2026-09-17).
+    // Nonushta HAR DOIM kiradi (2026-09-17).
     // Saytdan kelgan bron ovqat tarifi bilan — tanlov yo'q.
     withMeal: true,
     availability: null,
@@ -2001,7 +1791,7 @@ function observeReveals(){
         nights: raw.nights,
         rooms: (raw.roomTypes || []).map(t => ({
           // Mehmon TURNI tanlaydi, aniq xonani tizim bron paytida
-          // o'zi biriktiradi (13-fayl §3). Shuning uchun room_id
+          // o'zi biriktiradi. Shuning uchun room_id
           // o'rnida tarif id'si turadi.
           room_id: t.id,
           name: t.label,
@@ -2009,7 +1799,7 @@ function observeReveals(){
           capacity: t.maxAdults,
           price_per_night: t.pricePerNight,
           total_price: t.totalPrice,
-          // Nonushta har doim kiradi (BOTLAR-REJA.md) — mehmon
+          // Nonushta har doim kiradi — mehmon
           // nima uchun to'layotganini ko'rsin
           room_total: t.roomTotal,
           meal_total: t.mealTotal,
@@ -2125,7 +1915,7 @@ function observeReveals(){
           </div>
           <div class="field"><label>${t('note')}</label><textarea id="bkfNote" placeholder="${t('note_ph')}">${escapeHtml(g.note)}</textarea></div>
         </div>
-        <!-- Nonushta HAR DOIM kiradi (BOTLAR-REJA.md, 2026-09-17).
+        <!-- Nonushta HAR DOIM kiradi (2026-09-17).
              Tanlov yo'q — bu mehmonxona qoidasi. Mehmon nima
              uchun to'layotganini bilishi uchun ko'rsatiladi. -->
         <div class="bkf-meal-row">

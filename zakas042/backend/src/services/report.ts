@@ -71,7 +71,7 @@ export type MoneyReport = {
   /** Xodimlar oylik maoshi (davr uchun hisoblangan) */
   salaryExpense: number;
   /**
-   * Boshqa xarajatlar (SAVOLLAR.md S14): kommunal, oziq-ovqat,
+   * Boshqa xarajatlar: kommunal, oziq-ovqat,
    * soliq, reklama va OTA komissiyasi. Maosh bu yerga KIRMAYDI —
    * u `salaryExpense` da alohida.
    */

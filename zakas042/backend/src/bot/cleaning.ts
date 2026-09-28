@@ -1,5 +1,5 @@
 /**
- * Tozalash topshiriqlari — Telegram tomoni (BOTLAR-REJA.md)
+ * Tozalash topshiriqlari — Telegram tomoni
  *
  * Bu fayl xabar MATNINI va TUGMALARINI yasaydi. Biznes mantiq
  * `services/cleaning.ts` da — bu yerda faqat ko'rinish.

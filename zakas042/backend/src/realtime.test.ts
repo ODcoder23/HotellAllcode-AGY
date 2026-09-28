@@ -1,5 +1,5 @@
 /**
- * FAZA 8 — Real-time (WebSocket) testlari
+ * Real-time (WebSocket) testlari
  *
  * TZ 4-band:  "Admin sahifani refresh qilmasdan ham yangi bronni
  *              ko'rishi uchun WebSocket/real-time update ishlatilsin."
@@ -36,7 +36,7 @@ const PMS = process.env.PMS_URL ?? "http://127.0.0.1:3000";
 const WS_URL = PMS.replace(/^http/, "ws") + "/ws";
 
 /**
- * WebSocket uchun JWT token (TZ 18-band, 09-fayl §4).
+ * WebSocket uchun JWT token (TZ 18-band).
  *
  * `AUTH_REQUIRED=true` bo'lganda ulanish token talab qiladi.
  * Dev'da (`false`) bo'sh qoladi va ulanish ochiq bo'ladi —
@@ -164,7 +164,7 @@ async function createBooking(checkIn: string, checkOut: string, guestName: strin
 
 let client: TestClient;
 
-describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
+describe("Real-time WebSocket (TZ 4, 15-band)", () => {
   beforeAll(async () => {
     const res = await fetch(`${PMS}/health`);
     if (!res.ok) throw new Error("Server ishlamayapti");
@@ -243,7 +243,7 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
     });
   });
 
-  // --- Autentifikatsiya (TZ 18-band, 09-fayl §4) --------------
+  // --- Autentifikatsiya (TZ 18-band) --------------
   describe("ulanish autentifikatsiyasi", () => {
     /** Ulanish natijasini aniqlaydi: qabul qilindimi yoki yopildimi */
     const probe = (url: string): Promise<{ accepted: boolean; code?: number }> =>
@@ -459,7 +459,7 @@ describe("FAZA 8 — real-time WebSocket (TZ 4, 15-band)", () => {
     });
   });
 
-  // --- Ishonchlilik (09-fayl §5) --------------------------------
+  // --- Ishonchlilik --------------------------------
   describe("ishonchlilik", () => {
     it("WebSocket yo'q bo'lsa ham bron yaratiladi", async () => {
       client.close();     // brauzer yopildi

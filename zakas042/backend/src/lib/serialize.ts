@@ -1,7 +1,7 @@
 /**
  * API serializatsiya qatlami
  *
- * Manba: 02-DATABASE-SXEMA.md §3 — Shaxmatka moslik jadvali
+ * Javob shakli Shaxmatka va admin panel kutgan ko'rinishda.
  *
  * YAGONA JOY. Har controllerda alohida konvertatsiya yozilmaydi.
  * Prisma `Decimal` obyekt qaytaradi, frontend esa son kutadi

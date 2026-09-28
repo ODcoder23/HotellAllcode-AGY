@@ -1,8 +1,7 @@
 /**
  * Xona va qavat yopish (ta'mir, xizmatdan chiqarish)
  *
- * Manba: TZ 6-band (availability sync), 13-band (`RoomDayStatus`),
- *        02-DATABASE-SXEMA.md — `RoomDayStatus` modeli
+ * Manba: TZ 6-band (availability sync), 13-band (`RoomDayStatus` modeli)
  *
  * NIMA UCHUN KERAK
  * ----------------

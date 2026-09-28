@@ -1,8 +1,6 @@
 /**
  * Beds24Adapter — ChannelAdapter implementatsiyasi
  *
- * Manba: 01-ARXITEKTURA-VA-QOIDALAR.md §4, 03-fayl §2
- *
  * Bu fayl Beds24'ning o'z formatini bizning umumiy shaklga tarjima
  * qiladi. Biznes-mantiq qatlami faqat `ChannelAdapter` ni biladi,
  * Beds24 tafsilotlarini ko'rmaydi.
@@ -491,7 +489,7 @@ export class Beds24Adapter implements ChannelAdapter {
       if (isUpdate) item.id = Number(payload.externalId);
 
       // `roomId` + `unitId` IKKALA rejimda ham: mijoz qarori Q6 —
-      // "xona almashsa Beds24 da ham ko'rinishi kerak" (12-fayl §4).
+      // "xona almashsa Beds24 da ham ko'rinishi kerak".
       // Faqat `id` yuborilsa Beds24 eski xonada qoldiradi.
       item.roomId = Number(payload.externalRoomTypeId);
       if (payload.externalUnitId) item.unitId = Number(payload.externalUnitId);
@@ -605,7 +603,7 @@ export class Beds24Adapter implements ChannelAdapter {
    */
   async pushAvailability(payload: AvailabilityPush): Promise<SyncResult> {
     try {
-      // Ketma-ket bir xil qiymatli kunlarni oraliqqa yig'ish (07-fayl §4)
+      // Ketma-ket bir xil qiymatli kunlarni oraliqqa yig'ish
       const ranges = groupConsecutive(payload.days, (d) => d.available);
 
       await beds24Request("/inventory/rooms/calendar", {

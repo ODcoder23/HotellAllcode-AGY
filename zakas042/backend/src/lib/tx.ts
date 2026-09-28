@@ -1,7 +1,7 @@
 /**
  * Tranzaksiya yordamchisi — serializatsiya konfliktida qayta urinish
  *
- * Manba: 07-AVAILABILITY-VA-RATES-SYNC.md §5 — uch qatlamli himoya
+ * Overbooking himoyasining bir qismi (PROJECT_LOGIC.md, 4-bo'lim).
  *
  * MUAMMO. `Serializable` izolyatsiya darajasi overbooking'ni to'xtatish
  * uchun kerak, lekin u haddan tashqari keng ham ishlaydi: ikki turli

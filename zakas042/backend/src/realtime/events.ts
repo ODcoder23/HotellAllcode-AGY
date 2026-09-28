@@ -1,14 +1,12 @@
 /**
  * Real-time event turlari — TZ 15-band
  *
- * Manba: 09-REALTIME-WEBSOCKET.md §2, §3
- *
  * TZ aynan oltitasini talab qiladi:
  *   reservation.created, reservation.updated, reservation.cancelled,
  *   room.status.changed, availability.changed, payment.updated
  *
  * Payload shakli Shaxmatkaning mavjud massiv elementlari bilan
- * AYNAN bir xil (09-fayl §3) — shuning uchun frontendda oddiy
+ * AYNAN bir xil — shuning uchun frontendda oddiy
  * "qo'sh yoki yangila" mantig'i yetarli, yangi komponent kerak emas.
  */
 
@@ -33,7 +31,6 @@ export const CHANNEL_EVENTS = [
 
 export type PmsEvent = (typeof PMS_EVENTS)[number];
 export type ChannelEvent = (typeof CHANNEL_EVENTS)[number];
-export type EventType = PmsEvent | ChannelEvent;
 
 /** Serializatsiya qilingan bron (serializeReservation natijasi) */
 export type SerializedReservation = Record<string, unknown> & { id: string; roomId: string };

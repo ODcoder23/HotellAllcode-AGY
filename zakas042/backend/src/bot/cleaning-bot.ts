@@ -1,5 +1,5 @@
 /**
- * 2-bot: TOZALIK (farroshlar guruhi) — BOTLAR-REJA.md
+ * 2-bot: TOZALIK (farroshlar guruhi)
  *
  * OQIM
  * ----
@@ -360,7 +360,7 @@ function createBot(): Bot | null {
      * Kim bosgani — Telegram'dan.
      *
      * `Employee` yozuvi kerak emas: guruhda faqat farroshlar
-     * bor va ism hisobot uchun yetarli (BOTLAR-REJA.md).
+     * bor va ism hisobot uchun yetarli.
      */
     const from = ctx.callbackQuery.from;
     const telegramId = String(from.id);

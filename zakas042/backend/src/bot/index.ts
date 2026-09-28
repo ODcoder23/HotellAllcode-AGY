@@ -1,12 +1,12 @@
 /**
- * Telegram bot — TELEGRAM-BOT.md va TOZALIK-BOT.md
+ * 1-bot: egasi va menejer (boshqaruv)
  *
  * IKKI XIL FOYDALANUVCHI, bir bot:
  *
  *   Egasi    — Moliya, Xonalar, Bronlar, Dashboard
  *   Menejer  — Xonalar, Bronlar, Dashboard (moliya YO'Q)
  *
- * TOZALASH BU BOTDA YO'Q (2026-09-17, BOTLAR-REJA.md).
+ * TOZALASH BU BOTDA YO'Q (2026-09-17).
  * U alohida botga ko'chdi: `bot/cleaning-bot.ts`, farroshlar
  * guruhiga yuboradi. Sabab: farosh mehmonxona moliyasini
  * ko'rmasligi kerak va bitta token ikkala auditoriyaga ochiq
@@ -31,7 +31,6 @@
 
 import { Bot, InlineKeyboard, type Context } from "grammy";
 import { config } from "../lib/config.js";
-import { prisma } from "../lib/prisma.js";
 import {
   screenDashboard,
   screenFinance,
@@ -59,7 +58,7 @@ type CtxWithRole = Context & { who: { role: Role; name: string } };
  * Asosiy menyu.
  *
  * Menejerda "Moliya" tugmasi YO'Q — oylik foyda va maoshlar
- * unga kerak emas (TOZALIK-BOT.md §7).
+ * unga kerak emas.
  */
 function mainMenu(role: Role): InlineKeyboard {
   const kb = new InlineKeyboard().text("📊 Dashboard", "dash");
@@ -88,7 +87,7 @@ function backMenu(): InlineKeyboard {
 // ============================================================
 
 /**
- * Foydalanuvchi turi (TOZALIK-BOT.md §6).
+ * Foydalanuvchi turi.
  *
  * `owner`   — hammasi, moliya ham
  * `manager` — moliyadan boshqa hammasi
@@ -215,7 +214,7 @@ export function createBot(): Bot | null {
   });
 
   b.command("moliya", async (ctx) => {
-    // Menejer va farosh moliyani ko'rmaydi (TOZALIK-BOT.md §6)
+    // Menejer va farosh moliyani ko'rmaydi
     if (!canSeeMoney((ctx as CtxWithRole).who.role)) {
       await ctx.reply("Bu bo'lim faqat egasi uchun.");
       return;

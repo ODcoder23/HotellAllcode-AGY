@@ -1,7 +1,6 @@
 /**
  * Beds24 <-> PMS status mapping — TZ 8-band
  *
- * Manba: 08-RESERVATION-STATUS-VA-TOLOV.md §2, §3 | 12-fayl §6
  * Mijoz qarori Q5 (ikki yangi status), Q7 (check-in/out sync),
  * Q9 (2026-09-25: "Beds24 tanlovi doim ustuvor").
  *
@@ -102,7 +101,7 @@ export function toPmsStatus(
 }
 
 /**
- * PMS -> Beds24 (12-fayl §6, mijoz qarori Q7).
+ * PMS -> Beds24 (mijoz qarori Q7).
  *
  * CHECK-IN / CHECK-OUT: Beds24'da alohida status ham, subStatus ham
  * yo'q. Bron `confirmed` qoladi, bayroq qo'yiladi — Beds24
@@ -178,16 +177,4 @@ export function mergeIncomingStatus(
     return { status: incoming === "CHECKED_OUT" ? "CHECKED_OUT" : current };
   }
   return { status: incoming };
-}
-
-/**
- * Ikki tomonlama aylanish buzilmasligini tekshiradi.
- *
- * PMS -> Beds24 -> PMS zanjiri asl statusni qaytarishi kerak,
- * aks holda bron yuborilgandan keyin webhook qaytganda status
- * o'zgarib ketadi va cheksiz o'zgarish halqasi paydo bo'ladi.
- */
-export function roundTripsCleanly(s: ReservationStatus): boolean {
-  const pair = toBeds24Status(s);
-  return toPmsStatus(pair) === s;
 }

@@ -1,7 +1,7 @@
 /**
  * Xato boshqaruvi
  *
- * Manba: 02-DATABASE-SXEMA.md §2 — constraint xatosi (23P01) foydalanuvchi
+ * Overbooking constraint xatosi (23P01) foydalanuvchi
  * tushunadigan xabarga aylantiriladi. Shaxmatkadagi mavjud `conflictMsg`
  * mexanizmi shu xabarni ko'rsatadi.
  */

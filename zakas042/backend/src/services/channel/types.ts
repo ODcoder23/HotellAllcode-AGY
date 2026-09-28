@@ -1,8 +1,6 @@
 /**
  * ChannelAdapter interfeysi — TZ 12-band
  *
- * Manba: 01-ARXITEKTURA-VA-QOIDALAR.md §4
- *
  * TZ: "Arxitektura faqat Beds24 bilan cheklanmasin... Bronevik,
  * MyBooking kabi kanallarni qo'shish mumkin bo'ladigan qilib yozilsin."
  *
@@ -52,7 +50,7 @@ export type ExternalReservation = {
   flagText?: string;
   payments?: Array<{ amount: number; description?: string; externalId?: string }>;
   modifiedAt: string;              // ISO — polling filtri uchun
-  /** Bizning o'z aks-sadomizmi (04-fayl §6 echo loop himoyasi) */
+  /** Bizning o'z aks-sadomizmi (echo loop himoyasi) */
   isOwnEcho?: boolean;
 };
 
@@ -69,10 +67,10 @@ export type ExternalKind = "reservation" | "block" | "inquiry";
 export type ExternalRoomType = {
   id: string;
   name: string;
-  /** Shu turdagi xonalar soni — agregatsiya tekshiruvi uchun (07-fayl §2) */
+  /** Shu turdagi xonalar soni — agregatsiya tekshiruvi uchun */
   qty: number;
   maxPeople?: number;
-  /** Unit-level mapping mavjudmi (06-fayl §2, Daraja 2) */
+  /** Unit-level mapping mavjudmi (Daraja 2) */
   units: Array<{ id: string; name: string }>;
 };
 
@@ -198,13 +196,13 @@ export interface ChannelAdapter {
   /** Ulanishni shu hisobdagi boshqa obyektga o'tkazish (hisobda yo'q — xato) */
   selectProperty(propertyId: string): Promise<void>;
 
-  /** Ulanish tekshiruvi. FAZA 15 `beds24:verify` shuni chaqiradi */
+  /** Ulanish tekshiruvi ("Ulanishni tekshirish" tugmasi) */
   ping(): Promise<{ ok: boolean; detail: string; creditsRemaining?: number }>;
 
-  /** Room type ro'yxati — mapping ekrani uchun (06-fayl §3) */
+  /** Room type ro'yxati — mapping ekrani uchun */
   getRoomTypes(): Promise<ExternalProperty[]>;
 
-  /** O'zgargan bronlarni tortish — polling fallback (04-fayl §8) */
+  /** O'zgargan bronlarni tortish — polling fallback */
   pullReservations(since: Date): Promise<ExternalReservation[]>;
 
   /**
@@ -226,7 +224,7 @@ export interface ChannelAdapter {
   /** Token ruxsatlari (scope) — "Ulanishni tekshirish" ko'rsatadi */
   getTokenScopes(): Promise<string[]>;
 
-  /** Bronni kanalga yuborish (TZ 2-band, 12-fayl §3) */
+  /** Bronni kanalga yuborish (TZ 2-band) */
   pushReservation(payload: {
     externalId?: string;
     externalRoomTypeId: string;
@@ -285,7 +283,7 @@ export interface ChannelAdapter {
    */
   pushRates(payload: RatesPush): Promise<SyncResult>;
 
-  /** Joriy availability'ni o'qish — drift tekshiruvi (07-fayl §6) */
+  /** Joriy availability'ni o'qish — drift tekshiruvi */
   getAvailability(
     externalRoomTypeId: string,
     from: string,
@@ -303,6 +301,6 @@ export interface ChannelAdapter {
   /** Kanaldagi obyekt valyutasi — narx yuborishdan oldin tekshiruv */
   getCurrency(): Promise<string>;
 
-  /** Kiruvchi webhook'ni normallashtirish (04-fayl) */
+  /** Kiruvchi webhook'ni normallashtirish */
   parseWebhook(payload: unknown): WebhookResult;
 }

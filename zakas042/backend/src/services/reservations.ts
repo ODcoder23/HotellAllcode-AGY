@@ -1,9 +1,7 @@
 /**
  * Bron biznes-mantiqi
  *
- * Manba:
- *   07-AVAILABILITY-VA-RATES-SYNC.md §5 — overbooking himoyasi (3 qatlam)
- *   08-RESERVATION-STATUS-VA-TOLOV.md   — statuslar, to'lov
+ * Overbooking himoyasi (3 qatlam), statuslar, to'lov — PROJECT_LOGIC.md 4–7.
  *
  * Har amal bitta DB tranzaksiyasi: muvaffaqiyatli bo'lsa — bajarilgan.
  * Keyin availability keshi yangilanadi, ochiq oynalarga WebSocket xabari
@@ -57,7 +55,7 @@ export const reservationInclude = {
 const MOVABLE_STATUSES: ReservationStatus[] = ["PENDING_PAYMENT", "CONFIRMED", "CHECKED_IN"];
 
 /**
- * Status o'tishlari (SAVOLLAR.md S3).
+ * Status o'tishlari.
  *
  * NEGA KERAK: ilgari hech qanday qoida yo'q edi — bekor qilingan
  * bronni check-in qilish, chiqib ketgan mehmonni yana kiritish
@@ -227,7 +225,7 @@ type CreateInput = {
 };
 
 /**
- * Tarif bo'yicha yashash narxi — oraliqdagi RatePlan'lar (SAVOLLAR.md S4).
+ * Tarif bo'yicha yashash narxi — oraliqdagi RatePlan'lar.
  *
  * 2026-09-25: ilgari faqat KIRISH kunining tarifi olinardi. Juma 130,
  * shanba 100 bo'lsa sayt o'rtacha 115 dan sotardi va bu "tarifdan past"
@@ -251,7 +249,7 @@ async function tariffStayTotal(
 }
 
 /**
- * Narx tarifga mosmi (SAVOLLAR.md S4).
+ * Narx tarifga mosmi.
  *
  * QOIDA: chegirma mumkin, lekin sababsiz emas. Tarifdan past narx
  * `priceReason` talab qiladi — hisobotda "nega arzon sotilgan"
@@ -279,7 +277,7 @@ function assertPriceOk(
 }
 
 /**
- * Mehmonni topadi yoki yaratadi (SAVOLLAR.md S6, S7).
+ * Mehmonni topadi yoki yaratadi.
  *
  * TELEFON BOR: shu telefonli mehmon qidiriladi. Topilsa, ism
  * FARQ QILSA yangilanadi — ilgari eski ism qolib ketardi va
@@ -424,7 +422,7 @@ export async function createReservation(input: CreateInput) {
     return { reservation, roomTypeId: room.roomTypeId };
   }, "createReservation");
 
-  // Kesh + event (07-fayl §3)
+  // Kesh + event
   await onAvailabilityChanged([result.roomTypeId], checkIn, checkOut, "reservation_created");
 
   // TZ 15-band: boshqa ochiq Shaxmatka oynalari ham ko'radi
@@ -593,7 +591,7 @@ export async function changeRoom(id: string, newRoomId: string, actor: Actor = {
     await recalcRoomStatus(oldRoomId, tx);
     await recalcRoomStatus(newRoomId, tx);
 
-    // 12-fayl §4: tur o'zgarsa IKKALA tur ham qayta hisoblanadi
+    // Tur o'zgarsa IKKALA tur ham qayta hisoblanadi
     const types = oldTypeId === newRoom.roomTypeId
       ? [oldTypeId]
       : [oldTypeId, newRoom.roomTypeId];
@@ -666,7 +664,7 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
 
     await recalcRoomStatus(res.roomId, tx);
 
-    // 12-fayl §5: eski ∪ yangi oraliq
+    // Eski ∪ yangi oraliq
     const from = res.checkIn < checkIn ? res.checkIn : checkIn;
     const to = res.checkOut > checkOut ? res.checkOut : checkOut;
 
@@ -697,7 +695,7 @@ export async function changeDates(id: string, checkInKey: string, checkOutKey: s
 }
 
 /**
- * Bronni tasdiqlash: PENDING_PAYMENT -> CONFIRMED (13-fayl §5).
+ * Bronni tasdiqlash: PENDING_PAYMENT -> CONFIRMED.
  *
  * Website'dan kelgan bron to'lov kutilayotgan holatda yaratiladi.
  * Admin to'lovni qabul qilgach shu amal chaqiriladi.
@@ -764,7 +762,7 @@ export async function checkIn(id: string) {
     }
 
     /**
-     * Tozalanmagan xonaga mehmon kiritilmaydi (SAVOLLAR.md S12).
+     * Tozalanmagan xonaga mehmon kiritilmaydi.
      *
      * NEGA check-in da, bron yaratishda emas: bron kelajakka
      * qilinadi va xona o'shangacha tozalanadi. Faqat mehmon
@@ -833,11 +831,11 @@ export async function checkOut(id: string) {
     return { updated, roomTypeId: res.room.roomTypeId, from: res.checkIn, to: res.checkOut };
   });
 
-  // Erta check-out — qolgan kunlar bo'shaydi (07-fayl §3)
+  // Erta check-out — qolgan kunlar bo'shaydi
   await onAvailabilityChanged([r.roomTypeId], r.from, r.to, "checked_out");
 
   /**
-   * Tozalash topshirig'i (TOZALIK-BOT.md §2A).
+   * Tozalash topshirig'i.
    *
    * Xona DIRTY bo'ldi — navbatdagi faroshga xabar ketadi.
    * Xato tashlamaydi: topshiriq yaratilmagani uchun check-out
@@ -853,7 +851,7 @@ export async function checkOut(id: string) {
 }
 
 /**
- * Bekor qilish jarimasi (SAVOLLAR.md S11).
+ * Bekor qilish jarimasi.
  *
  * QOIDA: kirish sanasiga `freeCancelHours` dan kam qolgan bo'lsa
  * `cancelFeeNights` kecha narxi olinadi. Egasi qarori Q16 (2026-09-26):
@@ -967,7 +965,7 @@ export async function previewCancellation(id: string): Promise<{
   return { fee, freeUntilHours: freeHours, isFree: fee === 0 };
 }
 
-/** No-show (08-fayl §4 — faqat qo'lda, avtomatik emas) */
+/** No-show — faqat qo'lda, avtomatik emas */
 export async function markNoShow(id: string) {
   const r = await prisma.$transaction(async (tx) => {
     const res = await tx.reservation.findUnique({ where: { id }, include: { room: true } });
@@ -1006,7 +1004,7 @@ export async function markNoShow(id: string) {
 // --- To'lov va xarajat (TZ 14-band) -------------------------
 
 /**
- * Bronning hozirgi qarzi (SAVOLLAR.md S1).
+ * Bronning hozirgi qarzi.
  *
  * Formula `serializeReservation()` dan olinadi — YAGONA MANBA.
  *
@@ -1076,7 +1074,7 @@ async function lockReservation(tx: Prisma.TransactionClient, reservationId: stri
 /**
  * To'lov qo'shish.
  *
- * IKKI CHEGARA (SAVOLLAR.md S1, S2):
+ * IKKI CHEGARA:
  *   1. Musbat to'lov qarzdan oshmasin — kassada ortiqcha pul
  *      ko'rinib, hisobot daromadi haqiqatdan katta bo'lib qolardi
  *   2. Manfiy to'lov (qaytarish) to'langandan oshmasin — aks holda
@@ -1273,7 +1271,7 @@ export async function reversePayment(
  * Qo'shimcha xizmat (kir yuvish, minibar, transfer).
  *
  * Musbat bo'lishi shart: chegirma xarajat orqali emas, narxni
- * o'zgartirish orqali beriladi (SAVOLLAR.md S4).
+ * o'zgartirish orqali beriladi.
  */
 export async function addCharge(reservationId: string, label: string, amount: number) {
   if (amount <= 0) {

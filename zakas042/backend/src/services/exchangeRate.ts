@@ -220,13 +220,3 @@ export async function reportRateResolver(): Promise<
   }
   return (r) => baseRate(r, saved.get(String(r.currency ?? "").toUpperCase()) ?? null);
 }
-
-// ============================================================
-//  Ko'rsatish yordamchilari
-// ============================================================
-
-/** so'm -> $ (2 xona). Kurs noma'lum bo'lsa null */
-export function uzsToUsd(uzs: number, fx: { rate: number } | null): number | null {
-  if (!fx) return null;
-  return Math.round((uzs / fx.rate) * 100) / 100;
-}

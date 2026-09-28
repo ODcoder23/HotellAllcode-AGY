@@ -93,11 +93,11 @@ reservationsRouter.get("/:id", requireAuth, requirePermission("reservation.read"
 
 // --- POST /api/reservations ---------------------------------
 
-/** Narx va to'lov chegaralari (SAVOLLAR.md S5) — so'm (`lib/moneySchema.ts`) */
+/** Narx va to'lov chegaralari — so'm (`lib/moneySchema.ts`) */
 const nightPrice = nightPriceAmount(MONEY_LIMITS.pricePerNight);
 
 /**
- * O'tmishga bron qilish chegarasi (SAVOLLAR.md S8).
+ * O'tmishga bron qilish chegarasi.
  *
  * NEGA ruxsat bor: qabulxona kecha kelgan mehmonni ertalab
  * kiritishi odatiy hol. NEGA chegara bor: 2020-yilga bron
@@ -126,7 +126,7 @@ function assertNotTooOld(checkIn: string): void {
  * Bu hujum emas, lekin himoyasi arzon.
  */
 /**
- * Telefon MAJBURIY (2026-09-17 qarori, SAVOLLAR.md S7).
+ * Telefon MAJBURIY (2026-09-17 qarori).
  *
  * NEGA: telefonsiz bron har safar YANGI mehmon yozuvi yaratardi —
  * bir odam besh marta kelsa bazada besh yozuv. Ustiga mehmonga
@@ -196,7 +196,7 @@ reservationsRouter.patch("/:id", requireAuth, requirePermission("reservation.wri
 }));
 
 // --- Status amallari ----------------------------------------
-// Tasdiqlash: PENDING_PAYMENT -> CONFIRMED (13-fayl §5).
+// Tasdiqlash: PENDING_PAYMENT -> CONFIRMED.
 // `reservation.write` huquqi: MANAGER ham to'lovni tasdiqlaydi.
 reservationsRouter.post("/:id/confirm", requireAuth, requirePermission("reservation.write"), asyncHandler(async (req, res) => {
   res.json(serializeReservation(await svc.confirmReservation(req.params.id)));
@@ -211,7 +211,7 @@ reservationsRouter.post("/:id/check-out", requireAuth, requirePermission("checki
 }));
 
 /**
- * Bekor qilish jarimasini OLDINDAN ko'rsatadi (SAVOLLAR.md S11).
+ * Bekor qilish jarimasini OLDINDAN ko'rsatadi.
  *
  * Frontend "Bekor qilish" tugmasi bosilganda chaqiradi:
  * xodim "1 kecha narxi (800 000 so'm) olinadi" degan
@@ -224,7 +224,7 @@ reservationsRouter.get("/:id/cancel-preview", requireAuth, requirePermission("re
 reservationsRouter.post("/:id/cancel", requireAuth, requirePermission("reservation.cancel"), asyncHandler(async (req: AuthedRequest, res) => {
   const result = await svc.cancelReservation(req.params.id);
 
-  // 10-fayl §4: kim bekor qildi — pul bilan bog'liq amal
+  // Audit: kim bekor qildi — pul bilan bog'liq amal
   await audit({
     userId: req.user?.id,
     action: "reservation.cancelled",
@@ -245,7 +245,7 @@ reservationsRouter.post("/:id/cancel", requireAuth, requirePermission("reservati
 reservationsRouter.post("/:id/no-show", requireAuth, requirePermission("reservation.cancel"), asyncHandler(async (req: AuthedRequest, res) => {
   const result = await svc.markNoShow(req.params.id);
 
-  // 10-fayl §4: kim "kelmadi" deb belgiladi
+  // Audit: kim "kelmadi" deb belgiladi
   await audit({
     userId: req.user?.id,
     action: "reservation.no_show",
@@ -303,7 +303,7 @@ reservationsRouter.post("/:id/payments", requireAuth, requirePermission("payment
 
   const result = await svc.addPayment(req.params.id, amount, method, note, req.user?.id, currency);
 
-  // 10-fayl §4: pul harakati har doim jurnalda qolsin (S13)
+  // Audit: pul harakati har doim jurnalda qolsin
   await audit({
     userId: req.user?.id,
     action: amount >= 0 ? "payment.received" : "payment.refunded",

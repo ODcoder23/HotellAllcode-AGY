@@ -15,7 +15,7 @@
  */
 
 import { config } from "../../lib/config.js";
-import { getAccessToken, invalidateToken, Beds24AuthError } from "./auth.js";
+import { getAccessToken, invalidateToken } from "./auth.js";
 
 // --- Kredit holati (jarayon xotirasida) ---------------------
 export type CreditState = {
@@ -36,12 +36,6 @@ export function getCreditState(): CreditState & { isLow: boolean } {
     updatedAt: known ? new Date(credits.updatedAt).toISOString() : null,
     isLow: known && credits.remaining < config.beds24.creditSafetyThreshold,
   };
-}
-
-/** Test uchun — kredit holatini tiklash */
-export function resetCreditState(): void {
-  credits = { remaining: config.beds24.creditLimit, resetsIn: 0, lastCost: 0, updatedAt: 0 };
-  lastProbeAt = 0;
 }
 
 /** Kredit "tugagan" paytda shuncha vaqtda bir marta sinov so'rovi */
@@ -199,12 +193,4 @@ export async function beds24Request<T>(path: string, opts: RequestOptions = {}):
   } catch {
     throw new Beds24ApiError(res.status, `Beds24 noto'g'ri JSON qaytardi: ${text.slice(0, 120)}`, true);
   }
-}
-
-/** Xato qayta urinishga arziydimi — worker shu funksiyaga qaraydi */
-export function isRetryable(e: unknown): boolean {
-  if (e instanceof RateLimitError) return true;
-  if (e instanceof Beds24ApiError) return e.retryable;
-  if (e instanceof Beds24AuthError) return e.retryable;
-  return false;
 }

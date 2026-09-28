@@ -1,16 +1,14 @@
 /**
  * Autentifikatsiya va RBAC — TZ 18-band
  *
- * Manba: 10-SECURITY-VA-SYNCLOG.md §1 (3, 4-talab), §3
- *
- * TO'RT ROL (10-fayl §3, FOUNDER 2026-09-16 da qo'shildi):
+ * TO'RT ROL (FOUNDER 2026-09-16 da qo'shildi):
  *   FOUNDER — egasi: hamma narsa + umumiy hisobot, xarajat,
  *             foydalanuvchilar, bot ruxsatlari
  *   ADMIN   — sozlamalar, sayt, xodimlar (moliya hisobotisiz)
  *   MANAGER — bron, narx, xona yopish, audit jurnali
  *   STAFF   — check-in/out, to'lov, xona holati. Narxga tegmaydi
  *
- * ISH CHEGARASI (10-fayl §3): mavjud Admin Panel kodiga kirish yo'q,
+ * ISH CHEGARASI: mavjud Admin Panel kodiga kirish yo'q,
  * shuning uchun undagi rollar bilan moslik tekshirilmaydi. Backend
  * o'z RBAC tizimini yuritadi.
  */
@@ -22,7 +20,7 @@ import { prisma } from "../lib/prisma.js";
 import { config } from "../lib/config.js";
 
 /**
- * Huquqlar jadvali (10-fayl §3).
+ * Huquqlar jadvali.
  *
  * NEGA BITTA JOYDA: har endpoint o'z tekshiruvini yozsa, yangi rol
  * qo'shilganda o'nlab joyni tahrirlash kerak bo'ladi va bittasi

@@ -1,5 +1,5 @@
 /**
- * Narx endpoint'lari — Narxlar paneli uchun (07-fayl §8)
+ * Narx endpoint'lari — Narxlar paneli uchun
  * Q8: avtomatik o'suvchi mexanizm yo'q, admin qo'lda belgilaydi.
  *
  * Narx xona TURI (kategoriya) va kun bo'yicha, so'mda. Sayt, Shaxmatka

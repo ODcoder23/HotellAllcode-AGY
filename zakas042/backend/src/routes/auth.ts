@@ -1,7 +1,5 @@
 /**
  * Autentifikatsiya endpoint'lari — TZ 18-band
- *
- * Manba: 10-SECURITY-VA-SYNCLOG.md §1 (3-talab), §3, §7
  */
 
 import { Router } from "express";

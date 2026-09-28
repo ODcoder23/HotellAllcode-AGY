@@ -81,11 +81,11 @@ app.use((req, res, next) => {
 });
 
 // Nginx orqasida haqiqiy IP — rate limit va AuditLog uchun
-// (10-fayl §7: cheklov IP bo'yicha)
+// (cheklov IP bo'yicha)
 app.set("trust proxy", 1);
 
 // Token bor bo'lsa o'qiladi. Majburiylikni har route o'zi
-// `requireAuth` bilan belgilaydi (10-fayl §1, 3-talab).
+// `requireAuth` bilan belgilaydi (3-talab).
 app.use(parseAuth);
 
 // So'rovlarni log qilish (dev)
@@ -96,7 +96,7 @@ if (config.isDev) {
   });
 }
 
-// --- Health (FAZA 0 mezoni) ---------------------------------
+// --- Health ------------------------------------------------
 app.get("/health", async (_req, res) => {
   const [dbOk, redisOk] = await Promise.all([
     prisma.$queryRaw`SELECT 1`.then(() => true).catch(() => false),
@@ -120,7 +120,7 @@ app.get("/health", async (_req, res) => {
   });
 });
 
-/** Navbat holati (05-fayl §8). Faqat auth bilan */
+/** Navbat holati. Faqat auth bilan */
 app.get("/api/admin/queues", requireAuth, requirePermission("audit.read"), async (_req, res) => {
   try {
     res.json({ redis: await isRedisHealthy(), queues: await getQueueCounts() });
@@ -134,7 +134,7 @@ app.use("/api/auth", authRouter);
 
 // Website uchun ommaviy API (TZ 3, 20-band).
 // JWT TALAB QILINMAYDI — mijoz ro'yxatdan o'tmagan. Himoya: rate
-// limiting, honeypot, qat'iy validatsiya (13-fayl §6).
+// limiting, honeypot, qat'iy validatsiya.
 app.use("/api/public", publicRouter);
 app.use("/api/rooms", internalLimiter, roomsRouter);
 app.use("/api/reservations", internalLimiter, reservationsRouter);
@@ -209,7 +209,7 @@ function onReady() {
 }
 
 // WebSocket shu HTTP server ustiga o'rnatiladi — alohida port kerak
-// emas, Nginx ham bitta proxy qoidasi bilan o'tkazadi (09-fayl §4).
+// emas, Nginx ham bitta proxy qoidasi bilan o'tkazadi.
 startRealtimeServer(server);
 
 // Davriy vazifalar (queues/scheduler.ts): polling, catch-up, narx,

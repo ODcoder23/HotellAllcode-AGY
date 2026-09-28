@@ -22,7 +22,7 @@
     npx tailwindcss -c tools/tailwind.config.cjs \
       -i tools/tailwind.css -o public/app/vendor/tailwind.css --minify
 
-  Batafsil: public/app/vendor/README.md
+  Batafsil: README.md, "Shaxmatka kutubxonalari"
 -->
 <link rel="stylesheet" href="vendor/tailwind.css" />
 <script src="vendor/react.production.min.js"></script>
@@ -241,9 +241,9 @@ const isSom = (res) => String(res?.currency || "UZS").toUpperCase() === "UZS";
 const fmtRate = (r) => Number(r).toLocaleString("ru-RU", { maximumFractionDigits: 2 }).replace(/[\u00a0\u202f]/g, " ");
 
 /* ============================== API KLIENT ==============================
-   FAZA 3 — backend bilan aloqa.
+   Backend bilan aloqa.
 
-   Manba: 02-DATABASE-SXEMA.md §3 — API javobi frontend kutgan
+   API javobi frontend kutgan
    shaklda keladi (guestName flatten, Decimal→number, sana string),
    shuning uchun konvertatsiya KERAK EMAS.
 
@@ -257,7 +257,7 @@ const fmtRate = (r) => Number(r).toLocaleString("ru-RU", { maximumFractionDigits
 const API_BASE = window.API_BASE ?? "";
 
 /**
- * JWT token — auth yoqilganda kerak (TZ 18-band, 09-fayl §4).
+ * JWT token — auth yoqilganda kerak (TZ 18-band).
  *
  * Brauzerning `WebSocket` API'si maxsus sarlavha yubora olmaydi,
  * shuning uchun token URL parametri orqali beriladi.
@@ -407,14 +407,14 @@ function useChannel() {
 }
 
 /* ========================================================================
-   FAZA 8 — REAL-TIME (WebSocket)
+   REAL-TIME (WebSocket)
 
-   Manba: 09-REALTIME-WEBSOCKET.md §3, §5 | TZ 4, 15-band
+   Manba: TZ 4, 15-band
 
    TZ 4: "Admin sahifani refresh qilmasdan ham yangi bronni ko'rishi
    uchun WebSocket/real-time update ishlatilsin."
 
-   MUHIM PRINTSIP (09-fayl §5): WebSocket faqat "delta" yetkazish
+   MUHIM PRINTSIP: WebSocket faqat "delta" yetkazish
    vositasi, HAQIQAT MANBAI EMAS. Ulanish uzilganda o'tkazib
    yuborilgan event'lar bo'ladi, shuning uchun qayta ulanganda
    to'liq `reload()` chaqiriladi.
@@ -445,7 +445,7 @@ function createRealtimeClient({ onEvent, onStatus }) {
   let closed = false;
   let attempt = 0;
   let timer = null;
-  /** Server qayta ishga tushganini aniqlash uchun (09-fayl §5) */
+  /** Server qayta ishga tushganini aniqlash uchun */
   let lastServerStartedAt = null;
 
   function connect() {
@@ -472,7 +472,7 @@ function createRealtimeClient({ onEvent, onStatus }) {
 
       // Ulanish tasdig'i. Agar server ID o'zgargan bo'lsa — restart
       // yoki uzoq uzilish: o'tkazib yuborilgan event'lar bor,
-      // to'liq qayta yuklash kerak (09-fayl §5).
+      // to'liq qayta yuklash kerak.
       if (msg.type === "connected") {
         const restarted = lastServerStartedAt && lastServerStartedAt !== msg.serverStartedAt;
         lastServerStartedAt = msg.serverStartedAt;
@@ -585,7 +585,7 @@ function ResStatusBadge({ status }) {
 /* ==========================================================================
    LOGIN EKRANI — TZ 18-band
 
-   Manba: 10-SECURITY-VA-SYNCLOG.md §1 (3-talab: JWT authentication)
+   JWT autentifikatsiya (TZ 18-band)
 
    NEGA KERAK: `AUTH_REQUIRED=true` bo'lganda barcha `/api/*` so'rovlar
    token talab qiladi. Usiz Shaxmatka "Kirish talab qilinadi" xatosini
@@ -623,7 +623,7 @@ function LoginScreen({ onSuccess }) {
       onSuccess(res.user);
     } catch (err) {
       // Server ataylab bir xil xabar beradi: qaysi email mavjudligi
-      // oshkor qilinmaydi (10-fayl §3)
+      // oshkor qilinmaydi
       setError(err.message || "Kirish amalga oshmadi");
     } finally {
       setBusy(false);
@@ -712,18 +712,18 @@ function App() {
   const [detailId, setDetailId] = useState(null);
   const [createDraft, setCreateDraft] = useState(null); // {roomId, checkIn, checkOut}
   const [subPanel, setSubPanel] = useState(null); // 'payment' | 'changeRoom' | 'changeDates' | 'checkout' | 'charge'
-  // Bekor qilish jarimasi ogohlantirishi (SAVOLLAR.md S11)
+  // Bekor qilish jarimasi ogohlantirishi
   const [cancelPrompt, setCancelPrompt] = useState(null);
   const [roomMenu, setRoomMenu] = useState(null); // {roomId, x, y}
   const [conflictMsg, setConflictMsg] = useState(null);
-  /** FAZA 8: 'online' | 'offline' — real-time ulanish holati */
+  /** 'online' | 'offline' — real-time ulanish holati */
   const [wsStatus, setWsStatus] = useState("offline");
 
   const gridRef = useRef(null);
 
   const days = useMemo(() => Array.from({ length: rangeLen }, (_, i) => addDays(viewStart, i)), [viewStart, rangeLen]);
 
-  /* ------------------------------ ma'lumot yuklash (FAZA 3) ------------------------------ */
+  /* ------------------------------ ma'lumot yuklash ------------------------------ */
 
   const reload = useCallback(async () => {
     try {
@@ -834,12 +834,12 @@ function App() {
     try { setRooms(await api.rooms()); } catch { /* jim — asosiy amal bajarilgan */ }
   }, []);
 
-  /* ------------------------------ FAZA 8: real-time event'lar ------------------------------ */
+  /* ------------------------------ real-time event'lar ------------------------------ */
 
   /**
    * Server event'ini ekranga qo'llaydi.
    *
-   * Manba: 09-REALTIME-WEBSOCKET.md §3 — TZ 15-band talab qilgan
+   * TZ 15-band talab qilgan
    * oltita event. Payload `api.reservations()` shakli bilan aynan
    * bir xil, shuning uchun `applyReservation` to'g'ridan-to'g'ri
    * ishlaydi.
@@ -982,7 +982,7 @@ function App() {
     }
   }
 
-  /* ------ mutatsiyalar: hammasi backend orqali (FAZA 3) ------
+  /* ------ mutatsiyalar: hammasi backend orqali ------
      Har biri API'ni chaqiradi, javobdagi yangi holatni state'ga
      yozadi. Server availability va xona holatini o'zi hisoblaydi.
      Xato bo'lsa — conflictMsg orqali ko'rsatiladi (TZ 17-band).
@@ -1130,7 +1130,7 @@ function App() {
 
   /* ============================== RENDER ============================== */
 
-  // FAZA 3: backend ma'lumoti yuklanmaguncha
+  // Backend ma'lumoti yuklanmaguncha
   if (loading) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-gray-50">
@@ -1299,7 +1299,7 @@ function App() {
         />
       )}
 
-      {/* Bekor qilish jarimasi ogohlantirishi (SAVOLLAR.md S11) */}
+      {/* Bekor qilish jarimasi ogohlantirishi */}
       {cancelPrompt && (
         <Modal
           title="Bekor qilishda jarima"
@@ -1404,10 +1404,10 @@ function Toolbar(props) {
         <div className="flex items-center gap-1 mr-2">
           <div className="h-7 w-7 rounded-md bg-blue-600 flex items-center justify-center text-white font-bold text-xs">SH</div>
           <span className="font-semibold text-sm text-gray-800 mr-1">Shaxmatka</span>
-          {/* FAZA 8: real-time ulanish holati (TZ 4-band).
+          {/* Real-time ulanish holati (TZ 4-band).
               Yashil = event'lar keladi, sariq = uzilgan, qayta
               ulanmoqda. Uzilganda ma'lumot eskiradi — foydalanuvchi
-              buni bilishi kerak (09-fayl §5). */}
+              buni bilishi kerak. */}
           <span
             title={wsStatus === "online"
               ? "Real-time ulangan — o'zgarishlar darhol ko'rinadi"
@@ -1516,7 +1516,6 @@ function FilterPanel({ filters, setFilters, onClose }) {
 /* ==========================================================================
    NARXLAR PANELI — TZ 7-band, mijoz qarori Q8
 
-   Manba: 07-AVAILABILITY-VA-RATES-SYNC.md §8
 
    Q8: avtomatik o'suvchi narx mexanizmi OLIB TASHLANDI. Eski
    formula `base + confirmedCount * increment` edi; `confirmedCount`
@@ -1610,7 +1609,7 @@ function PricingPanel({ onClose }) {
     setSaving(true);
     setError(null);
     try {
-      // DB'ga darhol yoziladi, Beds24'ga fonda ketadi (07-fayl §8) —
+      // DB'ga darhol yoziladi, Beds24'ga fonda ketadi —
       // admin kutmaydi
       await api.setRates(from, to, prices);
       setSaved(true);
@@ -1650,7 +1649,7 @@ function PricingPanel({ onClose }) {
 
       <div className="space-y-2">
         {rates === null ? (
-          // Loading — skeleton (07-fayl §8 interaction state'lari)
+          // Loading — skeleton
           Object.keys(ROOM_TYPES).map((k) => (
             <div key={k} className="h-8 rounded bg-gray-100 animate-pulse" />
           ))
@@ -1731,7 +1730,7 @@ function ReservationBlock({ res, left, width, dimmed, highlighted, onOpen }) {
   // Noma'lum manba (yangi OTA) oynani yiqitmasin
   const src = SOURCES[res.source] || SOURCES.other;
   /* Backend hisoblagan summa: nonushta va bekor qilish jarimasi
-     ham kiradi (SAVOLLAR.md S10, S11) — resMoney() */
+     ham kiradi — resMoney() */
   const { remaining } = resMoney(res);
   const isPast = res.status === "checked_out";
   const isCancelled = res.status === "cancelled";
@@ -1887,7 +1886,7 @@ function CreateReservationModal({ draft, rooms, today, priceForType, isRoomAvail
   const total = sumMoney([roomTotal, mealTotal]);
 
   /* Chegirma: narx tarifdan past bo'lsa sabab talab qilinadi.
-     Backend ham shu qoidani tekshiradi (SAVOLLAR.md S4) — jami
+     Backend ham shu qoidani tekshiradi — jami
      summalar sentda solishtiriladi. Bu yerdagi tekshiruv faqat
      qulaylik uchun: xodim darhol ko'radi. */
   const tariffPrice = stayTariff ? stayTariff.perNight : (selectedRoom ? priceForType(selectedRoom.type) : 0);
@@ -1933,7 +1932,7 @@ function CreateReservationModal({ draft, rooms, today, priceForType, isRoomAvail
 
         {/* Chegirma sababi — faqat narx tarifdan past bo'lsa.
             Backend ham shu qoidani tekshiradi: sababsiz past narx
-            rad etiladi (SAVOLLAR.md S4). Maydon shu yerda
+            rad etiladi. Maydon shu yerda
             ko'rinmasa, xodim tushunarsiz xato olardi. */}
         {isDiscounted && (
           <Field label={"Chegirma sababi (tarif " + (stayTariff ? money(stayTariff.total) + " / " + nights + " kecha" : money(tariffPrice)) + ")"}>
@@ -2087,7 +2086,7 @@ function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, on
       footer={
         <div className="flex flex-wrap gap-2 w-full justify-end">
           {/* Tugmalar backend'dagi status mashinasiga mos
-              (SAVOLLAR.md S3). Mehmon kirgandan keyin bekor
+             . Mehmon kirgandan keyin bekor
               qilib bo'lmaydi — u xonada turibdi, bron bekor
               qilinsa hisobotdan yo'qolardi. Chiqarish kerak
               bo'lsa "Chiqish" ishlatiladi. */}
@@ -2125,14 +2124,14 @@ function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, on
           )}
         </div>
 
-        {/* Chegirma sababi (SAVOLLAR.md S4) — nega arzon sotilgani */}
+        {/* Chegirma sababi — nega arzon sotilgani */}
         {res.priceReason && (
           <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-2">
             <AlertTriangle size={13} className="mt-0.5 shrink-0" /> Chegirma: {res.priceReason}
           </div>
         )}
 
-        {/* Bekor qilish jarimasi (SAVOLLAR.md S11) */}
+        {/* Bekor qilish jarimasi */}
         {res.cancellationFee > 0 && (
           <div className="flex items-start gap-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded-md px-2.5 py-2">
             <Ban size={13} className="mt-0.5 shrink-0" /> Bekor qilish jarimasi: {money(res.cancellationFee, res.currency)}
@@ -2231,7 +2230,7 @@ function DetailModal({ res, rooms, today, onClose, onCheckIn, onOpenCheckout, on
 
 function PaymentModal({ res, onClose, onAdd }) {
   /* Backend hisoblagan summa: nonushta va bekor qilish jarimasi
-     ham kiradi (SAVOLLAR.md S10, S11) — resMoney() */
+     ham kiradi — resMoney() */
   const { remaining } = resMoney(res);
   const cur = String(res.currency || "UZS").toUpperCase();
   const foreign = cur !== "UZS";
@@ -2374,7 +2373,7 @@ function ChangeDatesModal({ res, onClose, onConfirm }) {
 
 function CheckoutModal({ res, onClose, onConfirm }) {
   /* Jami summa BACKENDDAN olinadi: u nonushtani ham hisoblaydi
-     (SAVOLLAR.md S10). Mahalliy hisob eski formulada qolib,
+    . Mahalliy hisob eski formulada qolib,
      mehmon kam to'lardi — resMoney() */
   const { roomTotal, mealTotal, chargesTotal, total, paid, remaining } = resMoney(res);
   return (

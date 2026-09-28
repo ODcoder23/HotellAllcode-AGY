@@ -1,9 +1,7 @@
 /**
  * Rate limiting — TZ 18-band (6-talab)
  *
- * Manba: 10-SECURITY-VA-SYNCLOG.md §7
- *
- * Cheklovlar (10-fayl §7 jadvali), IP bo'yicha:
+ * Cheklovlar, IP bo'yicha:
  *   login          5/daqiqa     brute-force
  *   public GET     30/daqiqa    scraping
  *   public POST    5/soat       spam bron
@@ -46,14 +44,14 @@ export const loginLimiter = rateLimit({
   skipSuccessfulRequests: true,
 });
 
-/** Public API o'qish — scraping himoyasi (FAZA 13) */
+/** Public API o'qish — scraping himoyasi */
 export const publicReadLimiter = rateLimit({
   ...base,
   windowMs: 60_000,
   limit: 30,
 });
 
-/** Public API bron — spam himoyasi (FAZA 13) */
+/** Public API bron — spam himoyasi */
 export const publicWriteLimiter = rateLimit({
   ...base,
   windowMs: 3_600_000,

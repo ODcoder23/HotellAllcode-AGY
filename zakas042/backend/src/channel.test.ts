@@ -20,7 +20,7 @@
  *   7. Yopish -> `black`, narx -> Beds24 ($), narx tortish, farq, kurs
  *
  * Server `BEDS24_BASE_URL`, `FX_CBU_URL` shu soxta serverga qarashi va
- * `POLL_INTERVAL_MINUTES=0` bo'lishi kerak (zakas042/README.md, "Testlar").
+ * `POLL_INTERVAL_MINUTES=0` bo'lishi kerak (README.md, "Testlar").
  * Qaramasa testlar o'tkazib yuboriladi.
  */
 

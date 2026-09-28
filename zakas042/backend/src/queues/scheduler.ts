@@ -77,7 +77,7 @@ export const maintenanceWorker = new Worker<MaintenanceJob>(
   async (job: Job<MaintenanceJob>) => {
     switch (job.data.task) {
       case "expire_unpaid": {
-        // 13-fayl §5: to'lanmagan bron abadiy band qilib tursa
+        // To'lanmagan bron abadiy band qilib tursa
         // real sotuv yo'qoladi
         const result = await expireUnpaidBookings();
         if (result.cancelled > 0) {
@@ -101,7 +101,7 @@ export const maintenanceWorker = new Worker<MaintenanceJob>(
 
       case "cleaning_check": {
         /**
-         * Tozalash tekshiruvi (TOZALIK-BOT.md).
+         * Tozalash tekshiruvi.
          *
          *   1. Yuborilmay qolgan topshiriqlarni yuborish
          *   2. Javob bermaganlar haqida guruhga eslatma
@@ -236,7 +236,7 @@ export async function scheduleMaintenance(): Promise<void> {
       await maintenanceQueue.removeJobScheduler(id).catch(() => false);
     }
 
-    // To'lanmagan sayt bronlari — har soat boshida (13-fayl §5)
+    // To'lanmagan sayt bronlari — har soat boshida
     await maintenanceQueue.upsertJobScheduler(
       "cron_expire_unpaid",
       { pattern: "0 * * * *", tz: HOTEL_TIMEZONE },
@@ -328,4 +328,3 @@ export const runPollNow = (full = false) => pollBookings({ full });
 export const runDriftCheckNow = (days?: number) => checkDrift(days ?? 30);
 export const runPullRatesNow = (days?: number) => pullRates(days ?? 365);
 export const runCatchUpNow = () => catchUpPending();
-export const runFxRefreshNow = (force = false) => syncFx({ force });
