@@ -12,13 +12,8 @@ tashqarisida (server, Beds24 kabineti).
 ## 1. Ishga tushirish — server va Beds24
 
 Server 2026-09-28 da bo'sh bazadan qayta o'rnatilgan (SERVER.md): 18 xona,
-9 tarif, bitta egasi hisobi.
+9 tarif, bitta egasi hisobi. Oxirgi kod o'sha kuni joylangan.
 
-- [ ] Serverga oxirgi o'zgarishlarni joylash (`bash tools/deploy.sh`):
-      bir xonaga parallel bronlarda deadlock tuzatishi (`4841e2b`) va
-      2026-09-28 tozalashi (oshxona, sayt broni, admin paneldagi yangi
-      bo'limlar). Serverdagi `.env` dagi `PENDING_PAYMENT_TIMEOUT_HOURS`
-      endi o'qilmaydi — o'chirsa bo'ladi.
 - [ ] **[egasi]** Beds24 → Settings → Marketplace → API → invite code
       (bookings: o'qish + yozish; inventory: o'qish + yozish; properties: o'qish).
 - [ ] Ulash → obyekt → unit'larni bog'lash → import natijasi
