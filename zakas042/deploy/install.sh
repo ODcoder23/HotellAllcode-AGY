@@ -52,7 +52,6 @@ umask 077
   echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)"
   echo "JWT_SECRET=$(openssl rand -hex 32)"
   echo "JWT_EXPIRES_IN=12h"
-  echo "PENDING_PAYMENT_TIMEOUT_HOURS=24"
   echo "CORS_ORIGINS="
   echo "# Beds24 (BEDS24.md): token shu kalit bilan shifrlanadi — o'zgarsa qayta ulash kerak"
   echo "ENCRYPTION_KEY=$(openssl rand -hex 32)"

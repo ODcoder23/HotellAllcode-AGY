@@ -1,9 +1,7 @@
 /**
- * Website public API — TZ 3, 20-band (FAZA 13)
+ * Website public API — TZ 3, 20-band
  *
- * Manba: 13-WEBSITE-INTEGRATSIYA.md §2–§5
- *
- * ISH CHEGARASI (13-fayl §8): Customer Website kodiga kirish yo'q.
+ * ISH CHEGARASI: Customer Website kodiga kirish yo'q.
  * Shu fayldagi API to'liq yoziladi va test qilinadi, Website'ni
  * unga ulash ishi scope'dan tashqarida — kontrakt topshiriladi.
  *
@@ -13,7 +11,7 @@
  *
  * Overbooking himoyasi shu yerda qayta yozilmaydi: bron
  * `createReservation` orqali yaratiladi, u esa `EXCLUDE USING gist`
- * constraint'i bilan himoyalangan (07-fayl §5). Sayt ham, Shaxmatka
+ * constraint'i bilan himoyalangan. Sayt ham, Shaxmatka
  * ham bitta to'siqdan o'tadi.
  */
 
@@ -23,9 +21,8 @@ import { fromDateKey, isValidDateKey, toDateKey, toNumber } from "../lib/seriali
 import { ValidationError, RoomUnavailableError } from "../lib/errors.js";
 import { createReservation } from "./reservations.js";
 import { readRange } from "./availability.js";
-import { config } from "../lib/config.js";
 import { hotelToday } from "../lib/hotelTime.js";
-import { getMealPrice } from "./settings.js";
+import { getMealPrice, getWebsiteUnpaidCancelHours } from "./settings.js";
 import {
   CURRENCY, mealTotalFor, reservationMoney, round2, stayPriceFromRates, sumMoney,
 } from "../lib/money.js";
@@ -38,7 +35,7 @@ const SITE_CURRENCY = CURRENCY;
 // ============================================================
 
 /**
- * Mehmonga ko'rsatiladigan kod — "IMR-8F3K2" (13-fayl §6).
+ * Mehmonga ko'rsatiladigan kod — "IMR-8F3K2".
  *
  * TAXMIN QILIB BO'LMAYDI: ketma-ket emas, `crypto.randomInt` bilan
  * yasaladi. Aks holda mijoz o'z kodini bir ko'targan holda boshqa
@@ -68,7 +65,7 @@ async function uniqueCode(): Promise<string> {
 }
 
 // ============================================================
-//  2. Bo'sh xonalarni qidirish (13-fayl §2)
+//  2. Bo'sh xonalarni qidirish
 // ============================================================
 
 export type AvailabilityQuery = {
@@ -96,7 +93,7 @@ export type PublicRoomType = {
 };
 
 /**
- * Sanalarni tekshiradi (13-fayl §6).
+ * Sanalarni tekshiradi.
  *
  * O'tmishga bron qilib bo'lmaydi, bir yildan uzoqqa ham —
  * ikkalasi ham noto'g'ri ma'lumot yoki hujum belgisi.
@@ -197,8 +194,8 @@ export async function listRoomTypes() {
 /**
  * Oraliqdagi bo'sh xonalarni tur bo'yicha qaytaradi.
  *
- * `availableCount` — butun oraliq bo'yicha MINIMAL qiymat
- * (13-fayl §2). Agar 15-da 3 ta, 17-da 1 ta bo'sh bo'lsa, 5 kunlik
+ * `availableCount` — butun oraliq bo'yicha MINIMAL qiymat.
+ * Agar 15-da 3 ta, 17-da 1 ta bo'sh bo'lsa, 5 kunlik
  * bron uchun javob 1 bo'ladi: mehmon bron qilmoqchi bo'lganda xato
  * chiqmasligi uchun.
  */
@@ -210,7 +207,7 @@ export async function searchAvailability(q: AvailabilityQuery) {
   if (adults < 1 || adults > 20) throw new ValidationError("Kattalar soni 1–20 orasida");
 
   /**
-   * Nonushta narxi (BOTLAR-REJA.md, 2026-09-17).
+   * Nonushta narxi (2026-09-17).
    *
    * Saytdan kelgan bron HAR DOIM ovqat tarifi bilan. Narx
    * qidiruv paytida qo'shiladi — mehmon to'liq summani darhol
@@ -244,7 +241,7 @@ export async function searchAvailability(q: AvailabilityQuery) {
     // Narx belgilanmagan turni sotib bo'lmaydi — mijozga "0 so'm"
     // ko'rsatish va keyin haqiqiy narx aytish yomon tajriba.
     // Admin narxni Narxlar panelida belgilamaguncha tur
-    // ko'rsatilmaydi (07-fayl §8, Q8).
+    // ko'rsatilmaydi (Q8).
     if (!stay || stay.roomTotal <= 0) continue;
 
     // Formula — lib/money.ts: bron yaratilgach bron kartasi ham
@@ -261,7 +258,7 @@ export async function searchAvailability(q: AvailabilityQuery) {
       mealTotal,
       mealPricePerPerson: round2(mealPrice),
       // Saytdan kelgan bron HAR DOIM ovqat tarifi bilan
-      // (BOTLAR-REJA.md, 2026-09-17) — narx darhol to'liq
+      // (2026-09-17) — narx darhol to'liq
       // ko'rsatiladi, tasdiqlashda kutilmagan qo'shimcha
       // chiqmasin.
       totalPrice: sumMoney([stay.roomTotal, mealTotal]),
@@ -323,15 +320,15 @@ async function stayPrice(roomTypeId: string, from: Date, to: Date, nights: numbe
 }
 
 // ============================================================
-//  3. Xona avtomatik tanlash (13-fayl §3)
+//  3. Xona avtomatik tanlash
 // ============================================================
 
 /**
  * Turdan aniq xona tanlaydi.
  *
- * Mehmon TURNI tanlaydi, tizim ANIQ XONANI biriktiradi (06-fayl §5).
+ * Mehmon TURNI tanlaydi, tizim ANIQ XONANI biriktiradi.
  *
- * FRAGMENTATSIYA (13-fayl §3): har doim birinchi bo'sh xonani berish
+ * FRAGMENTATSIYA: har doim birinchi bo'sh xonani berish
  * 5 ta xonani 5 ta yarim-band xonaga aylantiradi. Shuning uchun
  * qo'shni band kunlari bor xonalar afzal — bu uzluksiz bo'shliqlarni
  * saqlaydi va uzoq bronlar uchun joy qoldiradi.
@@ -392,7 +389,7 @@ export async function pickRoom(
 }
 
 // ============================================================
-//  4. Bron yaratish (13-fayl §2, §5)
+//  4. Bron yaratish
 // ============================================================
 
 export type PublicBookingInput = {
@@ -432,7 +429,7 @@ export type PublicBookingResult = {
 /**
  * Website'dan bron yaratadi.
  *
- * STATUS `PENDING_PAYMENT` (13-fayl §5): mijoz hali to'lamagan.
+ * STATUS `PENDING_PAYMENT`: mijoz hali to'lamagan.
  * Lekin xona SHU ZAHOTI band hisoblanadi va availability'dan
  * chiqariladi — aks holda ikki mijoz bir xonani "to'lovni
  * kutayotgan" holatda band qilib qo'yardi.
@@ -462,8 +459,7 @@ export async function createPublicBooking(
     throw new ValidationError(`Bu turda maksimal ${type.maxAdults} kattalar`);
   }
 
-  // --- Spam himoyasi (13-fayl §6) ---
-  // Bir telefon raqamiga 24 soatda 3 ta faol to'lanmagan bron
+  // Spam himoyasi: bir telefon raqamiga 3 ta faol to'lanmagan sayt broni
   await checkSpam(phone);
 
   const stay = await stayPrice(input.roomTypeId, from, to, nights);
@@ -517,7 +513,7 @@ export async function createPublicBooking(
         children: input.children ?? 0,
         /**
          * SAYTDAN KELGAN BRON HAR DOIM OVQAT BILAN
-         * (BOTLAR-REJA.md, 2026-09-17).
+         * (2026-09-17).
          *
          * Ilgari `input.withMeal ?? false` edi va sayt bu
          * maydonni yubormagani uchun bron OVQATSIZ yaratilardi.
@@ -534,7 +530,7 @@ export async function createPublicBooking(
          * tanlov bor, shuning uchun bu qoida faqat shu funksiyada.
          *
          * Nonushta narxi `createReservation` ichida sozlamadan
-         * olinadi va bronga ko'chiriladi (SAVOLLAR.md S10).
+         * olinadi va bronga ko'chiriladi.
          */
         withMeal: true,
         code,
@@ -579,7 +575,7 @@ export async function createPublicBooking(
   const room = await prisma.room.findUniqueOrThrow({ where: { id: roomId } });
 
   /**
-   * Nonushta jami summaga kiradi (BOTLAR-REJA.md).
+   * Nonushta jami summaga kiradi.
    *
    * Summa BRONDAN hisoblanadi (lib/money.ts) — bron kartasi, "bronimni
    * tekshirish" va qidiruv natijasi bir xil raqam ko'rsatadi.
@@ -603,18 +599,21 @@ export async function createPublicBooking(
 }
 
 /**
- * Bir telefon raqamiga ko'p to'lanmagan bron (13-fayl §6).
+ * Bir telefon raqamiga ko'p to'lanmagan bron.
  *
  * Cheklovsiz bo'lsa bitta bot butun mehmonxonani "to'lov kutilmoqda"
  * holatida band qilib qo'yishi mumkin — real sotuv to'xtaydi.
  *
+ * FAOL bronlar sanaladi — hali tugamagan, vaqt oynasisiz (2026-09-28).
+ * Sayt mehmoni kelganda to'laydi va bron avtomatik bekor bo'lmaydi
+ * (`WEBSITE_UNPAID_CANCEL_HOURS` = 0), shuning uchun ilgarigi "oxirgi
+ * 24 soat" oynasi har kuni yana 3 ta bron qo'yishga imkon berardi.
+ * Qabulxona tasdiqlagan (CONFIRMED) bron sanalmaydi.
+ *
  * Raqam RAQAMLARI bo'yicha solishtiriladi (oxirgi 9 ta — O'zbekiston
- * raqami, +998 siz ham). Ilgari satr aynan solishtirilardi: "+998 90
- * 111-22-33" va "+998901112233" ikki xil raqam hisoblanib, bo'sh joy
- * qo'yish bilan cheklov chetlab o'tilardi.
+ * raqami, +998 siz ham): "+998 90 111-22-33" va "+998901112233" bir raqam.
  */
 async function checkSpam(phone: string): Promise<void> {
-  const since = new Date(Date.now() - 24 * 3600_000);
   const tail = phone.replace(/\D/g, "").slice(-9);
   if (tail.length < 7) throw new ValidationError("Telefon raqami noto'g'ri");
 
@@ -623,7 +622,8 @@ async function checkSpam(phone: string): Promise<void> {
     FROM "Reservation" r
     JOIN "Guest" g ON g.id = r."guestId"
     WHERE r.status = 'PENDING_PAYMENT'
-      AND r."createdAt" >= ${since}
+      AND r.source = 'WEBSITE'
+      AND r."checkOut" > ${hotelToday()}
       AND right(regexp_replace(g.phone, '\\D', '', 'g'), 9) = ${tail}
   `;
 
@@ -635,13 +635,13 @@ async function checkSpam(phone: string): Promise<void> {
 }
 
 // ============================================================
-//  5. Bronni kod bilan tekshirish (13-fayl §2)
+//  5. Bronni kod bilan tekshirish
 // ============================================================
 
 /**
  * Mijoz o'z bronini kod bilan ko'radi.
  *
- * JAVOBDA BOSHQA MEHMONLAR MA'LUMOTI YO'Q (13-fayl §6). Faqat shu
+ * JAVOBDA BOSHQA MEHMONLAR MA'LUMOTI YO'Q. Faqat shu
  * bronning o'zi va faqat mijozga kerakli maydonlar — ichki id,
  * telefon va to'lov tafsiloti berilmaydi.
  */
@@ -685,7 +685,7 @@ export async function findByCode(code: string) {
 }
 
 // ============================================================
-//  6. To'lanmagan bronni avtomatik bekor qilish (13-fayl §5)
+//  6. To'lanmagan bronni avtomatik bekor qilish
 // ============================================================
 
 export type ExpireResult = {
@@ -695,19 +695,24 @@ export type ExpireResult = {
 };
 
 /**
- * Muddati o'tgan `PENDING_PAYMENT` bronlarni bekor qiladi.
+ * To'lanmagan sayt bronlarini muddati o'tgach bekor qiladi.
  *
- * NEGA KERAK: to'lanmagan bron abadiy band qilib tursa, real sotuv
- * yo'qoladi. Bu TZ'da to'g'ridan-to'g'ri yozilmagan, lekin 3-bandning
- * teskari tomoni (13-fayl §5).
+ * STANDART O'CHIQ (egasi, 2026-09-28): sayt mehmoni to'lovni kelganda
+ * qiladi — sayt ham shuni aytadi. Muddat biznes sozlamasida
+ * (`WEBSITE_UNPAID_CANCEL_HOURS`, admin panel -> Biznes sozlamalari);
+ * 0 bo'lsa hech narsa qilinmaydi. Oldindan to'lov Beds24 (OTA)
+ * mehmonlariga tegishli va uni OTA boshqaradi.
  *
- * `cancelReservation` chaqiriladi — u availability'ni qayta
- * hisoblaydi, ya'ni xona saytda darhol qayta sotuvga chiqadi.
+ * Yoqilsa: `cancelReservation` chaqiriladi — xona saytda darhol qayta
+ * sotuvga chiqadi.
  */
 export async function expireUnpaidBookings(): Promise<ExpireResult> {
+  const hours = await getWebsiteUnpaidCancelHours();
+  if (!(hours > 0)) return { checked: 0, cancelled: 0, codes: [] };
+
   const { cancelReservation } = await import("./reservations.js");
 
-  const cutoff = new Date(Date.now() - config.pendingPaymentTimeoutHours * 3600_000);
+  const cutoff = new Date(Date.now() - hours * 3600_000);
 
   const stale = await prisma.reservation.findMany({
     where: {

@@ -91,7 +91,7 @@ export const config = {
     notifyBookings: process.env.TELEGRAM_NOTIFY_BOOKINGS !== "false",
 
     /**
-     * 2-bot: tozalik (BOTLAR-REJA.md, 2026-09-17).
+     * 2-bot: tozalik (2026-09-17).
      *
      * Alohida bot va alohida guruh — farosh mehmonxona
      * moliyasini ko'rmasligi kerak. Boshqaruv boti bilan
@@ -108,7 +108,7 @@ export const config = {
     cleaningGroupId: process.env.TELEGRAM_CLEANING_GROUP_ID ?? "",
 
     /**
-     * 3-bot: oshxona (BOTLAR-REJA.md).
+     * 3-bot: oshxona.
      *
      * Oshpazlar nonushta porsiyalarini bilishi uchun.
      */
@@ -168,8 +168,6 @@ export const config = {
   fx: {
     cbuUrl: process.env.FX_CBU_URL ?? "",
   },
-
-  pendingPaymentTimeoutHours: num("PENDING_PAYMENT_TIMEOUT_HOURS", 24),
 } as const;
 
 /**
